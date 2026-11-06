@@ -59,7 +59,6 @@ export interface SessionContext {
   identity: typeof userIdentities.$inferSelect;
   roles: AdminRole[];
   profileId: string | null;
-  onboarded: boolean;
 }
 
 export async function resolveSession(db: Db, token: string | undefined): Promise<SessionContext | null> {
@@ -78,9 +77,9 @@ export async function resolveSession(db: Db, token: string | undefined): Promise
   }
   const [roles, [profile]] = await Promise.all([
     db.select({ role: adminRoles.role }).from(adminRoles).where(eq(adminRoles.identityId, row.identity.id)),
-    db.select({ id: candidateProfiles.id, done: candidateProfiles.onboardingCompletedAt }).from(candidateProfiles).where(eq(candidateProfiles.identityId, row.identity.id)),
+    db.select({ id: candidateProfiles.id }).from(candidateProfiles).where(eq(candidateProfiles.identityId, row.identity.id)),
   ]);
-  return { sessionId: row.session.id, identity: row.identity, roles: roles.map((r) => r.role), profileId: profile?.id ?? null, onboarded: Boolean(profile?.done) };
+  return { sessionId: row.session.id, identity: row.identity, roles: roles.map((r) => r.role), profileId: profile?.id ?? null };
 }
 
 export async function revokeSession(db: Db, token: string | undefined) {

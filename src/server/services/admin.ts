@@ -86,7 +86,7 @@ export async function listApplicationsAdmin(db: Db) {
 /** Candidate list with minimal fields: support/admin need to find a person, not browse private details. */
 export async function listCandidates(db: Db) {
   return db
-    .select({ id: candidateProfiles.id, fullName: candidateProfiles.fullName, city: candidateProfiles.city, careerStage: candidateProfiles.careerStage, visibility: candidateProfiles.visibility, onboarded: candidateProfiles.onboardingCompletedAt, createdAt: candidateProfiles.createdAt, provider: userIdentities.provider, disabled: userIdentities.disabledAt })
+    .select({ id: candidateProfiles.id, fullName: candidateProfiles.fullName, city: candidateProfiles.city, careerStage: candidateProfiles.careerStage, visibility: candidateProfiles.visibility, syncStatus: candidateProfiles.aitSyncStatus, createdAt: candidateProfiles.createdAt, provider: userIdentities.provider, disabled: userIdentities.disabledAt })
     .from(candidateProfiles)
     .innerJoin(userIdentities, eq(candidateProfiles.identityId, userIdentities.id))
     .where(isNull(userIdentities.deletedAt))

@@ -66,12 +66,13 @@ export function evaluateEligibility(candidate: CandidateFacts | null, opp: Oppor
 
   const req = opp.eligibility;
   if (req?.educationLevels?.length) {
-    if (!candidate.education.length) {
+    const known = candidate.education.filter((e): e is typeof e & { level: EducationLevel } => e.level !== null);
+    if (!known.length) {
       checks.push({ key: "education", label: "Education", outcome: "unknown", detail: `Requires ${req.educationLevels.map((l) => LEVEL_LABEL[l]).join(" or ")}` });
-      missing.push("Add your education");
+      missing.push(candidate.education.length ? "Confirm your education level" : "Add your education");
     } else {
       const minRequired = Math.min(...req.educationLevels.map((l) => LEVEL_RANK[l]));
-      const best = Math.max(...candidate.education.map((e) => LEVEL_RANK[e.level]));
+      const best = Math.max(...known.map((e) => LEVEL_RANK[e.level]));
       // Currently pursuing counts: graduation year in the future still meets the level for student roles.
       const ok = best >= minRequired;
       checks.push({ key: "education", label: "Education", outcome: ok ? "pass" : "fail", detail: ok ? `${LEVEL_LABEL[(Object.keys(LEVEL_RANK) as EducationLevel[]).find((k) => LEVEL_RANK[k] === best)!]} meets the requirement` : `Requires at least ${LEVEL_LABEL[(Object.keys(LEVEL_RANK) as EducationLevel[]).find((k) => LEVEL_RANK[k] === minRequired)!]}` });

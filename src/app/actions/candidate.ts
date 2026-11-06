@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import { requireCandidate, requireUser } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
-import { candidateProfiles, userIdentities } from "@/server/db/schema";
+import { userIdentities } from "@/server/db/schema";
 import { ApplyError, changeApplicationStatus, submitApplication } from "@/server/services/applications";
 import { deleteResume, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
 import { deleteSavedSearch, saveSearch, toggleSaved } from "@/server/services/engagement";
@@ -17,7 +17,6 @@ import { markAllRead, NOTIFICATION_KINDS, setPreference, type NotificationKind }
 import { getOpportunityBySlug } from "@/server/services/opportunities";
 import {
   addSectionItem,
-  ensureProfile,
   eraseCandidateData,
   loadProfile,
   profileSchemas,
@@ -78,17 +77,11 @@ export async function supportAction(_: ActionState, fd: FormData): Promise<Actio
   return { ok: true, message: "Thanks. We've received your message and will reply by email." };
 }
 
-// ─── Onboarding & profile ──────────────────────────────────────────────────
-export async function startOnboardingAction() {
-  const s = await requireUser("/app/onboarding");
-  await ensureProfile(await getDb(), s.identity.id, s.identity.name);
-  redirect("/app/onboarding?step=1");
-}
+// ─── Profile (Avsar-owned fields and additions; AI Tathastu-owned data is changed on AI Tathastu) ───
+const PROFILE_FIELDS = ["basics", "stage", "interests", "roles", "locations", "workModes", "compensation", "availability", "links", "visibility"] as const;
 
-const FIELD_STEPS = ["basics", "stage", "interests", "roles", "locations", "workModes", "compensation", "availability", "links", "visibility"] as const;
-
-export async function saveProfileFieldsAction(kind: (typeof FIELD_STEPS)[number], next: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
-  if (!FIELD_STEPS.includes(kind)) return { ok: false, message: "Unknown section" };
+export async function saveProfileFieldsAction(kind: (typeof PROFILE_FIELDS)[number], _: ActionState, fd: FormData): Promise<ActionState> {
+  if (!PROFILE_FIELDS.includes(kind)) return { ok: false, message: "Unknown section" };
   const s = await requireCandidate();
   const parsed = profileSchemas[kind].safeParse(formObject(fd));
   if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
@@ -96,17 +89,16 @@ export async function saveProfileFieldsAction(kind: (typeof FIELD_STEPS)[number]
   await updateProfileFields(db, s.profileId, parsed.data as never);
   if (kind === "visibility") await audit(db, { actorId: s.identity.id, actorRole: "candidate", action: "profile.visibility", targetType: "profile", targetId: s.profileId, metadata: parsed.data });
   revalidatePath("/app", "layout");
-  if (next) redirect(next);
   return { ok: true, message: "Saved" };
 }
 
-export async function saveSkillsAction(next: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
+/** Skills the student adds in Avsar (imported skills are shown separately and owned by AI Tathastu). */
+export async function saveSkillsAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCandidate();
   const parsed = profileSchemas.skills.safeParse(formObject(fd));
   if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
   await replaceSkills(await getDb(), s.profileId, parsed.data.skills);
   revalidatePath("/app", "layout");
-  if (next) redirect(next);
   return { ok: true, message: "Skills saved" };
 }
 
@@ -137,12 +129,26 @@ export async function removeSectionAction(section: Section, id: string) {
   revalidatePath("/app", "layout");
 }
 
-export async function completeOnboardingAction() {
-  const s = await requireCandidate();
-  await getDb().then((db) => db.update(candidateProfiles).set({ onboardingCompletedAt: new Date() }).where(eq(candidateProfiles.id, s.profileId)));
-  redirect("/app?welcome=1");
+/**
+ * Answers asked only in the context of an application, when the listing needs them and AI Tathastu didn't
+ * supply them. Optional: skipping leaves eligibility "unknown", never "failed".
+ */
+export async function contextAnswersAction(slug: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await requireCandidate(`/app/apply/${slug}`);
+  const parsed = z
+    .object({
+      graduationYear: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(1950).max(2045).optional()),
+      workAuthorizedIndia: z.preprocess((v) => (v === "yes" ? true : v === "no" ? false : undefined), z.boolean().optional()),
+    })
+    .safeParse(formObject(fd));
+  if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
+  const data: Record<string, unknown> = {};
+  if (parsed.data.graduationYear !== undefined) data.graduationYear = parsed.data.graduationYear;
+  if (parsed.data.workAuthorizedIndia !== undefined) data.workAuthorizedIndia = parsed.data.workAuthorizedIndia;
+  if (Object.keys(data).length) await updateProfileFields(await getDb(), s.profileId, data as never);
+  revalidatePath(`/app/apply/${slug}`);
+  return { ok: true, message: "Saved to your Avsar profile." };
 }
-
 // ─── Resumes ───────────────────────────────────────────────────────────────
 export async function uploadResumeAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCandidate();

@@ -31,7 +31,7 @@ export default async function InsightsPage() {
     <div className="space-y-6">
       <PageHeader title="Career insights" description={`Based on your profile and the ${relevant.length} open listing${relevant.length === 1 ? "" : "s"} in the categories you're interested in. Recomputed every time you visit.`} />
       {!profile!.skills.length ? (
-        <StateMessage kind="empty" title="Add your skills first" body="Insights compare your skills with what open opportunities ask for." action={<Link href="/app/onboarding?step=4" className={buttonClass("primary")}>Add skills</Link>} />
+        <StateMessage kind="empty" title="Add your skills first" body="Insights compare your skills with what open opportunities ask for." action={<Link href="/app/profile" className={buttonClass("primary")}>Add skills</Link>} />
       ) : (
         <>
           <Card>
@@ -58,7 +58,7 @@ export default async function InsightsPage() {
             ) : (
               <p className="mt-3 text-sm text-muted">Every skill you list has evidence behind it.</p>
             )}
-            <Link href="/app/onboarding?step=6" className="mt-4 inline-block text-sm font-semibold text-purple hover:underline">Add a project</Link>
+            <Link href="/app/profile" className="mt-4 inline-block text-sm font-semibold text-purple hover:underline">Add a project</Link>
           </Card>
           <p className="text-xs text-muted">Resume analysis, learning resources and AI-assisted roadmaps are planned for a later release and will always ask you to confirm anything they suggest.</p>
         </>

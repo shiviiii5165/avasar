@@ -20,11 +20,16 @@ export async function requireUser(returnTo = "/app"): Promise<SessionContext> {
   return s;
 }
 
-/** Candidate area: signed in and has a profile (onboarding creates one). */
+/**
+ * Candidate area: signed in. The Avsar profile is created at sign-in; for older sessions without one it's
+ * created here. There is no onboarding gate: an empty profile never blocks anything.
+ */
 export async function requireCandidate(returnTo = "/app"): Promise<SessionContext & { profileId: string }> {
   const s = await requireUser(returnTo);
-  if (!s.profileId) redirect("/app/onboarding");
-  return s as SessionContext & { profileId: string };
+  if (s.profileId) return s as SessionContext & { profileId: string };
+  const { ensureProfile } = await import("../services/profiles");
+  const profile = await ensureProfile(await getDb(), s.identity.id, s.identity.name);
+  return { ...s, profileId: profile.id };
 }
 
 export class ForbiddenError extends Error {

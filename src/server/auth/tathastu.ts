@@ -27,7 +27,12 @@ export function safeReturnTo(raw: string | null | undefined): string {
   return raw.slice(0, 300);
 }
 
-export async function startFlow(db: Db, cfg: TathastuConfig, returnTo: string): Promise<string> {
+/**
+ * `prompt: "none"` asks AI Tathastu to answer without showing any page (silent refresh for an already
+ * linked student); it returns login_required / consent_required otherwise. AI Tathastu ignores `scope`:
+ * the student picks shared sections on its consent screen.
+ */
+export async function startFlow(db: Db, cfg: TathastuConfig, returnTo: string, opts: { prompt?: "none" | "consent" } = {}): Promise<string> {
   const state = randomToken();
   const codeVerifier = randomToken(48);
   const nonce = randomToken();
@@ -41,11 +46,12 @@ export async function startFlow(db: Db, cfg: TathastuConfig, returnTo: string): 
   url.searchParams.set("nonce", nonce);
   url.searchParams.set("code_challenge", pkceChallenge(codeVerifier));
   url.searchParams.set("code_challenge_method", "S256");
+  if (opts.prompt) url.searchParams.set("prompt", opts.prompt);
   return url.toString();
 }
 
 export class SsoError extends Error {
-  constructor(public readonly code: "invalid_state" | "provider_error" | "token_invalid" | "provider_unavailable", message?: string) {
+  constructor(public readonly code: "invalid_state" | "provider_error" | "token_invalid" | "provider_unavailable" | "login_required" | "consent_required", message?: string) {
     super(message ?? code);
   }
 }
@@ -63,7 +69,8 @@ async function consumeFlow(db: Db, state: string) {
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-export async function completeFlow(db: Db, cfg: TathastuConfig, params: { code: string | null; state: string | null; error: string | null }, fetchImpl: typeof fetch = fetch): Promise<{ identity: VerifiedIdentity; returnTo: string }> {
+export async function completeFlow(db: Db, cfg: TathastuConfig, params: { code: string | null; state: string | null; error: string | null }, fetchImpl: typeof fetch = fetch): Promise<{ identity: VerifiedIdentity; returnTo: string; accessToken: string }> {
+  if (params.error === "login_required" || params.error === "consent_required") throw new SsoError(params.error);
   if (params.error) throw new SsoError("provider_error", params.error);
   if (!params.state || !params.code) throw new SsoError("invalid_state");
   const flow = await consumeFlow(db, params.state);
@@ -113,5 +120,7 @@ export async function completeFlow(db: Db, cfg: TathastuConfig, params: { code: 
       name: str(payload.name),
     },
     returnTo: flow.returnTo,
+    // Used once by the callback to read the profile, then discarded (never stored, never sent to the browser).
+    accessToken: body.access_token ?? jwt,
   };
 }

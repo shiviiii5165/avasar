@@ -7,6 +7,7 @@ import { audit } from "@/server/audit";
 import { devAuthEnabled, publicUrl } from "@/server/config";
 import { getDb } from "@/server/db/client";
 import { adminRoles } from "@/server/db/schema";
+import { ensureProfile } from "@/server/services/profiles";
 import { apiError, sameOrigin } from "@/server/http";
 
 /**
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   const persona = PERSONAS[key] ?? PERSONAS.candidate;
   const db = await getDb();
   const row = await upsertIdentity(db, { provider: "dev", subject: persona.subject, email: persona.email, emailVerified: true, name: persona.name });
+  await ensureProfile(db, row.id, persona.name); // same as the real callback: no onboarding step
   for (const role of persona.roles) await db.insert(adminRoles).values({ identityId: row.id, role }).onConflictDoNothing();
   const session = await createSession(db, row.id);
   await audit(db, { actorId: row.id, actorRole: "candidate", action: "auth.dev_sign_in", targetType: "identity", targetId: row.id, metadata: { persona: key } });

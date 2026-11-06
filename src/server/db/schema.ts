@@ -22,6 +22,11 @@ import {
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+/** Where a profile record came from. 'ai_tathastu' rows are replaced on each sync; 'avsar' rows are the student's own and never touched by sync. */
+const provenance = () => ({
+  source: text("source").$type<"avsar" | "ai_tathastu">().notNull().default("avsar"),
+  sourceKey: text("source_key"),
+});
 
 // ─── Enums ─────────────────────────────────────────────────────────────────
 export const identityProvider = pgEnum("identity_provider", ["ai_tathastu", "dev"]);
@@ -120,8 +125,16 @@ export const candidateProfiles = pgTable("candidate_profiles", {
   linkedinUrl: text("linkedin_url"),
   githubUrl: text("github_url"),
   portfolioUrl: text("portfolio_url"),
-  onboardingStep: integer("onboarding_step").notNull().default(0),
-  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+  /** Avsar-owned answer to an in-context question (e.g. an opportunity needed it and AI Tathastu didn't supply it). */
+  graduationYear: integer("graduation_year"),
+  // ── AI Tathastu profile sync (source-owned data lives in the section tables with source = 'ai_tathastu') ──
+  aitSyncedAt: timestamp("ait_synced_at", { withTimezone: true }),
+  aitSyncStatus: text("ait_sync_status").$type<"never" | "ok" | "partial" | "failed">().notNull().default("never"),
+  aitSyncError: text("ait_sync_error"),
+  /** Sections the student chose to share with Avsar on AI Tathastu's consent screen (privacy.scopes). */
+  aitScopes: jsonb("ait_scopes").$type<Record<string, boolean>>().notNull().default({}),
+  /** Identity fields last written by the import; a field the student has since edited in Avsar is no longer listed (Avsar edit wins). */
+  importedFields: jsonb("imported_fields").$type<Record<string, string>>().notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("candidate_profiles_identity").on(t.identityId)]);
@@ -129,8 +142,10 @@ export const candidateProfiles = pgTable("candidate_profiles", {
 export const education = pgTable("education", {
   id: id(),
   profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  ...provenance(),
   institution: text("institution").notNull(),
-  level: educationLevel("level").notNull(),
+  /** Null when the source degree text doesn't clearly state a level (never guessed). */
+  level: educationLevel("level"),
   degree: text("degree"),
   field: text("field"),
   startYear: integer("start_year"),
@@ -142,6 +157,7 @@ export const education = pgTable("education", {
 export const experiences = pgTable("experiences", {
   id: id(),
   profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  ...provenance(),
   organization: text("organization").notNull(),
   title: text("title").notNull(),
   kind: text("kind").notNull().default("full_time"), // full_time | part_time | internship | freelance | volunteer
@@ -155,6 +171,7 @@ export const experiences = pgTable("experiences", {
 export const projects = pgTable("projects", {
   id: id(),
   profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  ...provenance(),
   title: text("title").notNull(),
   description: text("description"),
   url: text("url"),
@@ -165,6 +182,7 @@ export const projects = pgTable("projects", {
 export const certifications = pgTable("certifications", {
   id: id(),
   profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  ...provenance(),
   name: text("name").notNull(),
   issuer: text("issuer"),
   issuedOn: date("issued_on"),
@@ -172,9 +190,23 @@ export const certifications = pgTable("certifications", {
   createdAt: createdAt(),
 }, (t) => [index("certifications_profile").on(t.profileId)]);
 
+/** Awards, publications and other achievements (AI Tathastu "achievements" that aren't certifications). */
+export const achievements = pgTable("achievements", {
+  id: id(),
+  profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  ...provenance(),
+  kind: text("kind").notNull(), // achievement | publication
+  title: text("title").notNull(),
+  issuer: text("issuer"),
+  date: text("date"),
+  url: text("url"),
+  createdAt: createdAt(),
+}, (t) => [index("achievements_profile").on(t.profileId)]);
+
 export const candidateSkills = pgTable("candidate_skills", {
   id: id(),
   profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  ...provenance(),
   name: text("name").notNull(),
   normalized: text("normalized").notNull(),
   level: skillLevel("level"),

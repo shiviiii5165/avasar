@@ -20,6 +20,17 @@ function RemoveButton({ section, id, label }: { section: "education" | "experien
   );
 }
 
+export function SourceBadge({ source }: { source: string }) {
+  return source === "ai_tathastu"
+    ? <span className="shrink-0 rounded-full bg-purple-soft px-2 py-0.5 text-xs font-semibold text-purple">From AI Tathastu</span>
+    : <span className="shrink-0 rounded-full bg-surface px-2 py-0.5 text-xs text-muted">Added in Avsar</span>;
+}
+
+/** Imported rows are owned by AI Tathastu (edited there); only Avsar-added rows can be removed here. */
+function RowAction({ source, section, id, label }: { source: string; section: "education" | "experience" | "project" | "certification"; id: string; label: string }) {
+  return source === "avsar" ? <span className="flex items-center gap-1"><SourceBadge source={source} /><RemoveButton section={section} id={id} label={label} /></span> : <SourceBadge source={source} />;
+}
+
 function ItemList({ children, empty }: { children: React.ReactNode[]; empty: string }) {
   return children.length ? <ul className="divide-y divide-line rounded-lg border border-line bg-surface">{children}</ul> : <p className="text-sm text-muted">{empty}</p>;
 }
@@ -30,8 +41,8 @@ export function EducationSection({ p }: { p: LoadedProfile }) {
       <ItemList empty="No education added yet.">
         {p.education.map((e) => (
           <li key={e.id} className="flex items-start justify-between gap-3 p-3 text-sm">
-            <div><p className="font-semibold text-navy">{e.institution}</p><p className="text-muted">{[LEVEL_LABEL[e.level], e.degree, e.field].filter(Boolean).join(" · ")}{e.graduationYear ? ` · ${e.graduationYear}` : ""}</p></div>
-            <RemoveButton section="education" id={e.id} label={e.institution} />
+            <div><p className="font-semibold text-navy">{e.institution}</p><p className="text-muted">{[(e.level ? LEVEL_LABEL[e.level] : null), e.degree, e.field].filter(Boolean).join(" · ")}{e.graduationYear ? ` · ${e.graduationYear}` : ""}</p></div>
+            <RowAction source={e.source} section="education" id={e.id} label={e.institution} />
           </li>
         ))}
       </ItemList>
@@ -40,7 +51,7 @@ export function EducationSection({ p }: { p: LoadedProfile }) {
         <ActionForm action={addSectionAction.bind(null, "education")} submitLabel="Add education" className="mt-4" resetOnSuccess>
           <Input name="institution" label="Institution" required />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Select name="level" label="Level" required defaultValue="bachelors">{LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+            <Select name="level" label="Level" defaultValue=""><option value="">Not specified</option>{LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
             <Input name="degree" label="Degree (e.g. B.Tech)" />
             <Input name="field" label="Field of study" />
             <Input name="grade" label="Grade or CGPA" />
@@ -59,8 +70,8 @@ export function ExperienceSection({ p }: { p: LoadedProfile }) {
       <ItemList empty="No experience added yet. Internships, part-time and volunteer work all count.">
         {p.experiences.map((e) => (
           <li key={e.id} className="flex items-start justify-between gap-3 p-3 text-sm">
-            <div><p className="font-semibold text-navy">{e.title} · {e.organization}</p><p className="text-muted">{KINDS.find((k) => k[0] === e.kind)?.[1]} · {e.startDate ?? "?"} – {e.current ? "present" : (e.endDate ?? "?")}</p></div>
-            <RemoveButton section="experience" id={e.id} label={e.title} />
+            <div><p className="font-semibold text-navy">{e.title} · {e.organization}</p><p className="text-muted">{KINDS.find((k) => k[0] === e.kind)?.[1] ?? "Experience"} · {e.startDate ?? "?"} – {e.current ? "present" : (e.endDate ?? "?")}</p></div>
+            <RowAction source={e.source} section="experience" id={e.id} label={e.title} />
           </li>
         ))}
       </ItemList>
@@ -90,7 +101,7 @@ export function ProjectSection({ p }: { p: LoadedProfile }) {
         {p.projects.map((pr) => (
           <li key={pr.id} className="flex items-start justify-between gap-3 p-3 text-sm">
             <div><p className="font-semibold text-navy">{pr.title}</p>{pr.skills.length > 0 && <p className="text-muted">Skills: {pr.skills.join(", ")}</p>}{pr.url && <a href={pr.url} target="_blank" rel="noopener noreferrer" className="text-purple hover:underline">{pr.url}</a>}</div>
-            <RemoveButton section="project" id={pr.id} label={pr.title} />
+            <RowAction source={pr.source} section="project" id={pr.id} label={pr.title} />
           </li>
         ))}
       </ItemList>
@@ -114,7 +125,7 @@ export function CertificationSection({ p }: { p: LoadedProfile }) {
         {p.certifications.map((c) => (
           <li key={c.id} className="flex items-start justify-between gap-3 p-3 text-sm">
             <div><p className="font-semibold text-navy">{c.name}</p><p className="text-muted">{[c.issuer, c.issuedOn].filter(Boolean).join(" · ")}</p></div>
-            <RemoveButton section="certification" id={c.id} label={c.name} />
+            <RowAction source={c.source} section="certification" id={c.id} label={c.name} />
           </li>
         ))}
       </ItemList>

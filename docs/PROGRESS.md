@@ -31,3 +31,10 @@
 
 ## Legal and founder items
 Final Privacy and Terms text, DPDP compliance review, retention periods, grievance officer, under-18 policy.
+
+## 2026-11-06: master correction, phases 0–2
+- Removed the 16-step onboarding (see REMOVAL_AUDIT.md); migrations 0001–0003 are forward-only.
+- AI Tathastu profile import with provenance and field ownership (see AI_TATHASTU_INTEGRATION.md).
+- Dashboard: sync status + Recommended for You; profile page shows the source of each record.
+- Verified: tsc clean, eslint clean, vitest 48/48, next build OK. Phase-by-phase status: IMPLEMENTATION_STATUS.md.
+

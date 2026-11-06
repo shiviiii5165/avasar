@@ -5,7 +5,8 @@ export type WorkMode = "remote" | "hybrid" | "onsite";
 export type SkillLevel = "beginner" | "intermediate" | "advanced" | "expert";
 
 export interface CandidateFacts {
-  education: { level: EducationLevel; graduationYear: number | null; field: string | null }[];
+  /** level is null when the source didn't state it clearly (unknown, never a failure). */
+  education: { level: EducationLevel | null; graduationYear: number | null; field: string | null }[];
   /** Total months of relevant work (internships count at half weight; see experienceYears). */
   experiences: { kind: string; startDate: string | null; endDate: string | null; current: boolean }[];
   skills: { name: string; level: SkillLevel | null; evidenceCount: number }[];

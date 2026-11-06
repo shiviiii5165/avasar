@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { profileCompleteness } from "./completeness";
 import { evaluateEligibility, experienceYears } from "./eligibility";
 import { DEFAULT_WEIGHTS, matchOpportunity } from "./matching";
 import { can } from "./permissions";
@@ -173,13 +172,5 @@ describe("dashboard deadlines", () => {
     const d = (days: number) => new Date(NOW.getTime() + days * 86_400_000);
     const items = [{ id: "a", deadline: d(10) }, { id: "b", deadline: d(2) }, { id: "c", deadline: d(-1) }, { id: "d", deadline: d(30) }, { id: "e", deadline: null }, { id: "f", deadline: d(3) }];
     expect(upcomingDeadlines(items, new Set(["f"]), NOW).map((i) => i.id)).toEqual(["b", "a"]);
-  });
-});
-
-describe("completeness", () => {
-  it("points to the next most useful section", () => {
-    const r = profileCompleteness({ basics: true, education: 1, skills: 2, experienceOrProjects: 0, preferences: false, resume: false, links: false });
-    expect(r.percent).toBe(35);
-    expect(r.next?.label).toBe("Skills");
   });
 });

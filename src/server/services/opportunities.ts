@@ -69,6 +69,12 @@ export async function searchOpportunities(db: Db, input: SearchInput, now = new 
   return { items: await withDetails(db, rows), total, page: input.page, pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 
+/** All open listings (bounded) for personalized ranking; the public marketplace keeps its own pagination. */
+export async function listOpenOpportunities(db: Db, limit = 300, now = new Date()) {
+  const rows = await db.select().from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt)).limit(limit);
+  return withDetails(db, rows);
+}
+
 export async function withDetails(db: Db, rows: OpportunityRow[]): Promise<OpportunityFull[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);

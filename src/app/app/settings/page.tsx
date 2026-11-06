@@ -25,7 +25,7 @@ export default async function SettingsPage() {
 
       <Card>
         <h2 className="text-lg font-semibold text-navy">Profile visibility</h2>
-        <ActionForm action={saveProfileFieldsAction.bind(null, "visibility", null)} submitLabel="Save visibility" className="mt-3">
+        <ActionForm action={saveProfileFieldsAction.bind(null, "visibility")} submitLabel="Save visibility" className="mt-3">
           <fieldset className="space-y-2">
             <legend className="sr-only">Who can see your profile</legend>
             {[

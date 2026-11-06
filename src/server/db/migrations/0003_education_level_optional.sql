@@ -1,0 +1,1 @@
+ALTER TABLE "education" ALTER COLUMN "level" DROP NOT NULL;

@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { ArrowRight, CalendarClock, Sparkles } from "lucide-react";
+import { notFound } from "next/navigation";
+import { CalendarClock, Sparkles } from "lucide-react";
 
 import { OpportunityCard } from "@/components/opportunity/opportunity-card";
-import { Badge, buttonClass, Card, StateMessage } from "@/components/ui";
-import { requireUser } from "@/server/auth/session";
+import { Badge, Card, StateMessage } from "@/components/ui";
+import { SyncStatusCard } from "@/components/profile/sync-status";
+import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { upcomingDeadlines } from "@/server/domain/dashboard";
 import { APPLICATION_STATUS_LABEL } from "@/server/domain/workflows";
@@ -12,72 +13,63 @@ import { listApplicationsForProfile } from "@/server/services/applications";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
 import { listSaved } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
-import { searchOpportunities, searchSchema } from "@/server/services/opportunities";
+import { listOpenOpportunities } from "@/server/services/opportunities";
 import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Home" };
 
-/** The dashboard answers one question: what is my next useful action? No decorative metrics. */
-export default async function CandidateHome({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
-  const session = await requireUser("/app");
-  if (!session.profileId || !session.onboarded) redirect("/app/onboarding");
+/** The dashboard answers one question: what is my next useful action? No profile-completion checklist. */
+export default async function CandidateHome() {
+  const session = await requireCandidate("/app");
   const db = await getDb();
-  const { welcome } = await searchParams;
   const [profile, apps, saved, notes, open] = await Promise.all([
     loadProfile(db, session.profileId),
     listApplicationsForProfile(db, session.profileId),
     listSaved(db, session.identity.id),
     listNotifications(db, session.identity.id, 5),
-    searchOpportunities(db, searchSchema.parse({ page: 1 })),
+    listOpenOpportunities(db),
   ]);
-  if (!profile) redirect("/app/onboarding");
+  if (!profile) notFound();
   const facts = await candidateFactsFor(db, session.profileId);
-  const matches = matchAll(facts, open.items);
+  const matches = matchAll(facts, open);
   const applied = new Set(apps.map((a) => a.opportunity.id));
-  const recommended = open.items
+  const recommended = open
     .filter((o) => !applied.has(o.id) && matches.get(o.id)?.eligibility.status !== "ineligible")
     .sort((a, b) => (matches.get(b.id)?.score ?? -1) - (matches.get(a.id)?.score ?? -1))
     .slice(0, 3);
+  // Thin profile: recommendations rest on little data, so say so instead of implying precision.
+  const avgCoverage = open.length ? open.reduce((s, o) => s + (matches.get(o.id)?.completeness ?? 0), 0) / open.length : 0;
+  const limited = avgCoverage < 0.4;
 
   const deadlines = upcomingDeadlines(saved, applied, new Date());
 
   // Skill suggestions: required skills that recur across the listings that fit you best.
   const gapCounts = new Map<string, number>();
-  for (const o of open.items.slice(0, 12)) for (const s of matches.get(o.id)?.missingRequiredSkills ?? []) gapCounts.set(s, (gapCounts.get(s) ?? 0) + 1);
+  for (const o of recommended.concat(open.slice(0, 12))) for (const s of matches.get(o.id)?.missingRequiredSkills ?? []) gapCounts.set(s, (gapCounts.get(s) ?? 0) + 1);
   const gaps = [...gapCounts].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
-  const next = profile.completeness.next;
   const active = apps.filter((a) => !["rejected", "withdrawn", "closed", "selected"].includes(a.application.status));
   const firstName = profile.profile.fullName?.split(" ")[0] ?? "there";
+  const sync = profile.profile;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-serif text-3xl text-navy sm:text-4xl">{welcome ? `Welcome to Avsar, ${firstName}.` : `Hello, ${firstName}.`}</h1>
-        <p className="mt-1 text-sm text-muted">Here&apos;s what would help you most right now.</p>
+        <h1 className="font-serif text-3xl text-navy sm:text-4xl">Hello, {firstName}.</h1>
+        <p className="mt-1 text-sm text-muted">Opportunities picked from the profile you already have on AI Tathastu.</p>
       </div>
 
-      <Card className="flex flex-wrap items-center justify-between gap-4 border-purple/20 bg-gradient-to-r from-purple-soft to-peach-soft/60">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-purple">Your next useful action</p>
-          <p className="mt-1 text-lg font-semibold text-navy">{next ? next.action : recommended[0] ? `Look at ${recommended[0].title}` : "Explore new opportunities"}</p>
-          <div className="mt-2 flex items-center gap-2 text-sm text-navy-soft">
-            <div className="h-2 w-40 overflow-hidden rounded-full bg-white" role="progressbar" aria-valuenow={profile.completeness.percent} aria-valuemin={0} aria-valuemax={100} aria-label="Profile completeness">
-              <div className="h-full rounded-full bg-purple" style={{ width: `${profile.completeness.percent}%` }} />
-            </div>
-            Profile {profile.completeness.percent}% complete
-          </div>
-        </div>
-        <Link href={next ? next.href : recommended[0] ? `/opportunities/${recommended[0].slug}` : "/opportunities"} className={buttonClass("primary")}>
-          {next ? "Do it now" : "Take a look"} <ArrowRight aria-hidden className="size-4" />
-        </Link>
-      </Card>
-
+      <SyncStatusCard status={sync.aitSyncStatus} syncedAt={sync.aitSyncedAt} error={sync.aitSyncError} provider={session.identity.provider} />
       <section aria-labelledby="rec-title">
         <div className="mb-3 flex items-center justify-between">
-          <h2 id="rec-title" className="text-lg font-semibold text-navy">Relevant for you</h2>
+          <h2 id="rec-title" className="text-lg font-semibold text-navy">Recommended for You</h2>
           <Link href="/app/discover" className="text-sm font-semibold text-purple hover:underline">See all</Link>
         </div>
+        {limited && (
+          <p className="mb-3 rounded-md bg-surface px-3 py-2 text-sm text-muted">
+            Your shared profile has little to match on yet, so these are broadly relevant picks. Sharing skills or education with Avsar on AI Tathastu makes them more personal.
+          </p>
+        )}
         {recommended.length ? (
           <ul className="grid gap-4 md:grid-cols-3">
             {recommended.map((o) => {

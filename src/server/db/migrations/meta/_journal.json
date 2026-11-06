@@ -8,6 +8,27 @@
       "when": 1793938918936,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793942842052,
+      "tag": "0001_ait_profile_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793942845846,
+      "tag": "0002_remove_onboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793942868544,
+      "tag": "0003_education_level_optional",
+      "breakpoints": true
     }
   ]
 }

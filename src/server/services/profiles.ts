@@ -4,8 +4,7 @@ import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Db } from "../db/client";
-import { candidateProfiles, candidateSkills, certifications, documents, education, experiences, projects, resumes, skillEvidence } from "../db/schema";
-import { profileCompleteness } from "../domain/completeness";
+import { achievements, candidateProfiles, candidateSkills, certifications, documents, education, experiences, projects, resumes, skillEvidence } from "../db/schema";
 import { normalizeSkill, parseSkillList } from "../domain/skills";
 import type { CandidateFacts, EducationLevel, SkillLevel, WorkMode } from "../domain/types";
 
@@ -38,22 +37,18 @@ export async function loadProfile(db: Db, profileId: string) {
     ...s,
     evidenceCount: (evidence.find((e) => e.skillId === s.id)?.n ?? 0) + projectSkills.filter((k) => k === s.normalized).length,
   }));
-  const completeness = profileCompleteness({
-    basics: Boolean(profile.fullName && profile.careerStage),
-    education: edu.length,
-    skills: skills.length,
-    experienceOrProjects: exp.length + proj.length,
-    preferences: Boolean(profile.preferredRoles.length || profile.preferredCategories.length || profile.workModes.length || profile.preferredLocations.length),
-    resume: resumeRows.length > 0,
-    links: Boolean(profile.linkedinUrl || profile.githubUrl || profile.portfolioUrl),
-  });
-  return { profile, education: edu, experiences: exp, projects: proj, certifications: certs, skills: skillsWithEvidence, resumes: resumeRows, completeness };
+  const achievementRows = await db.select().from(achievements).where(eq(achievements.profileId, profileId));
+  return { profile, education: edu, experiences: exp, projects: proj, certifications: certs, achievements: achievementRows, skills: skillsWithEvidence, resumes: resumeRows };
 }
 export type LoadedProfile = NonNullable<Awaited<ReturnType<typeof loadProfile>>>;
 
 export function toCandidateFacts(p: LoadedProfile): CandidateFacts {
   return {
-    education: p.education.map((e) => ({ level: e.level as EducationLevel, graduationYear: e.graduationYear, field: e.field })),
+    education: [
+      ...p.education.map((e) => ({ level: (e.level as EducationLevel | null) ?? null, graduationYear: e.graduationYear, field: e.field })),
+      // Avsar-owned answer given in the context of an application (AI Tathastu didn't supply it).
+      ...(p.profile.graduationYear && !p.education.some((e) => e.graduationYear) ? [{ level: null, graduationYear: p.profile.graduationYear, field: null }] : []),
+    ],
     experiences: p.experiences.map((e) => ({ kind: e.kind, startDate: e.startDate, endDate: e.endDate, current: e.current })),
     skills: p.skills.map((s) => ({ name: s.name, level: (s.level as SkillLevel | null) ?? null, evidenceCount: s.evidenceCount })),
     certifications: p.certifications.map((c) => c.name),
@@ -126,11 +121,13 @@ export async function updateProfileFields(db: Db, profileId: string, data: Parti
 
 export async function replaceSkills(db: Db, profileId: string, names: string[]) {
   await db.transaction(async (tx) => {
-    const current = await tx.select().from(candidateSkills).where(eq(candidateSkills.profileId, profileId));
+    // Only the student's own (Avsar) skills are edited here; imported ones belong to AI Tathastu.
+    const all = await tx.select().from(candidateSkills).where(eq(candidateSkills.profileId, profileId));
+    const own = all.filter((c) => c.source === "avsar");
     const wanted = new Map(names.map((n) => [normalizeSkill(n), n]));
-    const remove = current.filter((c) => !wanted.has(c.normalized)).map((c) => c.id);
+    const remove = own.filter((c) => !wanted.has(c.normalized)).map((c) => c.id);
     if (remove.length) await tx.delete(candidateSkills).where(inArray(candidateSkills.id, remove));
-    const add = [...wanted].filter(([k]) => !current.some((c) => c.normalized === k)).map(([normalized, name]) => ({ profileId, name, normalized }));
+    const add = [...wanted].filter(([k]) => !all.some((c) => c.normalized === k)).map(([normalized, name]) => ({ profileId, name, normalized, source: "avsar" as const }));
     if (add.length) await tx.insert(candidateSkills).values(add);
   });
 }
@@ -146,7 +143,7 @@ export async function setSkillLevel(db: Db, profileId: string, skillId: string, 
  */
 export async function eraseCandidateData(db: Db, profileId: string): Promise<string[]> {
   return db.transaction(async (tx) => {
-    for (const t of [education, experiences, projects, certifications, candidateSkills]) await tx.delete(t).where(eq(t.profileId, profileId));
+    for (const t of [education, experiences, projects, certifications, achievements, candidateSkills]) await tx.delete(t).where(eq(t.profileId, profileId));
     const docs = await tx.select({ id: documents.id, key: documents.storageKey }).from(resumes).innerJoin(documents, eq(resumes.documentId, documents.id)).where(eq(resumes.profileId, profileId));
     await tx.delete(resumes).where(eq(resumes.profileId, profileId));
     if (docs.length) await tx.update(documents).set({ deletedAt: new Date() }).where(inArray(documents.id, docs.map((d) => d.id)));
@@ -154,7 +151,8 @@ export async function eraseCandidateData(db: Db, profileId: string): Promise<str
       fullName: null, headline: null, bio: null, city: null, region: null, careerStage: null, visibility: "private",
       preferredRoles: [], preferredLocations: [], preferredCategories: [], workModes: [], interests: [],
       expectedCompMin: null, availableFrom: null, hoursPerWeek: null, workAuthorizedIndia: null,
-      linkedinUrl: null, githubUrl: null, portfolioUrl: null, updatedAt: new Date(),
+      linkedinUrl: null, githubUrl: null, portfolioUrl: null, graduationYear: null,
+      importedFields: {}, aitScopes: {}, aitSyncStatus: "never", aitSyncError: null, aitSyncedAt: null, updatedAt: new Date(),
     }).where(eq(candidateProfiles.id, profileId));
     return docs.map((d) => d.key);
   });
@@ -172,6 +170,7 @@ export async function addSectionItem(db: Db, profileId: string, section: Section
 
 export async function removeSectionItem(db: Db, profileId: string, section: Section, id: string) {
   const table = SECTION_TABLE[section];
-  // Scoped by profileId: a candidate can never delete another candidate's records.
-  await db.delete(table).where(and(eq(table.id, id), eq(table.profileId, profileId)));
+  // Scoped by profileId (never another candidate's records) and to the student's own rows: imported rows are
+  // owned by AI Tathastu and would return on the next sync, so they're changed there instead.
+  await db.delete(table).where(and(eq(table.id, id), eq(table.profileId, profileId), eq(table.source, "avsar")));
 }
