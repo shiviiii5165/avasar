@@ -24,7 +24,7 @@ type SP = Promise<{ returnTo?: string; error?: string }>;
 
 export default async function SignInPage({ searchParams }: { searchParams: SP }) {
   const { returnTo: rawReturn, error } = await searchParams;
-  const returnTo = safeReturnTo(rawReturn);
+  const returnTo = rawReturn ? safeReturnTo(rawReturn) : "/app/discover"; // straight to personalized opportunities
   const session = await getSession();
   if (session) redirect(returnTo);
   const ssoReady = Boolean(tathastuConfig().config);
@@ -54,7 +54,7 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
 
         {dev && (
           <section aria-labelledby="dev-title" className="mt-10 rounded-xl border-2 border-dashed border-orange/60 bg-peach-soft/50 p-5">
-            <h2 id="dev-title" className="text-sm font-bold uppercase tracking-wide text-orange-deep">Development sign-in</h2>
+            <h2 id="dev-title" className="text-sm font-bold uppercase tracking-wide text-orange-deep">Development sign-in (simulated, not AI Tathastu)</h2>
             <p className="mt-1 text-xs text-navy-soft">Synthetic test personas for local development. This panel is disabled in production and when AVSAR_DEV_AUTH is off.</p>
             <form method="post" action="/api/auth/dev" className="mt-4 grid gap-2 sm:grid-cols-3">
               <input type="hidden" name="returnTo" value={rawReturn ? returnTo : ""} />

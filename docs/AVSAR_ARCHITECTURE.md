@@ -8,7 +8,7 @@ Browser ─► Next.js app (src/app): public site, /app (candidate), /admin (Adm
        src/server/services  DB-backed use cases (opportunities, profiles, applications, documents,
              │              engagement, notifications, trust, admin, jobs)
              ▼
-       src/server/domain    pure rules (eligibility, matching, workflows, permissions, completeness,
+       src/server/domain    pure rules (eligibility, matching, workflows, permissions,
              │              skills): no DB or framework, unit-tested
              ▼
        src/server/db        Drizzle schema + versioned SQL migrations ─► PostgreSQL
@@ -22,7 +22,7 @@ Browser ─► Next.js app (src/app): public site, /app (candidate), /admin (Adm
 |---|---|---|
 | Public website | `src/app/(public)` | Animated doorway landing, explore, details, content pages, sign-in |
 | Identity | `src/server/auth` | AI Tathastu adapter, own DB sessions (hashed tokens), dev sign-in (never in production) |
-| Candidate | `src/app/app`, `services/profiles.ts` | 16-step onboarding, profile, resumes, dashboard, discover, saved, insights, settings |
+| Candidate | `src/app/app`, `services/profiles.ts` | No onboarding: profile imported from AI Tathastu (`services/profile-sync.ts`) with provenance; personalized opportunities (Recommended for You first), profile, resumes, saved, insights, settings |
 | Opportunities | `services/opportunities.ts`, `domain/workflows.ts` | Search, authoring, versions, publish pipeline, import pipeline |
 | Eligibility / matching | `domain/eligibility.ts`, `domain/matching.ts` | Separate, deterministic, explained |
 | Applications | `services/applications.ts` | Transactional submit, idempotency, snapshots, history |

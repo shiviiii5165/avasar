@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   for (const role of persona.roles) await db.insert(adminRoles).values({ identityId: row.id, role }).onConflictDoNothing();
   const session = await createSession(db, row.id);
   await audit(db, { actorId: row.id, actorRole: "candidate", action: "auth.dev_sign_in", targetType: "identity", targetId: row.id, metadata: { persona: key } });
-  const fallback = persona.roles.length ? "/admin" : "/app";
+  const fallback = persona.roles.length ? "/admin" : "/app/discover";
   const returnTo = safeReturnTo(String(form.get("returnTo") ?? "") || fallback);
   const res = NextResponse.redirect(new URL(returnTo, publicUrl()), { status: 303 });
   res.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt));

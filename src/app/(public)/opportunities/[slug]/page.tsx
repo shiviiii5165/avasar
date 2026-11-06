@@ -14,7 +14,7 @@ import { getDb } from "@/server/db/client";
 import { evaluateEligibility } from "@/server/domain/eligibility";
 import { matchOpportunity } from "@/server/domain/matching";
 import { candidateFactsFor } from "@/server/services/candidate-context";
-import { recordView, savedIds } from "@/server/services/engagement";
+import { recordView, savedIds, toggleSaved } from "@/server/services/engagement";
 import { getOpportunityBySlug, similarOpportunities, toFacts } from "@/server/services/opportunities";
 
 type Params = Promise<{ slug: string }>;
@@ -30,8 +30,9 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   };
 }
 
-export default async function OpportunityPage({ params }: { params: Params }) {
+export default async function OpportunityPage({ params, searchParams }: { params: Params; searchParams: Promise<{ intent?: string }> }) {
   const { slug } = await params;
+  const { intent } = await searchParams;
   const db = await getDb();
   const o = await getOpportunityBySlug(db, slug);
   if (!o) notFound();
@@ -40,7 +41,11 @@ export default async function OpportunityPage({ params }: { params: Params }) {
   const oppFacts = toFacts(o);
   const match = facts ? matchOpportunity(facts, oppFacts) : null;
   const eligibility = match?.eligibility ?? evaluateEligibility(null, oppFacts);
-  const saved = session ? (await savedIds(db, session.identity.id)).has(o.id) : false;
+  let saved = session ? (await savedIds(db, session.identity.id)).has(o.id) : false;
+  // Save-after-sign-in: a signed-out "Save" returns here with intent=save. Saving is idempotent (never un-saves).
+  const savedNow = Boolean(session && intent === "save" && !saved);
+  if (savedNow && session) saved = await toggleSaved(db, session.identity.id, o.id);
+  const signIn = (to: string) => `/sign-in?returnTo=${encodeURIComponent(to)}`;
   if (session) await recordView(db, session.identity.id, o.id).catch(() => undefined);
   const similar = await similarOpportunities(db, o);
   const deadline = deadlineLabel(o.deadline);
@@ -132,9 +137,10 @@ export default async function OpportunityPage({ params }: { params: Params }) {
             ) : session ? (
               <Link href={`/app/apply/${o.slug}`} className={buttonClass("primary", "lg", "w-full")}>Apply on Avsar</Link>
             ) : (
-              <Link href={`/sign-in?returnTo=/app/apply/${o.slug}`} className={buttonClass("primary", "lg", "w-full")}>Sign in to apply</Link>
+              <Link href={signIn(`/app/apply/${o.slug}`)} className={buttonClass("primary", "lg", "w-full")}>Continue with AI Tathastu to apply</Link>
             )}
-            {session && <div className="mt-3 flex justify-center"><SaveButton opportunityId={o.id} saved={saved} path={`/opportunities/${o.slug}`} /></div>}
+            {session ? <div className="mt-3 flex justify-center"><SaveButton opportunityId={o.id} saved={saved} path={`/opportunities/${o.slug}`} /></div> : <Link href={signIn(`/opportunities/${o.slug}?intent=save`)} className={buttonClass("secondary", "sm", "mt-3 w-full")}>Continue with AI Tathastu to save</Link>}
+            {savedNow && <p role="status" className="mt-2 text-center text-sm text-success">Saved to your list.</p>}
           </div>
           {match ? <MatchPanel match={match} /> : session ? null : <SignInToSeeFit slug={o.slug} />}
           <EligibilityPanel result={eligibility} />

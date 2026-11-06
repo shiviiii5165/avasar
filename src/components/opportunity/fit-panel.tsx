@@ -86,7 +86,7 @@ export function SignInToSeeFit({ slug }: { slug: string }) {
     <section className="rounded-xl border border-dashed border-line bg-surface p-5 text-sm">
       <h2 className="text-base font-semibold text-navy">See if you qualify</h2>
       <p className="mt-1 text-muted">Sign in to check eligibility, see why this matches you and apply. Browsing stays free and open.</p>
-      <Link href={`/sign-in?returnTo=/opportunities/${slug}`} className={buttonClass("primary", "sm", "mt-3")}>Sign in with AI Tathastu</Link>
+      <Link href={`/sign-in?returnTo=/opportunities/${slug}`} className={buttonClass("primary", "sm", "mt-3")}>Continue with AI Tathastu</Link>
     </section>
   );
 }

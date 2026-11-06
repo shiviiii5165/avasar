@@ -32,5 +32,5 @@ Real SSO cannot work until AI Tathastu adds Avsar to its hard-coded `INTEGRATION
 
 Until then, local development uses the **simulated** dev sign-in (`AVSAR_DEV_AUTH=1`, provider `dev`, labelled as simulated, disabled in production). It is not SSO.
 
-## Not yet done
-- A mock AI Tathastu server for end-to-end tests of the redirect flow (scenarios B and C). The unit tests cover the token and profile logic, not the browser round trip.
+## Local mock provider (development only)
+`npx tsx scripts/mock-ait.mts` serves the same contract on `http://localhost:3401` (authorize page labelled MOCK, PKCE-checked token exchange, ES256 JWKS, fixture profile) and refuses to run with `NODE_ENV=production`. Point Avsar at it with `AVSAR_AIT_BASE_URL=http://localhost:3401`, `AVSAR_AIT_CLIENT_ID=avsar`, `AVSAR_AIT_CLIENT_SECRET=mock-only-secret`. It is not SSO and must never be configured outside local development.

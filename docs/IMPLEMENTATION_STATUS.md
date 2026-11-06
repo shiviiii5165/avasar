@@ -5,11 +5,11 @@ Updated 2026-11-06. "Done" means implemented and verified by typecheck, lint, te
 | Phase | Status | Notes |
 |---|---|---|
 | 0 Audit | Done | See REMOVAL_AUDIT.md, AI_TATHASTU_INTEGRATION.md |
-| 1 Public explore, AI Tathastu-only student auth, remove onboarding | **Done (code)** | Onboarding route, actions, completeness, redirects and columns removed via forward migrations. Public pages need no login. A browser E2E rerun is still pending. |
-| 2 SSO + automatic profile import | **Done (code); real SSO blocked** | Verified contract; provenance, idempotent sync, ownership and conflict policy, audit; 6 sync/mapper tests. Blocked on AI Tathastu registering the `avsar` client. Mock-provider E2E not built. |
-| 3 Recommended for You | Partial | Dashboard ranks open listings, excludes ineligible ones, keeps eligibility separate from match, and shows a limited-data notice. Missing data is unknown. No dedicated engine tests yet beyond the existing matching tests. |
-| 4 Contextual apply + return-after-auth | Partial | `returnTo` is preserved through sign-in. `contextAnswersAction` exists but isn't yet wired into the apply page; `?intent=save` isn't done. |
-| 5 Admin Studio / imports | Existing, not re-verified | Imports land in review and never auto-publish (existing tests). |
+| 1 Public explore, AI Tathastu-only student auth, remove onboarding | **Done (code)** | Onboarding route, actions, completeness, redirects and columns removed via forward migrations. Public pages need no login. Verified in a real browser. |
+| 2 SSO + automatic profile import | **Done (code); real SSO blocked** | Verified contract; provenance, idempotent sync, ownership and conflict policy, audit; 6 sync/mapper tests. Full browser journey verified against a local MOCK provider (`scripts/mock-ait.mts`). Real SSO blocked on AI Tathastu registering the `avsar` client. |
+| 3 Recommended for You | Done | Post-login page `/app/discover`: Recommended for You first, then Jobs / Internships / Freelance & Gigs / All with search and sort. Ranks by match; only failed hard requirements sink (unknown is not a penalty), keeps eligibility separate from match, and shows a limited-data notice. Missing data is unknown. No dedicated engine tests yet beyond the existing matching tests. |
+| 4 Contextual apply + return-after-auth | Done | Apply asks only for unknown hard-requirement answers (graduation year, work authorization) and saves them to the profile; signed-out Save/Apply return after sign-in (`?intent=save` saves idempotently). |
+| 5 Admin Studio / imports | Existing; publish flow, status update and least privilege re-verified in browser | Imports land in review and never auto-publish (existing tests). |
 | 6 Employer Studio | Not started | |
 | 7 AI features (provider abstraction) | Not started | |
 | 8 Additional categories | Not started | |

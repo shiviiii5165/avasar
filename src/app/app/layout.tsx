@@ -11,7 +11,7 @@ export const metadata: Metadata = { robots: { index: false } };
 
 const PRIMARY = [
   { href: "/app", label: "Home", icon: Home },
-  { href: "/app/discover", label: "Discover", icon: Compass },
+  { href: "/app/discover", label: "Opportunities", icon: Compass },
   { href: "/app/applications", label: "Applications", icon: FileText },
   { href: "/app/saved", label: "Saved", icon: Bookmark },
   { href: "/app/profile", label: "Profile", icon: User },

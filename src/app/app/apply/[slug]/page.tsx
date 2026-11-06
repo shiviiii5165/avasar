@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { applyAction } from "@/app/actions/candidate";
-import { ActionForm, Textarea } from "@/components/forms/action-form";
+import { applyAction, contextAnswersAction } from "@/app/actions/candidate";
+import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
 import { EligibilityPanel } from "@/components/opportunity/fit-panel";
 import { Badge, buttonClass, Card, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
@@ -30,6 +30,10 @@ export default async function ApplyPage({ params }: { params: Promise<{ slug: st
   }
   const match = matchOpportunity(toCandidateFacts(profile), toFacts(o));
   const p = profile.profile;
+  // Ask only for what this opportunity's hard requirements need and the profile doesn't say (unknown, not failed).
+  const unknown = new Set(match.eligibility.checks.filter((c) => c.outcome === "unknown").map((c) => c.key));
+  const askYear = unknown.has("graduation_year");
+  const askAuth = unknown.has("work_authorization");
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -42,6 +46,24 @@ export default async function ApplyPage({ params }: { params: Promise<{ slug: st
       <EligibilityPanel result={match.eligibility} />
       {match.eligibility.status === "ineligible" && (
         <p role="alert" className="rounded-md bg-warning-soft px-4 py-3 text-sm text-warning">Your profile doesn&apos;t meet at least one mandatory requirement. You can still apply if you believe your profile is out of date, but the organization will see the same information.</p>
+      )}
+
+      {(askYear || askAuth) && (
+        <Card>
+          <h2 className="text-lg font-semibold text-navy">One more detail for this opportunity</h2>
+          <p className="mt-1 text-sm text-muted">Your profile doesn&apos;t include this yet, and the organization requires it. Your answer is saved to your Avsar profile so you won&apos;t be asked again.</p>
+          <ActionForm action={contextAnswersAction.bind(null, slug)} submitLabel="Save answer" className="mt-4">
+            {askYear && <Input name="graduationYear" label="Graduation year (expected is fine)" type="number" inputMode="numeric" min={1950} max={2045} required />}
+            {askAuth && (
+              <Select name="workAuthorizedIndia" label="Are you authorized to work in India?" defaultValue="" required>
+                <option value="" disabled>Choose</option><option value="yes">Yes</option><option value="no">No</option>
+              </Select>
+            )}
+          </ActionForm>
+        </Card>
+      )}
+      {unknown.has("education") && (
+        <p className="text-sm text-muted">This opportunity has an education requirement your shared profile doesn&apos;t show. <Link href="/app/profile" className="font-semibold text-purple hover:underline">Add or confirm your education</Link>, or apply anyway.</p>
       )}
 
       <Card>
