@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Avsar local data (embedded dev database, private uploads)
+/.data/
+.env*
+!.env.example
+
