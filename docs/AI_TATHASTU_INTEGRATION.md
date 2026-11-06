@@ -27,7 +27,7 @@ Tests: `src/server/services/profile-sync.test.ts` covers idempotency, Avsar edit
 ## Blocker: AI Tathastu must register an `avsar` client
 Real SSO cannot work until AI Tathastu adds Avsar to its hard-coded `INTEGRATION_CLIENTS`. This is a change on AI Tathastu's side, which this work does not make. Change request:
 - Add `"avsar"` to the `IntegrationClientId` type and the `INTEGRATION_CLIENTS` map (display name "Avsar", allowed redirect URI `https://<avsar-host>/api/auth/callback`, plus localhost for dev).
-- Add `INTEGRATION_AVSAR_CLIENT_SECRET` (and the enable flag) to AI Tathastu's environment, set by the AI Tathastu owner. The secret is shared with Avsar's `TATHASTU_CLIENT_SECRET` through the hosting secret store, never through chat or git.
+- Add `INTEGRATION_AVSAR_CLIENT_SECRET` (and the enable flag) to AI Tathastu's environment, set by the AI Tathastu owner. The secret is shared with Avsar's `AVSAR_AIT_CLIENT_SECRET` (with `AVSAR_AIT_CLIENT_ID=avsar`, `AVSAR_AIT_BASE_URL`) through the hosting secret store, never through chat or git.
 - Scopes needed: profile:read with the education, skills, projects, experience and achievements sections (the user chooses on the consent screen).
 
 Until then, local development uses the **simulated** dev sign-in (`AVSAR_DEV_AUTH=1`, provider `dev`, labelled as simulated, disabled in production). It is not SSO.
