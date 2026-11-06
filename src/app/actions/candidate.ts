@@ -14,12 +14,15 @@ import { ApplyError, changeApplicationStatus, submitApplication } from "@/server
 import { deleteResume, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
 import { deleteSavedSearch, saveSearch, toggleSaved } from "@/server/services/engagement";
 import { markAllRead, NOTIFICATION_KINDS, setPreference, type NotificationKind } from "@/server/services/notifications";
-import { getOpportunityBySlug } from "@/server/services/opportunities";
+import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
+import { matchOpportunity } from "@/server/domain/matching";
+import { requirementQuestions, unansweredRequirements } from "@/server/domain/requirements";
 import {
   addSectionItem,
   eraseCandidateData,
   loadProfile,
   profileSchemas,
+  toCandidateFacts,
   removeSectionItem,
   replaceSkills,
   setSkillLevel,
@@ -129,26 +132,6 @@ export async function removeSectionAction(section: Section, id: string) {
   revalidatePath("/app", "layout");
 }
 
-/**
- * Answers asked only in the context of an application, when the listing needs them and AI Tathastu didn't
- * supply them. Optional: skipping leaves eligibility "unknown", never "failed".
- */
-export async function contextAnswersAction(slug: string, _: ActionState, fd: FormData): Promise<ActionState> {
-  const s = await requireCandidate(`/app/apply/${slug}`);
-  const parsed = z
-    .object({
-      graduationYear: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().int().min(1950).max(2045).optional()),
-      workAuthorizedIndia: z.preprocess((v) => (v === "yes" ? true : v === "no" ? false : undefined), z.boolean().optional()),
-    })
-    .safeParse(formObject(fd));
-  if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
-  const data: Record<string, unknown> = {};
-  if (parsed.data.graduationYear !== undefined) data.graduationYear = parsed.data.graduationYear;
-  if (parsed.data.workAuthorizedIndia !== undefined) data.workAuthorizedIndia = parsed.data.workAuthorizedIndia;
-  if (Object.keys(data).length) await updateProfileFields(await getDb(), s.profileId, data as never);
-  revalidatePath(`/app/apply/${slug}`);
-  return { ok: true, message: "Saved to your Avsar profile." };
-}
 // ─── Resumes ───────────────────────────────────────────────────────────────
 export async function uploadResumeAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCandidate();
@@ -189,6 +172,21 @@ export async function applyAction(slug: string, _: ActionState, fd: FormData): P
   const answers: Record<string, string> = {};
   for (const q of opp.questions) answers[q.key] = String(fd.get(`q_${q.key}`) ?? "").slice(0, 4000);
   const key = z.string().min(10).max(80).catch(randomUUID()).parse(fd.get("idempotencyKey"));
+  // Requirement questions are recomputed here from the opportunity and profile; the browser can't choose them.
+  const requiredKeys = requirementQuestions(matchOpportunity(toCandidateFacts(profile), toFacts(opp)).eligibility);
+  const req = z
+    .object({
+      graduationYear: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number({ message: "Enter a year" }).int().min(1950, "Enter a year between 1950 and 2045").max(2045, "Enter a year between 1950 and 2045").optional()),
+      educationLevel: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.enum(["secondary", "higher_secondary", "diploma", "bachelors", "masters", "doctorate"], { message: "Choose your qualification" }).optional()),
+      workAuthorizedIndia: z.preprocess((v) => (v === "yes" ? true : v === "no" ? false : undefined), z.boolean().optional()),
+    })
+    .safeParse({ graduationYear: fd.get("req_graduationYear"), educationLevel: fd.get("req_educationLevel"), workAuthorizedIndia: fd.get("req_workAuthorizedIndia") });
+  if (!req.success) return { ok: false, errors: Object.fromEntries(Object.entries(fieldErrors(req.error)).map(([k, v]) => [`req_${k}`, v])) };
+  const missingReq = unansweredRequirements(requiredKeys, req.data);
+  if (missingReq.length) {
+    const field = { graduation_year: "req_graduationYear", education: "req_educationLevel", work_authorization: "req_workAuthorizedIndia" } as const;
+    return { ok: false, errors: Object.fromEntries(missingReq.map((k) => [field[k], "This opportunity requires an answer."])) };
+  }
   try {
     const { application } = await submitApplication(db, profile, s.identity.id, {
       opportunityId: opp.id,
@@ -196,6 +194,9 @@ export async function applyAction(slug: string, _: ActionState, fd: FormData): P
       answers,
       consent: fd.get("consent") === "on",
       idempotencyKey: `${s.profileId}:${key}`,
+      requiredKeys,
+      requirementAnswers: req.data,
+      saveAnswersToProfile: fd.get("saveAnswers") === "on",
     });
     revalidatePath("/app", "layout");
     redirect(`/app/applications/${application.id}?submitted=1`);

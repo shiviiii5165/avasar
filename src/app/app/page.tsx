@@ -13,7 +13,8 @@ import { listApplicationsForProfile } from "@/server/services/applications";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
 import { listSaved } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
-import { listOpenOpportunities } from "@/server/services/opportunities";
+import { listOpenOpportunities, toFacts } from "@/server/services/opportunities";
+import { recommend } from "@/server/domain/recommend";
 import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Home" };
@@ -33,13 +34,10 @@ export default async function CandidateHome() {
   const facts = await candidateFactsFor(db, session.profileId);
   const matches = matchAll(facts, open);
   const applied = new Set(apps.map((a) => a.opportunity.id));
-  const recommended = open
-    .filter((o) => !applied.has(o.id) && matches.get(o.id)?.eligibility.status !== "ineligible")
-    .sort((a, b) => (matches.get(b.id)?.score ?? -1) - (matches.get(a.id)?.score ?? -1))
-    .slice(0, 3);
+  const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: applied }) : { picks: [], limited: true };
+  const recommended = rec.picks.map((r) => r.item);
   // Thin profile: recommendations rest on little data, so say so instead of implying precision.
-  const avgCoverage = open.length ? open.reduce((s, o) => s + (matches.get(o.id)?.completeness ?? 0), 0) / open.length : 0;
-  const limited = avgCoverage < 0.4;
+  const limited = rec.limited;
 
   const deadlines = upcomingDeadlines(saved, applied, new Date());
 

@@ -46,8 +46,12 @@ export function toCandidateFacts(p: LoadedProfile): CandidateFacts {
   return {
     education: [
       ...p.education.map((e) => ({ level: (e.level as EducationLevel | null) ?? null, graduationYear: e.graduationYear, field: e.field })),
-      // Avsar-owned answer given in the context of an application (AI Tathastu didn't supply it).
-      ...(p.profile.graduationYear && !p.education.some((e) => e.graduationYear) ? [{ level: null, graduationYear: p.profile.graduationYear, field: null }] : []),
+      // Avsar-owned answers given in the context of an application (only used where imported records lack them).
+      ...((() => {
+        const level = p.profile.educationLevel && !p.education.some((e) => e.level) ? (p.profile.educationLevel as EducationLevel) : null;
+        const year = p.profile.graduationYear && !p.education.some((e) => e.graduationYear) ? p.profile.graduationYear : null;
+        return level || year ? [{ level, graduationYear: year, field: null }] : [];
+      })()),
     ],
     experiences: p.experiences.map((e) => ({ kind: e.kind, startDate: e.startDate, endDate: e.endDate, current: e.current })),
     skills: p.skills.map((s) => ({ name: s.name, level: (s.level as SkillLevel | null) ?? null, evidenceCount: s.evidenceCount })),

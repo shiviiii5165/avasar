@@ -3,13 +3,14 @@ import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { applyAction, contextAnswersAction } from "@/app/actions/candidate";
+import { applyAction } from "@/app/actions/candidate";
 import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
 import { EligibilityPanel } from "@/components/opportunity/fit-panel";
 import { Badge, buttonClass, Card, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { matchOpportunity } from "@/server/domain/matching";
+import { EDUCATION_LEVELS, requirementQuestions } from "@/server/domain/requirements";
 import { CONSENT_TEXT, listApplicationsForProfile } from "@/server/services/applications";
 import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
 import { loadProfile, toCandidateFacts } from "@/server/services/profiles";
@@ -31,9 +32,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ slug: st
   const match = matchOpportunity(toCandidateFacts(profile), toFacts(o));
   const p = profile.profile;
   // Ask only for what this opportunity's hard requirements need and the profile doesn't say (unknown, not failed).
-  const unknown = new Set(match.eligibility.checks.filter((c) => c.outcome === "unknown").map((c) => c.key));
-  const askYear = unknown.has("graduation_year");
-  const askAuth = unknown.has("work_authorization");
+  const ask = new Set(requirementQuestions(match.eligibility));
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -48,27 +47,28 @@ export default async function ApplyPage({ params }: { params: Promise<{ slug: st
         <p role="alert" className="rounded-md bg-warning-soft px-4 py-3 text-sm text-warning">Your profile doesn&apos;t meet at least one mandatory requirement. You can still apply if you believe your profile is out of date, but the organization will see the same information.</p>
       )}
 
-      {(askYear || askAuth) && (
-        <Card>
-          <h2 className="text-lg font-semibold text-navy">One more detail for this opportunity</h2>
-          <p className="mt-1 text-sm text-muted">Your profile doesn&apos;t include this yet, and the organization requires it. Your answer is saved to your Avsar profile so you won&apos;t be asked again.</p>
-          <ActionForm action={contextAnswersAction.bind(null, slug)} submitLabel="Save answer" className="mt-4">
-            {askYear && <Input name="graduationYear" label="Graduation year (expected is fine)" type="number" inputMode="numeric" min={1950} max={2045} required />}
-            {askAuth && (
-              <Select name="workAuthorizedIndia" label="Are you authorized to work in India?" defaultValue="" required>
-                <option value="" disabled>Choose</option><option value="yes">Yes</option><option value="no">No</option>
-              </Select>
-            )}
-          </ActionForm>
-        </Card>
-      )}
-      {unknown.has("education") && (
-        <p className="text-sm text-muted">This opportunity has an education requirement your shared profile doesn&apos;t show. <Link href="/app/profile" className="font-semibold text-purple hover:underline">Add or confirm your education</Link>, or apply anyway.</p>
-      )}
-
       <Card>
         <ActionForm action={applyAction.bind(null, slug)} submitLabel="Submit application">
           <input type="hidden" name="idempotencyKey" value={randomUUID()} />
+          {ask.size > 0 && (
+            <fieldset className="space-y-4 rounded-lg border border-purple/30 bg-purple-soft/40 p-4">
+              <legend className="px-1 text-sm font-semibold text-navy">Required by this opportunity</legend>
+              <p className="text-sm text-muted">The organization requires {ask.size === 1 ? "this detail" : "these details"}, and your shared profile doesn&apos;t include {ask.size === 1 ? "it" : "them"}. Everything else comes from your profile.</p>
+              {ask.has("education") && (
+                <Select name="req_educationLevel" label="Highest education qualification (completed or in progress)" defaultValue="" required>
+                  <option value="" disabled>Choose</option>
+                  {EDUCATION_LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </Select>
+              )}
+              {ask.has("graduation_year") && <Input name="req_graduationYear" label="Graduation year (expected is fine)" type="number" inputMode="numeric" min={1950} max={2045} required />}
+              {ask.has("work_authorization") && (
+                <Select name="req_workAuthorizedIndia" label="Are you authorized to work in India?" defaultValue="" required>
+                  <option value="" disabled>Choose</option><option value="yes">Yes</option><option value="no">No</option>
+                </Select>
+              )}
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="saveAnswers" defaultChecked className="mt-0.5 size-4 accent-purple" /> Also save {ask.size === 1 ? "this answer" : "these answers"} to my Avsar profile so I&apos;m not asked again. (Your AI Tathastu profile isn&apos;t changed.)</label>
+            </fieldset>
+          )}
           <fieldset className="space-y-2">
             <legend className="text-sm font-semibold text-navy">Resume to share</legend>
             {profile.resumes.length ? (

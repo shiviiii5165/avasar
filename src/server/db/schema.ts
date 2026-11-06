@@ -127,6 +127,8 @@ export const candidateProfiles = pgTable("candidate_profiles", {
   portfolioUrl: text("portfolio_url"),
   /** Avsar-owned answer to an in-context question (e.g. an opportunity needed it and AI Tathastu didn't supply it). */
   graduationYear: integer("graduation_year"),
+  /** Avsar-owned answer to an education requirement, given in an application when the import has no level. */
+  educationLevel: text("education_level"),
   // ── AI Tathastu profile sync (source-owned data lives in the section tables with source = 'ai_tathastu') ──
   aitSyncedAt: timestamp("ait_synced_at", { withTimezone: true }),
   aitSyncStatus: text("ait_sync_status").$type<"never" | "ok" | "partial" | "failed">().notNull().default("never"),

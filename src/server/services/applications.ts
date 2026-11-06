@@ -1,10 +1,11 @@
+import { describeAnswers, REQUIREMENT_LABEL, unansweredRequirements, type RequirementAnswers, type RequirementKey } from "../domain/requirements";
 import "server-only";
 
 import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { audit } from "../audit";
 import type { Db } from "../db/client";
-import { applicationAnswers, applicationEvents, applications, documents, opportunities, resumes } from "../db/schema";
+import { applicationAnswers, applicationEvents, applications, candidateProfiles, documents, opportunities, resumes } from "../db/schema";
 import { canTransitionApplication, isPubliclyVisible, type Actor, type ApplicationStatus } from "../domain/workflows";
 import { notify } from "./notifications";
 import type { LoadedProfile } from "./profiles";
@@ -24,6 +25,11 @@ export interface SubmitInput {
   answers: Record<string, string>;
   consent: boolean;
   idempotencyKey: string;
+  /** Requirement checks that were unknown for this candidate (computed server-side from the opportunity). */
+  requiredKeys?: RequirementKey[];
+  requirementAnswers?: RequirementAnswers;
+  /** The candidate chose to keep these answers on their Avsar profile. Never touches AI Tathastu-owned records. */
+  saveAnswersToProfile?: boolean;
 }
 
 /**
@@ -65,8 +71,15 @@ export async function submitApplication(db: Db, profile: LoadedProfile, identity
     const missing = opp.questions.filter((q) => q.required && !input.answers[q.key]?.trim());
     if (missing.length) throw new ApplyError("ANSWERS", `Please answer: ${missing.map((q) => q.label).join(", ")}`);
 
+    const requiredKeys = input.requiredKeys ?? [];
+    const reqAnswers = input.requirementAnswers ?? {};
+    const unanswered = unansweredRequirements(requiredKeys, reqAnswers);
+    if (unanswered.length) throw new ApplyError("ANSWERS", `Please answer: ${unanswered.map((k) => REQUIREMENT_LABEL[k]).join(", ")}`);
+    const confirmed = describeAnswers(requiredKeys, reqAnswers);
+
     const p = profile.profile;
     const snapshot = {
+      requirementAnswers: confirmed,
       fullName: p.fullName, headline: p.headline, city: p.city, region: p.region, careerStage: p.careerStage,
       education: profile.education.map(({ institution, level, degree, field, graduationYear }) => ({ institution, level, degree, field, graduationYear })),
       experiences: profile.experiences.map(({ organization, title, kind, startDate, endDate, current }) => ({ organization, title, kind, startDate, endDate, current })),
@@ -84,7 +97,15 @@ export async function submitApplication(db: Db, profile: LoadedProfile, identity
       })
       .returning();
     const answers = opp.questions.filter((q) => input.answers[q.key]?.trim()).map((q) => ({ applicationId: app.id, questionKey: q.key, question: q.label, answer: input.answers[q.key].trim().slice(0, 4000) }));
+    for (const c of confirmed) answers.push({ applicationId: app.id, questionKey: `requirement:${c.key}`, question: c.question, answer: c.answer });
     if (answers.length) await tx.insert(applicationAnswers).values(answers);
+    if (input.saveAnswersToProfile && confirmed.length) {
+      const upd: Record<string, unknown> = { updatedAt: now };
+      if (requiredKeys.includes("graduation_year")) upd.graduationYear = reqAnswers.graduationYear;
+      if (requiredKeys.includes("education")) upd.educationLevel = reqAnswers.educationLevel;
+      if (requiredKeys.includes("work_authorization")) upd.workAuthorizedIndia = reqAnswers.workAuthorizedIndia;
+      await tx.update(candidateProfiles).set(upd).where(eq(candidateProfiles.id, p.id));
+    }
     await tx.insert(applicationEvents).values({ applicationId: app.id, fromStatus: null, toStatus: "submitted", actorIdentityId: identityId, actorRole: "candidate" });
     await audit(tx, { actorId: identityId, actorRole: "candidate", action: "application.submit", targetType: "application", targetId: app.id, metadata: { opportunityId: opp.id } });
     return { application: app, opportunity: opp };

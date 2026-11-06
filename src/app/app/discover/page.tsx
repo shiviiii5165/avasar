@@ -5,16 +5,15 @@ import { SyncStatusCard } from "@/components/profile/sync-status";
 import { buttonClass, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
+import { rankForBrowse, recommend } from "@/server/domain/recommend";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
-import { listOpenOpportunities, searchOpportunities, searchSchema } from "@/server/services/opportunities";
+import { listOpenOpportunities, searchOpportunities, searchSchema, toFacts } from "@/server/services/opportunities";
 import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Opportunities for you" };
 
 const TABS = [["", "All Opportunities"], ["job", "Jobs"], ["internship", "Internships"], ["gig", "Freelance & Gigs"]] as const;
-// Unknown eligibility is not a penalty: only a failed hard requirement (or a closed listing) sinks a card.
-const sinks = (s: string) => (s === "ineligible" || s === "unavailable" ? 1 : 0);
 
 type SP = Promise<{ category?: string; q?: string; sort?: string; page?: string }>;
 
@@ -40,19 +39,10 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   ]);
   const matches = matchAll(facts, [...open, ...result.items]);
 
-  const recommended = open
-    .filter((o) => matches.get(o.id)?.eligibility.status !== "ineligible")
-    .sort((a, b) => (matches.get(b.id)?.score ?? -1) - (matches.get(a.id)?.score ?? -1))
-    .slice(0, 3);
-  const avgCoverage = open.length ? open.reduce((s, o) => s + (matches.get(o.id)?.completeness ?? 0), 0) / open.length : 0;
-
-  const items = byMatch
-    ? [...result.items].sort((a, b) => {
-        const ma = matches.get(a.id)!;
-        const mb = matches.get(b.id)!;
-        return sinks(ma.eligibility.status) - sinks(mb.eligibility.status) || (mb.score ?? -1) - (ma.score ?? -1);
-      })
-    : result.items;
+  const asCandidates = (list: typeof open) => list.map((o) => ({ id: o.id, item: o, facts: toFacts(o) }));
+  const rec = facts ? recommend(facts, asCandidates(open)) : { picks: [], limited: true };
+  const recommended = rec.picks.map((r) => r.item);
+  const items = byMatch && facts ? rankForBrowse(facts, asCandidates(result.items)).map((r) => r.item) : result.items;
 
   const href = (over: Record<string, string | undefined>) => {
     const u = new URLSearchParams();
@@ -70,7 +60,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
 
       <section aria-labelledby="rec-title">
         <h2 id="rec-title" className="mb-3 text-xl font-semibold text-navy">Recommended for You</h2>
-        {avgCoverage < 0.4 && (
+        {rec.limited && (
           <p className="mb-3 rounded-md bg-surface px-3 py-2 text-sm text-muted">
             Your shared profile has little to match on yet, so these are broadly relevant picks. Sharing skills or education with Avsar on AI Tathastu makes them more personal.
           </p>
