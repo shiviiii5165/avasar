@@ -1,21 +1,22 @@
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, Compass, FileCheck2, ListChecks, ShieldCheck, Sparkles } from "lucide-react";
 
+import { ClimbScene } from "@/components/brand/climb-scene";
 import { Doorway, Leaves, Waves } from "@/components/brand/doorway";
 import { BrandSignature } from "@/components/site/site-footer";
 import { buttonClass } from "@/components/ui";
 
 const STEPS = [
-  { icon: Compass, title: "Discover", body: "Jobs, internships and gigs in one place, filtered to what fits your life." },
-  { icon: ListChecks, title: "Understand", body: "See if you qualify and why a listing matches you, in plain words." },
-  { icon: Sparkles, title: "Improve", body: "Find the skills you're missing and the next step that helps most." },
-  { icon: FileCheck2, title: "Apply & track", body: "Apply with one profile and follow every application to an outcome." },
+  { icon: Compass, title: "Find", body: "Look at jobs and internships. All in one place." },
+  { icon: ListChecks, title: "Check", body: "We tell you if you can apply, and why it is a good fit for you." },
+  { icon: Sparkles, title: "Learn", body: "Missing a skill? We show you what to learn next." },
+  { icon: FileCheck2, title: "Apply", body: "Apply with one profile. See what happens next, every time." },
 ];
 
 const PROMISES = [
-  { icon: ShieldCheck, title: "Reviewed before published", body: "Every listing is checked by a person before it goes live. Nothing is auto-published." },
-  { icon: BadgeCheck, title: "Free for candidates", body: "Discovering and applying will always be free. We never charge you to apply." },
-  { icon: Sparkles, title: "Explainable, not a black box", body: "Every recommendation shows its reasons. Software never rejects you on its own." },
+  { icon: ShieldCheck, text: "A real person checks every job before you see it. No fake posts." },
+  { icon: BadgeCheck, text: "Free for you. Today, tomorrow, always. You never pay to apply." },
+  { icon: Sparkles, text: "We always tell you why. No computer says “no” to you on its own." },
 ];
 
 export default function HomePage() {
@@ -46,8 +47,8 @@ export default function HomePage() {
       </section>
 
       <section aria-labelledby="journey-title" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-        <h2 id="journey-title" className="font-serif text-3xl text-navy sm:text-4xl">From discovering to getting there</h2>
-        <p className="mt-2 max-w-2xl text-muted">Avsar is built for students, freshers and early-career people who don&apos;t have a network to lean on.</p>
+        <h2 id="journey-title" className="font-serif text-3xl text-navy sm:text-4xl">Four easy steps to your job</h2>
+        <p className="mt-2 max-w-2xl text-muted">No contacts? No problem. Avsar is for students and freshers who are starting out on their own.</p>
         <ol className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s, i) => (
             <li key={s.title} className="rounded-xl border border-line bg-surface p-6 shadow-card">
@@ -62,15 +63,25 @@ export default function HomePage() {
 
       <section aria-labelledby="promise-title" className="bg-ivory-deep/70">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <h2 id="promise-title" className="font-serif text-3xl text-navy sm:text-4xl">Trust before volume</h2>
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
-            {PROMISES.map((p) => (
-              <div key={p.title} className="rounded-xl bg-surface p-6 shadow-card">
-                <p.icon aria-hidden className="size-6 text-purple" />
-                <h3 className="mt-3 text-lg font-semibold text-navy">{p.title}</h3>
-                <p className="mt-1 text-sm text-muted">{p.body}</p>
-              </div>
-            ))}
+          <div className="grid items-center gap-12 lg:grid-cols-2">
+            <div>
+              <h2 id="promise-title" className="sr-only">Why you can trust Avsar</h2>
+              <figure>
+                <blockquote className="font-serif text-3xl leading-snug text-navy sm:text-4xl">
+                  &ldquo;You don&apos;t need to know someone to become someone. <em className="italic text-orange">Your hard work is your introduction.</em>&rdquo;
+                </blockquote>
+                <svg aria-hidden viewBox="0 0 220 14" className="mt-3 block h-3 w-44 text-orange"><path d="M3 10 C 60 2, 140 2, 217 8" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
+              </figure>
+              <ul className="mt-8 space-y-4">
+                {PROMISES.map((p) => (
+                  <li key={p.text} className="flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-purple-soft text-purple"><p.icon aria-hidden className="size-5" /></span>
+                    <p className="pt-1.5 text-navy-soft">{p.text}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <ClimbScene className="mx-auto w-full max-w-md" />
           </div>
         </div>
       </section>

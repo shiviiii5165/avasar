@@ -144,6 +144,44 @@ body {
   70% { opacity: 1; transform: translate(0, 0) scale(1); }
   84%, 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.25); }
 }
+/* Climb scene: hop up four steps to the briefcase (8s loop). Landings at 4%, 18%, 34%, 50%. */
+@keyframes climb-person {
+  0% { opacity: 0; transform: translate(75px, 250px); }
+  4% { opacity: 1; transform: translate(75px, 250px); }
+  11% { transform: translate(110px, 212px); }
+  18% { transform: translate(145px, 210px); }
+  26% { transform: translate(180px, 172px); }
+  34% { transform: translate(215px, 170px); }
+  42% { transform: translate(250px, 132px); }
+  50% { transform: translate(285px, 130px); }
+  54% { transform: translate(285px, 122px); }
+  58%, 90% { opacity: 1; transform: translate(285px, 130px); }
+  96%, 100% { opacity: 0; transform: translate(285px, 130px); }
+}
+@keyframes climb-lit-0 { 0%, 3% { opacity: 0; } 5%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+@keyframes climb-lit-1 { 0%, 17% { opacity: 0; } 19%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+@keyframes climb-lit-2 { 0%, 33% { opacity: 0; } 35%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+@keyframes climb-lit-3 { 0%, 49% { opacity: 0; } 51%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+@keyframes climb-glow { 0%, 52% { opacity: 0; transform: scale(0.6); } 60% { opacity: 0.9; transform: scale(1.1); } 75% { opacity: 0.6; transform: scale(1); } 90% { opacity: 0.9; transform: scale(1.08); } 100% { opacity: 0; transform: scale(0.6); } }
+@keyframes climb-case { 0%, 52% { transform: translateY(0); } 57% { transform: translateY(-8px) rotate(-6deg); } 62%, 100% { transform: translateY(0); } }
+@keyframes climb-spark { 0%, 55% { opacity: 0; transform: scale(0); } 62% { opacity: 1; transform: scale(1.2); } 72% { opacity: 0.4; transform: scale(0.8); } 82% { opacity: 1; transform: scale(1.1); } 92%, 100% { opacity: 0; transform: scale(0); } }
+@keyframes climb-badge { 0%, 58% { opacity: 0; transform: translateY(10px) scale(0.6); } 64% { opacity: 1; transform: translateY(0) scale(1.06); } 68%, 90% { opacity: 1; transform: translateY(0) scale(1); } 96%, 100% { opacity: 0; transform: translateY(-6px) scale(0.95); } }
+@keyframes climb-arm { 0%, 55% { opacity: 0; } 60%, 88% { opacity: 1; } 94%, 100% { opacity: 0; } }
+
+.climb-person { animation: climb-person 8s ease-in-out infinite; }
+.climb-lit { opacity: 0; animation: 8s ease-out infinite; }
+.climb-lit-0 { animation-name: climb-lit-0; }
+.climb-lit-1 { animation-name: climb-lit-1; }
+.climb-lit-2 { animation-name: climb-lit-2; }
+.climb-lit-3 { animation-name: climb-lit-3; }
+.climb-glow { transform-box: fill-box; transform-origin: center; animation: climb-glow 8s ease-in-out infinite; }
+.climb-case { transform-box: fill-box; transform-origin: center bottom; animation: climb-case 8s ease-out infinite; }
+.climb-spark { transform-box: fill-box; transform-origin: center; animation: climb-spark 8s ease-in-out infinite; }
+.climb-spark-b { animation-delay: 0.15s; }
+.climb-spark-c { animation-delay: 0.3s; }
+.climb-badge { animation: climb-badge 8s var(--ease-out-soft) infinite; }
+.climb-arm { animation: climb-arm 8s ease-in-out infinite; }
+
 .door-card { opacity: 0; animation: door-card var(--door-cycle) var(--ease-out-soft) infinite; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -153,5 +191,8 @@ body {
   .door-spill { opacity: 0.7; transform: scaleX(0.7); }
   .door-seam { opacity: 0; }
   .door-card { animation: none !important; opacity: 1; transform: none; }
+  .climb-person, .climb-lit, .climb-glow, .climb-case, .climb-spark, .climb-badge, .climb-arm { animation: none !important; opacity: 1; }
+  .climb-person { transform: translate(285px, 130px); }
+  .climb-glow { opacity: 0.7; }
   *, *::before, *::after { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
