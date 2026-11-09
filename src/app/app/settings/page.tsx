@@ -21,7 +21,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" description="Privacy, email updates and your data. Each section saves on its own." />
 
       <Card>
         <h2 className="text-lg font-semibold text-navy">Profile visibility</h2>

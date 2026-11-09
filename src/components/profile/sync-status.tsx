@@ -22,6 +22,25 @@ export function SyncStatusCard({ status, syncedAt, error, provider, compact = fa
     );
   }
   const ok = status === "ok" || status === "partial";
+  if (compact) {
+    // One line for pages where the import is context, not the subject.
+    const when = syncedAt ? ` ${timeAgo(syncedAt)}` : "";
+    const text = {
+      ok: `Profile imported from AI Tathastu${when}.`,
+      partial: `Profile imported from AI Tathastu${when}. Some sections weren't shared.`,
+      failed: "Couldn't import your AI Tathastu profile. Matching uses what you added in Avsar.",
+      never: "Your AI Tathastu profile hasn't been imported yet.",
+    }[status as "ok" | "partial" | "failed" | "never"] ?? "Your AI Tathastu profile status is unknown.";
+    return (
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+        <span className="flex items-center gap-1.5">
+          {ok ? <CheckCircle2 aria-hidden className="size-4 shrink-0 text-success" /> : <CircleAlert aria-hidden className="size-4 shrink-0 text-warning" />}
+          {text}
+        </span>
+        <Link href="/app/profile" className="font-semibold text-purple hover:underline">{ok ? "View profile" : "Fix in profile"}</Link>
+      </p>
+    );
+  }
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3">
       <p className="flex items-start gap-2 text-sm">
@@ -33,12 +52,9 @@ export function SyncStatusCard({ status, syncedAt, error, provider, compact = fa
           {status === "never" && <>Your AI Tathastu profile hasn&apos;t been imported yet.</>}
         </span>
       </p>
-      {!compact && (
-        <a href={refresh} className={buttonClass("secondary", "sm")}>
-          <RefreshCw aria-hidden className="size-4" /> Refresh from AI Tathastu
-        </a>
-      )}
-      {compact && <Link href="/app/profile" className="text-sm font-semibold text-purple hover:underline">View profile</Link>}
+      <a href={refresh} className={buttonClass("secondary", "sm")}>
+        <RefreshCw aria-hidden className="size-4" /> Refresh from AI Tathastu
+      </a>
     </div>
   );
 }

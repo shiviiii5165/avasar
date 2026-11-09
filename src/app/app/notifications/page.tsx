@@ -16,6 +16,7 @@ export default async function NotificationsPage() {
     <div>
       <PageHeader
         title="Notifications"
+        description={unread ? `${items.filter((n) => !n.readAt).length} unread` : undefined}
         actions={unread ? <form action={markNotificationsReadAction}><button className={buttonClass("secondary", "sm")}>Mark all as read</button></form> : undefined}
       />
       {items.length === 0 ? (
@@ -23,10 +24,16 @@ export default async function NotificationsPage() {
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
           {items.map((n) => (
-            <li key={n.id} className={`p-4 ${n.readAt ? "" : "bg-purple-soft/40"}`}>
-              <p className={`text-sm ${n.readAt ? "text-navy-soft" : "font-semibold text-navy"}`}>{n.link ? <Link href={n.link} className="hover:underline">{n.title}</Link> : n.title}</p>
-              {n.body && <p className="mt-0.5 text-sm text-muted">{n.body}</p>}
-              <p className="mt-1 text-xs text-muted">{n.createdAt.toLocaleString("en-IN")}</p>
+            <li key={n.id} className={`flex gap-3 p-4 ${n.readAt ? "" : "bg-purple-soft/40"}`}>
+              <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${n.readAt ? "bg-transparent" : "bg-orange"}`} />
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm ${n.readAt ? "text-navy-soft" : "font-semibold text-navy"}`}>
+                  {!n.readAt && <span className="sr-only">Unread: </span>}
+                  {n.link ? <Link href={n.link} className="hover:underline">{n.title}</Link> : n.title}
+                </p>
+                {n.body && <p className="mt-0.5 text-sm text-muted">{n.body}</p>}
+                <p className="mt-1 text-xs text-muted">{n.createdAt.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+              </div>
             </li>
           ))}
         </ul>

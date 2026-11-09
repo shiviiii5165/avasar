@@ -64,8 +64,9 @@ export default async function CandidateHome() {
           <Link href="/app/discover" className="text-sm font-semibold text-purple hover:underline">See all</Link>
         </div>
         {limited && (
-          <p className="mb-3 rounded-md bg-surface px-3 py-2 text-sm text-muted">
-            Your shared profile has little to match on yet, so these are broadly relevant picks. Sharing skills or education with Avsar on AI Tathastu makes them more personal.
+          <p className="mb-3 text-sm text-muted">
+            Your profile has few details to match on, so these are general picks.{" "}
+            <Link href="/app/profile" className="font-semibold text-purple hover:underline">Add skills or education</Link> to make them personal.
           </p>
         )}
         {recommended.length ? (
@@ -132,7 +133,8 @@ export default async function CandidateHome() {
             <ul className="mt-3 space-y-2">
               {notes.map((n) => (
                 <li key={n.id} className="text-sm">
-                  {n.link ? <Link href={n.link} className={`hover:underline ${n.readAt ? "text-muted" : "font-medium text-navy"}`}>{n.title}</Link> : <span>{n.title}</span>}
+                  {!n.readAt && <span className="sr-only">Unread: </span>}
+                  {n.link ? <Link href={n.link} className={`hover:underline ${n.readAt ? "text-muted" : "font-medium text-navy"}`}>{n.title}</Link> : <span className={n.readAt ? "text-muted" : "font-medium text-navy"}>{n.title}</span>}
                 </li>
               ))}
             </ul>

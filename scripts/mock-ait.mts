@@ -8,7 +8,8 @@
  *  - ES256 access token: iss https://www.aitathastu.com, aud=client, sub, iat, exp 15 min, jti, scope profile:read, email, name, sv.
  *  - /api/integrations/jwks, /api/integrations/v1/profile (401 invalid_token after disconnect; unshared sections are
  *    null and listed in privacy.masked).
- * Test controls (mock only): POST /__mock/disconnect, POST /__mock/reset, POST /__mock/share?sections=a,b
+ * Test controls (mock only): POST /__mock/disconnect, POST /__mock/reset, POST /__mock/share?sections=a,b,
+ * POST /__mock/fail-profile?on=1|0 (profile endpoint answers 503, to exercise a failed import)
  *
  * Usage: npm run mock:ait  (port MOCK_AIT_PORT, default 3401). Refuses to run in production.
  */
@@ -35,6 +36,7 @@ const localJwks = createLocalJWKSet({ keys: [jwk] });
 const codes = new Map<string, { challenge: string; redirectUri: string; exp: number }>();
 let linked = false;
 let shared = new Set(["education", "skills", "projects", "experience", "achievements"]);
+let profileFails = false;
 
 const FULL = {
   education: [{ institution: "College of Engineering Pune", degree: "B.Tech", fieldOfStudy: "Computer Science", dates: "2022 - 2026", grade: "8.4 CGPA" }],
@@ -78,8 +80,10 @@ createServer(async (req, res) => {
   if (url.pathname.startsWith("/__mock/") && req.method === "POST") {
     if (url.pathname === "/__mock/disconnect") linked = false;
     if (url.pathname === "/__mock/reset") { linked = false; shared = new Set(Object.keys(FULL)); }
+    if (url.pathname === "/__mock/reset") profileFails = false;
     if (url.pathname === "/__mock/share") shared = new Set((url.searchParams.get("sections") ?? "").split(",").filter(Boolean));
-    return json(200, { linked, shared: [...shared] });
+    if (url.pathname === "/__mock/fail-profile") profileFails = url.searchParams.get("on") !== "0";
+    return json(200, { linked, shared: [...shared], profileFails });
   }
 
   if (url.pathname === "/integrations/authorize" || url.pathname === "/integrations/authorize/approve") {
@@ -136,6 +140,7 @@ createServer(async (req, res) => {
       await jwtVerify(bearer, localJwks, { issuer: ISSUER, audience: CLIENT_ID, algorithms: ["ES256"] });
     } catch { return json(401, { error: "invalid_token", message: "Missing, invalid or expired access token." }); }
     if (!linked) return json(401, { error: "invalid_token", message: "The user disconnected this app." });
+    if (profileFails) return json(503, { error: "unavailable", message: "Mock outage: profile service unavailable." });
     return json(200, profile());
   }
 

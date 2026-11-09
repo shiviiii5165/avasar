@@ -7,6 +7,68 @@ import type { SearchInput } from "@/server/services/opportunities";
 
 const select = `${inputClass} pr-8`;
 
+/** Filters beyond search/category/sort; shared by the public search and the signed-in Opportunities page. */
+export function FilterFields({ value }: { value: Partial<SearchInput> }) {
+  return (
+    <>
+      <div>
+        <label htmlFor="workMode" className="text-xs font-semibold text-navy">Work mode</label>
+        <select id="workMode" name="workMode" defaultValue={value.workMode ?? ""} className={select}>
+          <option value="">Any</option>
+          <option value="remote">Remote</option>
+          <option value="hybrid">Hybrid</option>
+          <option value="onsite">On-site</option>
+        </select>
+      </div>
+      <div>
+        <label htmlFor="location" className="text-xs font-semibold text-navy">Location</label>
+        <input id="location" name="location" defaultValue={value.location ?? ""} placeholder="City" className={inputClass} />
+      </div>
+      <div>
+        <label htmlFor="employmentType" className="text-xs font-semibold text-navy">Job type</label>
+        <select id="employmentType" name="employmentType" defaultValue={value.employmentType ?? ""} className={select}>
+          <option value="">Any</option>
+          <option value="full_time">Full-time</option>
+          <option value="part_time">Part-time</option>
+          <option value="contract">Contract</option>
+          <option value="temporary">Temporary</option>
+        </select>
+      </div>
+      <div>
+        <label htmlFor="maxExperience" className="text-xs font-semibold text-navy">Experience required</label>
+        <select id="maxExperience" name="maxExperience" defaultValue={value.maxExperience?.toString() ?? ""} className={select}>
+          <option value="">Any</option>
+          <option value="0">No experience needed</option>
+          <option value="1">Up to 1 year</option>
+          <option value="3">Up to 3 years</option>
+        </select>
+      </div>
+      <div>
+        <label htmlFor="minComp" className="text-xs font-semibold text-navy">Minimum pay (₹, same period as listing)</label>
+        <input id="minComp" name="minComp" type="number" min={0} inputMode="numeric" defaultValue={value.minComp ?? ""} className={inputClass} />
+      </div>
+      <div>
+        <label htmlFor="closingWithinDays" className="text-xs font-semibold text-navy">Deadline</label>
+        <select id="closingWithinDays" name="closingWithinDays" defaultValue={value.closingWithinDays?.toString() ?? ""} className={select}>
+          <option value="">Any time</option>
+          <option value="7">Closing within 7 days</option>
+          <option value="30">Closing within 30 days</option>
+        </select>
+      </div>
+    </>
+  );
+}
+
+export function ShowOnlyFields({ value }: { value: Partial<SearchInput> }) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-xs font-semibold text-navy">Show only</legend>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="verified" value="1" defaultChecked={value.verified === "1"} className="size-4 accent-purple" /> Verified or source-checked</label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="paid" value="1" defaultChecked={value.paid === "1"} className="size-4 accent-purple" /> Paid opportunities</label>
+    </fieldset>
+  );
+}
+
 /** Search and filters as a plain GET form: works without JavaScript; the URL is the state. */
 /** `categories`: only those with live listings (empty categories aren't offered). */
 export function OpportunityFilters({ value, action = "/opportunities", categories = ["job", "internship", "gig"] }: { value: Partial<SearchInput>; action?: string; categories?: string[] }) {
@@ -25,50 +87,7 @@ export function OpportunityFilters({ value, action = "/opportunities", categorie
             {categories.map((c) => <option key={c} value={c}>{categoryDef(c)?.plural ?? c}</option>)}
           </select>
         </div>
-        <div>
-          <label htmlFor="workMode" className="text-xs font-semibold text-navy">Work mode</label>
-          <select id="workMode" name="workMode" defaultValue={value.workMode ?? ""} className={select}>
-            <option value="">Any</option>
-            <option value="remote">Remote</option>
-            <option value="hybrid">Hybrid</option>
-            <option value="onsite">On-site</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="location" className="text-xs font-semibold text-navy">Location</label>
-          <input id="location" name="location" defaultValue={value.location ?? ""} placeholder="City" className={inputClass} />
-        </div>
-        <div>
-          <label htmlFor="employmentType" className="text-xs font-semibold text-navy">Job type</label>
-          <select id="employmentType" name="employmentType" defaultValue={value.employmentType ?? ""} className={select}>
-            <option value="">Any</option>
-            <option value="full_time">Full-time</option>
-            <option value="part_time">Part-time</option>
-            <option value="contract">Contract</option>
-            <option value="temporary">Temporary</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="maxExperience" className="text-xs font-semibold text-navy">Experience required</label>
-          <select id="maxExperience" name="maxExperience" defaultValue={value.maxExperience?.toString() ?? ""} className={select}>
-            <option value="">Any</option>
-            <option value="0">No experience needed</option>
-            <option value="1">Up to 1 year</option>
-            <option value="3">Up to 3 years</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="minComp" className="text-xs font-semibold text-navy">Minimum pay (₹, same period as listing)</label>
-          <input id="minComp" name="minComp" type="number" min={0} inputMode="numeric" defaultValue={value.minComp ?? ""} className={inputClass} />
-        </div>
-        <div>
-          <label htmlFor="closingWithinDays" className="text-xs font-semibold text-navy">Deadline</label>
-          <select id="closingWithinDays" name="closingWithinDays" defaultValue={value.closingWithinDays?.toString() ?? ""} className={select}>
-            <option value="">Any time</option>
-            <option value="7">Closing within 7 days</option>
-            <option value="30">Closing within 30 days</option>
-          </select>
-        </div>
+        <FilterFields value={value} />
         <div>
           <label htmlFor="sort" className="text-xs font-semibold text-navy">Sort by</label>
           <select id="sort" name="sort" defaultValue={value.sort ?? "newest"} className={select}>
@@ -78,11 +97,7 @@ export function OpportunityFilters({ value, action = "/opportunities", categorie
           </select>
         </div>
       </div>
-      <fieldset className="space-y-2">
-        <legend className="text-xs font-semibold text-navy">Show only</legend>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="verified" value="1" defaultChecked={value.verified === "1"} className="size-4 accent-purple" /> Verified or source-checked</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="paid" value="1" defaultChecked={value.paid === "1"} className="size-4 accent-purple" /> Paid opportunities</label>
-      </fieldset>
+      <ShowOnlyFields value={value} />
       <div className="flex gap-2">
         <button type="submit" className={buttonClass("primary", "md", "flex-1")}>Apply filters</button>
         <Link href={action} className={buttonClass("ghost", "md")}>Reset</Link>

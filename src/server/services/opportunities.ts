@@ -43,7 +43,8 @@ export function publicVisibility(now = new Date()): SQL {
   return and(eq(opportunities.status, "published"), or(isNull(opportunities.deadline), gt(opportunities.deadline, now)))!;
 }
 
-export async function searchOpportunities(db: Db, input: SearchInput, now = new Date()) {
+/** WHERE clause shared by the paginated search and the personalized (ranked) search, so both filter identically. */
+function searchFilter(db: Db, input: SearchInput, now: Date) {
   const where: SQL[] = [publicVisibility(now)];
   if (input.q) {
     const term = `%${input.q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
@@ -59,15 +60,39 @@ export async function searchOpportunities(db: Db, input: SearchInput, now = new 
   if (input.verified) where.push(inArray(opportunities.verification, ["source_verified", "org_verified"]));
   if (input.paid) where.push(eq(opportunities.unpaid, false));
   if (input.closingWithinDays) where.push(sql`${opportunities.deadline} <= ${new Date(now.getTime() + input.closingWithinDays * 86_400_000)}`);
+  return and(...where)!;
+}
 
+export async function searchOpportunities(db: Db, input: SearchInput, now = new Date()) {
   const order =
     input.sort === "deadline" ? [sql`${opportunities.deadline} asc nulls last`, asc(opportunities.id)] : [desc(opportunities.publishedAt), asc(opportunities.id)];
-  const filter = and(...where);
+  const filter = searchFilter(db, input, now);
   const [rows, [{ total }]] = await Promise.all([
     db.select().from(opportunities).where(filter).orderBy(...order).limit(PAGE_SIZE).offset((input.page - 1) * PAGE_SIZE),
     db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
   ]);
   return { items: await withDetails(db, rows), total, page: input.page, pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+}
+
+/** Upper bound on listings ranked per request (server memory only; the page sent to the browser is PAGE_SIZE). */
+export const RANK_LIMIT = 500;
+
+/**
+ * "Best match" search: the same filters as searchOpportunities, but the WHOLE filtered set (up to RANK_LIMIT,
+ * newest first) is ranked with `rank` before paging, so a strong match on what would be page 2 by date
+ * still comes first. Matching runs in TypeScript (eligibility rules, skills, education), so it can't be a
+ * SQL ORDER BY; ranking is done on the server and only one page leaves it.
+ */
+export async function searchOpportunitiesRanked(db: Db, input: SearchInput, rank: (items: OpportunityFull[]) => OpportunityFull[], now = new Date()) {
+  const filter = searchFilter(db, input, now);
+  const [rows, [{ total }]] = await Promise.all([
+    db.select().from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
+    db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
+  ]);
+  const ranked = rank(await withDetails(db, rows));
+  const start = (input.page - 1) * PAGE_SIZE;
+  const ranks = Math.min(total, RANK_LIMIT);
+  return { items: ranked.slice(start, start + PAGE_SIZE), total, page: input.page, pageCount: Math.max(1, Math.ceil(ranks / PAGE_SIZE)), truncated: total > RANK_LIMIT };
 }
 
 /** All open listings (bounded) for personalized ranking; the public marketplace keeps its own pagination. */

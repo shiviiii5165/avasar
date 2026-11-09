@@ -28,8 +28,17 @@ declare global {
   var __avsarDb: Promise<Db> | undefined;
 }
 
+/**
+ * Browser tests force the embedded database (AVSAR_EMBEDDED_DB=1) in their own directory (AVSAR_PGLITE_DIR),
+ * so a DATABASE_URL in .env.local can never be reached by a test run. Ignored in production.
+ */
+export function embeddedDbDir() {
+  return path.resolve(process.cwd(), process.env.AVSAR_PGLITE_DIR || ".data/pglite");
+}
+const forceEmbedded = () => process.env.AVSAR_EMBEDDED_DB === "1" && process.env.NODE_ENV !== "production";
+
 async function create(): Promise<Db> {
-  const url = process.env.DATABASE_URL;
+  const url = forceEmbedded() ? undefined : process.env.DATABASE_URL;
   if (url) {
     const pool = new pg.Pool(pgPoolOptions(url, Number(process.env.DATABASE_POOL_MAX ?? 10)));
     return drizzlePg(pool, { schema }) as unknown as Db;
@@ -37,7 +46,7 @@ async function create(): Promise<Db> {
   if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_EMBEDDED_DB !== "1") {
     throw new Error("DATABASE_URL is required in production (the embedded database is for local development only).");
   }
-  const dir = path.join(process.cwd(), ".data/pglite");
+  const dir = embeddedDbDir();
   mkdirSync(path.dirname(dir), { recursive: true }); // PGlite doesn't create parent directories
   const client = new PGlite(dir);
   const db = drizzlePglite(client, { schema });

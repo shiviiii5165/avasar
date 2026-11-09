@@ -4,7 +4,7 @@ import { Badge, buttonClass, Card, PageHeader, StateMessage } from "@/components
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
-import { searchOpportunities, searchSchema } from "@/server/services/opportunities";
+import { listOpenOpportunities } from "@/server/services/opportunities";
 import { loadProfile } from "@/server/services/profiles";
 import { duplicateSkills, roadmap, suggestRoles } from "@/server/domain/career";
 
@@ -17,11 +17,12 @@ export const metadata = { title: "Career insights" };
 export default async function InsightsPage() {
   const session = await requireCandidate("/app/insights");
   const db = await getDb();
-  const [profile, open] = await Promise.all([loadProfile(db, session.profileId), searchOpportunities(db, searchSchema.parse({}))]);
+  // Every open listing, not one search page: the counts below must cover all of them.
+  const [profile, open] = await Promise.all([loadProfile(db, session.profileId), listOpenOpportunities(db)]);
   const facts = await candidateFactsFor(db, session.profileId);
-  const matches = matchAll(facts, open.items);
+  const matches = matchAll(facts, open);
   const prefs = profile!.profile.preferredCategories;
-  const relevant = open.items.filter((o) => !prefs.length || prefs.includes(o.category));
+  const relevant = open.filter((o) => !prefs.length || prefs.includes(o.category));
 
   const gaps = new Map<string, string[]>();
   for (const o of relevant) for (const s of matches.get(o.id)?.missingRequiredSkills ?? []) gaps.set(s, [...(gaps.get(s) ?? []), o.title]);
@@ -42,7 +43,9 @@ export default async function InsightsPage() {
           <Card>
             <h2 className="text-lg font-semibold text-navy">Skills that would open the most doors</h2>
             <p className="mt-1 text-xs text-muted">Required skills you haven&apos;t listed, counted across open listings.</p>
-            {ranked.length ? (
+            {relevant.length === 0 ? (
+              <p className="mt-3 text-sm text-muted">There are no open listings in the categories you&apos;re interested in right now, so there is nothing to compare yet.</p>
+            ) : ranked.length ? (
               <ul className="mt-4 space-y-3">
                 {ranked.map(([skill, titles]) => (
                   <li key={skill}>

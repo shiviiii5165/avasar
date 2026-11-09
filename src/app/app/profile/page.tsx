@@ -49,13 +49,15 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
 
       <Card>
         <h2 className="text-lg font-semibold text-navy">Skills</h2>
+        {importedSkills.length > 0 && <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">From AI Tathastu · edit there</p>}
         {importedSkills.length > 0 && (
-          <ul className="mt-3 flex flex-wrap gap-2" aria-label="Skills from AI Tathastu">
+          <ul className="mt-2 flex flex-wrap gap-2" aria-label="Skills from AI Tathastu">
             {importedSkills.map((s) => <li key={s.id}><Badge tone="purple">{s.name}{s.level ? ` · ${s.level}` : ""}</Badge></li>)}
           </ul>
         )}
+        {ownSkills.length > 0 && <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">Added in Avsar</p>}
         {ownSkills.length > 0 && (
-          <ul className="mt-4 grid gap-2 sm:grid-cols-2" aria-label="Skills you added in Avsar">
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2" aria-label="Skills you added in Avsar">
             {ownSkills.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2.5 text-sm">
                 <span className="min-w-0"><span className="font-medium text-navy">{s.name}</span> {s.evidenceCount > 0 ? <Badge tone="success">{s.evidenceCount} evidence</Badge> : null}</span>
