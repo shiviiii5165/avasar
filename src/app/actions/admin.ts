@@ -13,11 +13,11 @@ import type { AdminRole, Permission } from "@/server/domain/permissions";
 import type { ApplicationStatus, OpportunityStatus } from "@/server/domain/workflows";
 import { changeApplicationStatus } from "@/server/services/applications";
 import { notify } from "@/server/services/notifications";
-import { createOpportunity, importBatch, opportunityInput, transitionOpportunity, TransitionError, updateOpportunity, type OpportunityInput } from "@/server/services/opportunities";
-import { parseCategoryDetails } from "@/server/domain/categories";
+import { createOpportunity, importBatch, transitionOpportunity, TransitionError, updateOpportunity } from "@/server/services/opportunities";
 import { MODERATION_ACTIONS, resolveCase } from "@/server/services/trust";
 
 import type { ActionState } from "./candidate";
+import { validateOpportunityForm } from "./opportunity-form";
 
 /** Every admin action re-checks its specific permission on the server. */
 async function guard(p: Permission) {
@@ -30,33 +30,6 @@ async function guard(p: Permission) {
 }
 const denied: ActionState = { ok: false, message: "You don't have permission to do that." };
 
-/**
- * Form → validated opportunity input, including the category's own fields (`d_*`). Shared with Employer
- * Studio. Errors are keyed by field name so they show next to the right input.
- */
-export async function validateOpportunityForm(fd: FormData): Promise<{ ok: true; data: OpportunityInput } | { ok: false; errors: Record<string, string> }> {
-  const parsed = opportunityInput.safeParse(opportunityForm(fd));
-  const errors: Record<string, string> = parsed.success ? {} : Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message]));
-  const det = parseCategoryDetails(String(fd.get("category") ?? ""), (k) => (fd.get(k) === null ? null : String(fd.get(k))));
-  if (!det.ok) Object.assign(errors, det.errors);
-  if (!parsed.success || !det.ok) return { ok: false, errors };
-  return { ok: true, data: { ...parsed.data, details: det.details } };
-}
-
-function opportunityForm(fd: FormData) {
-  const get = (k: string) => (fd.get(k) === null ? undefined : String(fd.get(k)));
-  return {
-    title: get("title"), category: get("category"), employmentType: get("employmentType") || undefined, organizationName: get("organizationName"),
-    summary: get("summary") || undefined, description: get("description"), responsibilities: get("responsibilities") || undefined,
-    workMode: get("workMode"), locations: get("locations") ?? "", compMin: get("compMin"), compMax: get("compMax"),
-    compPeriod: get("compPeriod") || undefined, unpaid: fd.get("unpaid") === "on", durationWeeks: get("durationWeeks"),
-    experienceMinYears: get("experienceMinYears"), deadline: get("deadline") || undefined, applicationMethod: get("applicationMethod"),
-    externalUrl: get("externalUrl") || undefined, requiredSkills: get("requiredSkills") ?? "", preferredSkills: get("preferredSkills") ?? "",
-    educationLevels: fd.getAll("educationLevels").map(String), graduationYearMin: get("graduationYearMin"), graduationYearMax: get("graduationYearMax"),
-    requiresWorkAuthorizationIndia: fd.get("requiresWorkAuthorizationIndia") === "on", sourceUrl: get("sourceUrl") || undefined,
-    stipendNote: get("stipendNote") || undefined, conversionPossible: fd.get("conversionPossible") === "on", deliverables: get("deliverables") || undefined,
-  };
-}
 
 export async function saveOpportunityAction(id: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
   const s = await guard("opportunity.create");

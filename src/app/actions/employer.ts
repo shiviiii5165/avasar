@@ -10,7 +10,7 @@ import { getDb } from "@/server/db/client";
 import type { ApplicationStatus, OpportunityStatus } from "@/server/domain/workflows";
 import * as emp from "@/server/services/employer";
 
-import { validateOpportunityForm } from "./admin";
+import { validateOpportunityForm } from "./opportunity-form";
 import type { ActionState } from "./candidate";
 import { rateLimit, TOO_MANY } from "@/server/rate-limit";
 

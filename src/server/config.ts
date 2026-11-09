@@ -11,8 +11,12 @@ export const isProduction = () => process.env.NODE_ENV === "production";
 /** Development sign-in: only when explicitly enabled AND not in production. */
 export const devAuthEnabled = () => env("AVSAR_DEV_AUTH") === "1" && !isProduction();
 
+/** Public origin for redirects and links. Production never falls back to localhost. */
 export function publicUrl(): string {
-  return env("AVSAR_PUBLIC_URL") ?? "http://localhost:3000";
+  const v = env("AVSAR_PUBLIC_URL");
+  if (v) return v.replace(/\/$/, "");
+  if (isProduction()) throw new Error("AVSAR_PUBLIC_URL is required in production.");
+  return "http://localhost:3000";
 }
 
 export interface TathastuConfig {

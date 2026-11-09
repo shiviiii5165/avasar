@@ -187,13 +187,8 @@ describe("access token verification", () => {
     provider();
     expect((await verifyAccessToken(cfg, await accessToken({ kid: "k1" }))).sub).toBe("ait-user-1");
     published = [keys[1], keys[0]]; // AI Tathastu rotates: new key first, old key kept during the rotation
-    // Unknown kids trigger a refetch at most every 30 s (protects the provider's JWKS endpoint from floods),
-    // so right after a fetch a brand-new kid is refused once...
-    await expect(verifyAccessToken(cfg, await accessToken({ kid: "k2" }))).rejects.toMatchObject({ code: "token_invalid" });
-    // ...and accepted once the cooldown has passed.
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 31_000 });
+    // A newly rotated key verifies immediately (one forced refresh), even right after the previous fetch.
     expect((await verifyAccessToken(cfg, await accessToken({ kid: "k2" }))).sub).toBe("ait-user-1");
-    vi.useRealTimers();
     expect((await verifyAccessToken(cfg, await accessToken({ kid: "k1" }))).sub).toBe("ait-user-1");
   });
 });

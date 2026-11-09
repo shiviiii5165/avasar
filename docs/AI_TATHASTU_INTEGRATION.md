@@ -29,8 +29,11 @@ against a running AI Tathastu with Avsar registered.
    production) and redirects to authorize. The return path is sanitized (same-site relative only).
 2. `GET /api/auth/tathastu/callback` (alias `/api/auth/callback`) requires the state to match this browser's cookie (login-CSRF
    protection; a mismatched state is burned), consumes the flow once, maps provider errors, exchanges the code server-side, and verifies
-   the token: ES256 only, issuer, audience (exactly one, = client id), `exp`/`iat`/`sub` present, `scope=profile:read`. Keys come from a
-   cached remote JWKS (10 min; unknown `kid` triggers a refetch at most every 30 s).
+   the token: ES256 only, issuer, audience (exactly one, = client id), `exp`/`iat`/`sub` present, `scope=profile:read`. Keys come from `src/server/auth/jwks.ts`:
+   cached 10 min; only EC P-256 / ES256 / `use: sig` public keys are usable; a duplicated `kid` is never used; an unknown
+   `kid` triggers ONE immediate refresh shared by concurrent requests (so a newly rotated key verifies at once), bounded
+   to 10 forced refreshes a minute with a 60 s memory of kids still missing; timeouts and bad responses keep the last good
+   keys and never accept the token. Nonce: not applicable (the contract has no ID token or nonce).
 3. Identity is keyed by `(provider='ai_tathastu', subject=sub)`, never by email; email is not treated as verified.
 4. The profile is fetched once with the token (10 s timeout) and applied; the projection's `identity.id` must equal `sub` and its
    `audience` must equal the client id. A failed import is recorded (`ait_sync_status='failed'`) and sign-in continues.
@@ -53,7 +56,10 @@ Refresh: `/api/auth/login?prompt=none`. `login_required` / `consent_required` le
 - `src/server/auth/tathastu.test.ts`: PKCE/state request shape; valid login; browser-bound state (login CSRF); unknown, missing,
   replayed and expired state; expired/replayed code (`invalid_grant`); access_denied, login/consent required, provider errors; outages and
   wrong client secret; wrong issuer, audience (incl. multiple), expiry, scope, missing `iat`; unpublished key; forged signature under a
-  published `kid`; JWKS rotation (including the 30 s refetch cooldown); logout revocation; open-redirect inputs.
+  published `kid`; JWKS rotation; logout revocation; open-redirect inputs.
+- `src/server/auth/jwks.test.ts`: cached verification; unknown kid → refresh → success; still missing; rotation inside the
+  cache window; 20 concurrent tokens → one fetch; refresh budget; provider down/timeout/HTTP 500/bad JSON; first fetch down;
+  duplicate kid; wrong kty/crv/alg/use/private key; non-ES256 and kid-less tokens; expiry; retired key; max age.
 - `src/server/services/profile-sync.test.ts`: idempotent import, Avsar edits win, masked section removed, unconfirmed `null` kept,
   empty shared section, audience and subject mismatch, malformed profile, 401/403/429/503/timeout/invalid body.
 - Browser (local mock only): default callback path, PKCE and state cookie; consent denied; callback replayed in another browser;

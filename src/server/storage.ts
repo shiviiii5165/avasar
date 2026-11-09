@@ -38,11 +38,14 @@ export const localStorage: Storage = {
 };
 
 /** `client` is injectable for tests. Objects are written private with server-side encryption. */
-export function s3Storage(cfg: { bucket: string; region: string; endpoint?: string }, client = new S3Client({ region: cfg.region, endpoint: cfg.endpoint, forcePathStyle: Boolean(cfg.endpoint) })): Storage {
+export function s3Storage(cfg: { bucket: string; region: string; endpoint?: string; conditionalWrites?: boolean }, client = new S3Client({ region: cfg.region, endpoint: cfg.endpoint, forcePathStyle: Boolean(cfg.endpoint) })): Storage {
   return {
     driver: "s3",
     async put(key, bytes, contentType) {
-      await client.send(new PutObjectCommand({ Bucket: cfg.bucket, Key: `documents/${safeKey(key)}`, Body: bytes, ContentType: contentType, ServerSideEncryption: cfg.endpoint ? undefined : "AES256", IfNoneMatch: "*" }));
+      await client.send(new PutObjectCommand({ Bucket: cfg.bucket, Key: `documents/${safeKey(key)}`, Body: bytes, ContentType: contentType, ServerSideEncryption: cfg.endpoint ? undefined : "AES256",
+        // Refuse to overwrite an existing object. Not every S3-compatible provider supports conditional PUT;
+        // AVSAR_S3_CONDITIONAL_WRITES=0 turns it off (keys are random UUIDs, so overwrites are already improbable).
+        ...(cfg.conditionalWrites === false ? {} : { IfNoneMatch: "*" }) }));
     },
     async get(key) {
       const res = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: `documents/${safeKey(key)}` }));
@@ -66,7 +69,7 @@ export function storage(): Storage {
   if (process.env.AVSAR_STORAGE_DRIVER === "s3") {
     const bucket = process.env.AVSAR_S3_BUCKET, region = process.env.AVSAR_S3_REGION;
     if (!bucket || !region) throw new Error("AVSAR_STORAGE_DRIVER=s3 needs AVSAR_S3_BUCKET and AVSAR_S3_REGION.");
-    cached = s3Storage({ bucket, region, endpoint: process.env.AVSAR_S3_ENDPOINT || undefined });
+    cached = s3Storage({ bucket, region, endpoint: process.env.AVSAR_S3_ENDPOINT || undefined, conditionalWrites: process.env.AVSAR_S3_CONDITIONAL_WRITES !== "0" });
   } else {
     if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_LOCAL_STORAGE !== "1") throw new Error("Production requires S3-compatible storage (AVSAR_STORAGE_DRIVER=s3).");
     cached = localStorage;

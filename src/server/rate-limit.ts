@@ -20,6 +20,8 @@ export const LIMITS = {
   message: { limit: 40, windowSec: 3600 },      // messages per person
   invite: { limit: 30, windowSec: 3600 },       // invitations sent/accepted per person
   resumeRead: { limit: 20, windowSec: 3600 },   // resume suggestion runs per person
+  supportIp: { limit: 5, windowSec: 3600 },     // public support form per client IP
+  supportEmail: { limit: 3, windowSec: 3600 },  // public support form per email address
 } as const;
 export type LimitName = keyof typeof LIMITS;
 
@@ -29,12 +31,13 @@ export interface RateResult { ok: boolean; remaining: number; retryAfterSec: num
  * Fails open: if the limiter itself errors (e.g. a database hiccup), the request is allowed and the error is
  * reported, so abuse protection can never take sign-in or applying down on its own.
  */
-export async function rateLimit(db: Db, name: LimitName, subject: string, now = new Date()): Promise<RateResult> {
+export async function rateLimit(db: Db, name: LimitName, subject: string, now = new Date(), opts: { failClosed?: boolean } = {}): Promise<RateResult> {
   try {
     return await count(db, name, subject, now);
   } catch (err) {
     void reportError(err, { where: "rate-limit", limit: name });
-    return { ok: true, remaining: 0, retryAfterSec: 0 };
+    // Signed-in flows fail open (never lock users out); public anonymous endpoints can choose to fail closed.
+    return opts.failClosed ? { ok: false, remaining: 0, retryAfterSec: 60 } : { ok: true, remaining: 0, retryAfterSec: 0 };
   }
 }
 
@@ -54,10 +57,31 @@ async function count(db: Db, name: LimitName, subject: string, now: Date): Promi
   return { ok: row.count <= limit, remaining: Math.max(0, limit - row.count), retryAfterSec };
 }
 
-/** Client IP from the proxy header (the first hop is set by the trusted hosting proxy), else "unknown". */
-export function clientIp(headers: Headers): string {
-  const fwd = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return (fwd || headers.get("x-real-ip") || "unknown").slice(0, 64);
+/**
+ * The client IP used for per-IP limits. Client-supplied headers are NOT trusted by default:
+ *  - AVSAR_CLIENT_IP_HEADER=<name>: a single-value header your host's edge proxy sets and overwrites (check your host's
+ *    documentation, e.g. x-real-ip or a CDN's connecting-IP header). Used as-is.
+ *  - AVSAR_TRUSTED_PROXY_HOPS=<n>: take the n-th address from the RIGHT of x-forwarded-for (entries added by your n
+ *    trusted proxies); anything to the left was written by the client and is ignored.
+ *  - Neither set: development uses the first x-forwarded-for entry (local testing only); production uses ONE shared
+ *    "untrusted" bucket (safe: never spoofable, may throttle everyone together) and the health check reports it.
+ */
+export function clientIp(headers: Headers, env: Record<string, string | undefined> = process.env): string {
+  const clean = (v: string | null | undefined) => {
+    const s = (v ?? "").trim();
+    return /^[0-9a-fA-F:.]{2,64}$/.test(s) ? s : null; // IPv4/IPv6 characters only
+  };
+  const header = env.AVSAR_CLIENT_IP_HEADER?.trim().toLowerCase();
+  if (header) return clean(headers.get(header)) ?? "unknown";
+  const hops = Number(env.AVSAR_TRUSTED_PROXY_HOPS ?? "");
+  const chain = (headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (Number.isInteger(hops) && hops > 0) return clean(chain[chain.length - hops]) ?? "unknown";
+  if (env.NODE_ENV === "production") return "untrusted";
+  return clean(chain[0]) ?? clean(headers.get("x-real-ip")) ?? "unknown";
 }
+
+/** True when production has no trusted way to read client IPs (reported by /api/health and startup checks). */
+export const clientIpUntrusted = (env: Record<string, string | undefined> = process.env) =>
+  env.NODE_ENV === "production" && !env.AVSAR_CLIENT_IP_HEADER && !(Number(env.AVSAR_TRUSTED_PROXY_HOPS) > 0);
 
 export const TOO_MANY = "Too many attempts. Please wait a little and try again.";

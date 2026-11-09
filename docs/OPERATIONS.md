@@ -47,7 +47,7 @@ npm run mock:ait         # optional: LOCAL MOCK of AI Tathastu on :3401 (not rea
 
 ### Rollback
 - **Code:** redeploy the previous build (Vercel "promote previous deployment"; Render "rollback"). Migrations are additive, so the previous build runs against the newer schema.
-- **Data:** only for data damage, restore into a new database from the provider's point-in-time recovery, verify on staging, then switch `DATABASE_URL`. `npm run db:restore` refuses production unless `AVSAR_ALLOW_RESTORE=1` is set during an approved recovery.
+- **Data:** only for data damage, restore into a NEW database from the provider's point-in-time recovery, verify it on staging, then switch `DATABASE_URL`. `npm run db:restore` never targets production.
 
 ### Real AI Tathastu SSO go-live (after AI Tathastu registers the `avsar` client)
 1. AI Tathastu's owner registers client `avsar` with the exact callback `https://<avsar-host>/api/auth/callback` and the profile scopes (see docs/AI_TATHASTU_INTEGRATION.md).
@@ -59,7 +59,7 @@ npm run mock:ait         # optional: LOCAL MOCK of AI Tathastu on :3401 (not rea
 - **Database:** enable provider point-in-time recovery (7+ days) and a nightly logical dump to a separate encrypted bucket: `npm run db:backup` (pg_dump custom format; schedule it on the worker host or a cron job). Retain 30 daily and 12 monthly copies.
 - **Storage:** bucket versioning plus a lifecycle policy; replicate to a second region if required.
 - **Restore drill (each quarter, staging):**
-  1. Restore the latest dump to a new database: `DATABASE_URL=<staging-restore-db> npm run db:restore -- backups/<file>.dump --confirm`.
+  1. Restore the latest dump to a new database: set `AVSAR_ENV=staging`, `AVSAR_RESTORE_ALLOWED_HOSTS=<restore-db-host>`, `AVSAR_PRODUCTION_DB_HOST=<production-db-host>` and `DATABASE_URL=<restore-db>`, then `npm run db:restore -- backups/<file>.dump --confirm-host=<host> --confirm-database=<db>`. The script refuses unknown hosts, the production host, any production environment, and archives whose `.sha256` doesn't match.
   2. Point a staging deploy at it.
   3. Verify sign-in, listings, an application and a document download.
   4. Record the time taken.
@@ -75,12 +75,13 @@ npm run mock:ait         # optional: LOCAL MOCK of AI Tathastu on :3401 (not rea
 5. **Review:** write a post-incident report and add a regression test.
 
 ## Monitoring
-- **Health endpoint:** `GET /api/health` returns 200 (`ok`/`degraded`) or 503 (`fail`) with checks for database, storage, email, worker backlog and SSO configuration. Point the uptime monitor at it (and at `/`). With `x-health-token` it also lists missing production settings by name and job counts.
-- **Startup validation:** in production the server logs `startup.env_invalid` with the names of missing or unsafe settings.
+- **Liveness:** `GET /api/health/live` (process up; no dependency calls). Use it for the host's restart probe.
+- **Readiness:** `GET /api/health` returns 200 (`ok`/`degraded`) or 503 (`fail`) with checks for database, storage, email, worker backlog, SSO and (production) configuration. With `x-health-token` it also lists missing settings by name and job counts; never values.
+- **Startup validation:** in production the server logs `startup.env_invalid`; missing `DATABASE_URL`, `AVSAR_PUBLIC_URL` (https) or `AVSAR_SIGNING_SECRET` makes it refuse to serve (Next keeps the port open but answers nothing, so health checks fail).
 - **Structured logs:** JSON lines with secrets and emails redacted (`src/server/log.ts`).
 - **Error reports:** unhandled request errors are posted to `AVSAR_ERROR_WEBHOOK_URL` (Sentry relay, Slack or incident tool), redacted.
 - **Alerts to configure in the monitoring tool:** health `fail` for 2 minutes; worker `fail` (jobs overdue 15+ minutes); dead jobs above 0; 5xx rate above 1%; repeated 429s from one network.
 - **Admin › System Health** shows the same data inside Admin Studio.
 
 ## Abuse protection
-Database-backed rate limits (`src/server/rate-limit.ts`) cover sign-in, callback, development sign-in (per IP), applications, uploads, reports, messages, invitations and resume reading (per person). They return a clear "try again later" message, never an error page. The client IP comes from `x-forwarded-for` as set by the host's proxy.
+Database-backed rate limits (`src/server/rate-limit.ts`) cover sign-in, callback, development sign-in (per IP), applications, uploads, reports, messages, invitations and resume reading (per person). They return a clear "try again later" message, never an error page. Signed-in flows fail open if the limiter breaks; the public support form fails closed and has a honeypot. Client IPs are only trusted via `AVSAR_CLIENT_IP_HEADER` or `AVSAR_TRUSTED_PROXY_HOPS` (see `.env.example`); otherwise production uses one shared bucket.

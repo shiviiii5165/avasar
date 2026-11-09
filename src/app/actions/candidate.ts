@@ -31,7 +31,7 @@ import {
 } from "@/server/services/profiles";
 import { fileReport, openTicket, reportSchema, supportSchema } from "@/server/services/trust";
 import { audit } from "@/server/audit";
-import { rateLimit, TOO_MANY } from "@/server/rate-limit";
+import { clientIp, rateLimit, TOO_MANY } from "@/server/rate-limit";
 
 export type ActionState = { ok: boolean; message?: string; errors?: Record<string, string> } | null;
 
@@ -75,10 +75,17 @@ export async function reportAction(_: ActionState, fd: FormData): Promise<Action
 export async function supportAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const { getSession } = await import("@/server/auth/session");
   const s = await getSession();
+  // Honeypot: a hidden field people never fill. Bots that do get the same success message, and nothing is stored.
+  if (String(fd.get("website") ?? "").trim()) return { ok: true, message: "Thanks. We've received your message and will reply by email." };
   const parsed = supportSchema.safeParse(formObject(fd));
   if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
   if (!s && !parsed.data.email) return { ok: false, errors: { email: "Add an email so we can reply." } };
-  await openTicket(await getDb(), s?.identity.id ?? null, parsed.data);
+  const db = await getDb();
+  const { headers } = await import("next/headers");
+  const who = s ? `id:${s.identity.id}` : `ip:${clientIp(await headers())}`;
+  if (!(await rateLimit(db, "supportIp", who, new Date(), { failClosed: true })).ok) return { ok: false, message: TOO_MANY };
+  if (parsed.data.email && !(await rateLimit(db, "supportEmail", `email:${parsed.data.email.toLowerCase()}`, new Date(), { failClosed: true })).ok) return { ok: false, message: TOO_MANY };
+  await openTicket(db, s?.identity.id ?? null, parsed.data);
   return { ok: true, message: "Thanks. We've received your message and will reply by email." };
 }
 

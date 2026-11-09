@@ -19,13 +19,15 @@ export type Permission =
   | "analytics.view"
   | "audit.view"
   | "role.grant"
-  | "candidate.view";
+  | "candidate.view"
+  /** Open ANY candidate's private documents (resumes). Separate from the candidate directory on purpose. */
+  | "document.view_any";
 
 const GRANTS: Record<AdminRole, Permission[]> = {
   super_admin: [
     "opportunity.create", "opportunity.review", "opportunity.publish", "opportunity.suspend", "source.manage", "import.review",
     "organization.verify", "report.moderate", "application.view_all", "application.update_status", "support.handle",
-    "analytics.view", "audit.view", "role.grant", "candidate.view",
+    "analytics.view", "audit.view", "role.grant", "candidate.view", "document.view_any",
   ],
   platform_admin: [
     "opportunity.create", "opportunity.review", "opportunity.publish", "opportunity.suspend", "source.manage", "import.review",

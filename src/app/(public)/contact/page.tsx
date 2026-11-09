@@ -16,6 +16,8 @@ export default async function ContactPage() {
           {!session && <Input name="email" type="email" label="Your email" autoComplete="email" required />}
           <Input name="subject" label="Subject" required maxLength={140} />
           <Textarea name="body" label="Message" required maxLength={4000} />
+          {/* Honeypot for bots: hidden from people and assistive technology. */}
+          <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden"><label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label></div>
         </ActionForm>
       </div>
     </ContentPage>

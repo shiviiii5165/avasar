@@ -88,9 +88,9 @@ describe("production environment validation", () => {
     expect(names).toEqual(expect.arrayContaining(["DATABASE_URL", "AVSAR_SIGNING_SECRET", "AVSAR_AIT_CLIENT_SECRET", "AVSAR_STORAGE_DRIVER", "AVSAR_EMAIL_WEBHOOK_URL"]));
   });
   it("passes a complete configuration and flags unsafe ones", () => {
-    const ok = { DATABASE_URL: "postgres://x", AVSAR_PUBLIC_URL: "https://avsar.example", AVSAR_SIGNING_SECRET: "x".repeat(40), AVSAR_AIT_BASE_URL: "https://www.aitathastu.com", AVSAR_AIT_CLIENT_ID: "avsar", AVSAR_AIT_CLIENT_SECRET: "s", AVSAR_STORAGE_DRIVER: "s3", AVSAR_S3_BUCKET: "b", AVSAR_S3_REGION: "ap-south-1", AVSAR_EMAIL_WEBHOOK_URL: "https://m" };
+    const ok = { DATABASE_URL: "postgres://x", AVSAR_PUBLIC_URL: "https://avsar.example", AVSAR_SIGNING_SECRET: "x".repeat(40), AVSAR_AIT_BASE_URL: "https://www.aitathastu.com", AVSAR_AIT_CLIENT_ID: "avsar", AVSAR_AIT_CLIENT_SECRET: "s", AVSAR_STORAGE_DRIVER: "s3", AVSAR_S3_BUCKET: "b", AVSAR_S3_REGION: "ap-south-1", AVSAR_EMAIL_WEBHOOK_URL: "https://m", AVSAR_EMAIL_WEBHOOK_TOKEN: "t", AVSAR_EMAIL_FROM: "Avsar <no-reply@avsar.example>", AVSAR_HEALTH_TOKEN: "h", AVSAR_TRUSTED_PROXY_HOPS: "1" };
     expect(productionEnvProblems(ok)).toEqual([]);
-    expect(productionEnvProblems({ ...ok, AVSAR_DEV_AUTH: "1", AVSAR_PUBLIC_URL: "http://x" }).map((p) => p.name)).toEqual(["AVSAR_DEV_AUTH", "AVSAR_PUBLIC_URL"]);
+    expect(productionEnvProblems({ ...ok, AVSAR_DEV_AUTH: "1", AVSAR_PUBLIC_URL: "http://x" }).map((p) => p.name).sort()).toEqual(["AVSAR_DEV_AUTH", "AVSAR_PUBLIC_URL"]);
   });
 });
 

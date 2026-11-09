@@ -29,10 +29,12 @@ export async function sendEmail(msg: EmailMessage, fetchImpl: typeof fetch = fet
     await writeFile(file, JSON.stringify({ ...msg, at: new Date().toISOString(), note: "Development sink: not sent." }, null, 2));
     return { delivered: "sink", file };
   }
+  const from = process.env.AVSAR_EMAIL_FROM?.trim();
+  if (!from && process.env.NODE_ENV === "production") throw new Error("Email sender not configured (AVSAR_EMAIL_FROM)");
   const res = await fetchImpl(process.env.AVSAR_EMAIL_WEBHOOK_URL!, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${process.env.AVSAR_EMAIL_WEBHOOK_TOKEN ?? ""}` },
-    body: JSON.stringify({ ...msg, from: process.env.AVSAR_EMAIL_FROM ?? "Avsar <no-reply@avsar.invalid>" }),
+    body: JSON.stringify({ ...msg, from: from ?? "Avsar <no-reply@avsar.invalid>" }),
     signal: AbortSignal.timeout(10_000),
   });
   if (res.status === 422 || res.status === 400) throw Object.assign(new Error(`email rejected by provider (${res.status})`), { permanent: true });

@@ -3,12 +3,13 @@ import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
+import { jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 
 import type { TathastuConfig } from "../config";
 import type { Db } from "../db/client";
 import { oauthFlows } from "../db/schema";
 import { randomToken, type VerifiedIdentity } from "./identity";
+import { createJwksStore } from "./jwks";
 
 /**
  * AI Tathastu SSO adapter: OAuth 2.0 Authorization Code + PKCE S256 with Avsar's OWN client.
@@ -93,15 +94,12 @@ const sameString = (a: string, b: string) => {
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-/**
- * Remote JWKS per URL. jose caches keys (10 min) and refetches when a token names an unknown kid (at most every
- * 30 s), which covers AI Tathastu's key rotation (it keeps retired keys published during a rotation).
- */
+/** One validated key store per JWKS URL (see ./jwks: immediate single-flight refresh on unknown kid, bounded). */
 const jwksCache = new Map<string, JWTVerifyGetKey>();
 function jwksFor(url: string): JWTVerifyGetKey {
   let set = jwksCache.get(url);
   if (!set) {
-    set = createRemoteJWKSet(new URL(url), { cacheMaxAge: 10 * 60_000, cooldownDuration: 30_000, timeoutDuration: 5000 });
+    set = createJwksStore(url).getKey;
     jwksCache.set(url, set);
   }
   return set;

@@ -1,4 +1,4 @@
-# Continuous integration for Avsar. Runs on pull requests and pushes; never deploys.
+# Continuous integration for Avsar. Runs on pull requests and pushes; never deploys and uses no repository secrets.
 name: CI
 
 on:
@@ -16,10 +16,11 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16
+        # Same major version as the Neon database (PostgreSQL 18).
+        image: postgres:18
         env:
           POSTGRES_USER: avsar
           POSTGRES_PASSWORD: avsar-ci-only
@@ -27,9 +28,14 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U avsar" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI_DATABASE_URL: postgres://avsar:avsar-ci-only@localhost:5432/avsar_ci
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Third-party actions pinned to full commit SHAs (v4.4.0).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -42,10 +48,26 @@ jobs:
         run: npm test
       - name: Migrations are in sync with the schema
         run: npx drizzle-kit check
-      - name: Migrations apply cleanly to an empty PostgreSQL
+      - name: Migrations apply cleanly to an empty PostgreSQL 18
         run: npm run db:migrate
         env:
-          DATABASE_URL: postgres://avsar:avsar-ci-only@localhost:5432/avsar_ci
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+      - name: Migrations are idempotent (second run applies nothing and succeeds)
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+      - name: Backup and restore drill (inside the PostgreSQL 18 container, matching client tools)
+        run: |
+          set -euo pipefail
+          C=${{ job.services.postgres.id }}
+          docker exec "$C" pg_dump -U avsar --format=custom --no-owner --no-privileges -f /tmp/avsar.dump avsar_ci
+          docker exec "$C" sh -c 'pg_restore --list /tmp/avsar.dump | grep -c "TABLE DATA"'
+          docker exec "$C" createdb -U avsar avsar_restore
+          docker exec "$C" pg_restore -U avsar --no-owner --no-privileges --single-transaction -d avsar_restore /tmp/avsar.dump
+          SRC=$(docker exec "$C" psql -U avsar -d avsar_ci -tAc "select count(*) from information_schema.tables where table_schema in ('public','drizzle')")
+          DST=$(docker exec "$C" psql -U avsar -d avsar_restore -tAc "select count(*) from information_schema.tables where table_schema in ('public','drizzle')")
+          echo "tables: source=$SRC restored=$DST"
+          test "$SRC" = "$DST" && test "$SRC" -gt 40
       - name: Production build
         run: npm run build
         env:

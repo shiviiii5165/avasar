@@ -13,8 +13,8 @@
     "db:migrate": "tsx --conditions=react-server scripts/db.ts migrate",
     "db:seed": "tsx --conditions=react-server scripts/db.ts seed",
     "worker": "tsx --conditions=react-server scripts/worker.ts",
-    "db:backup": "node scripts/db-backup.mjs backup",
-    "db:restore": "node scripts/db-backup.mjs restore",
+    "db:backup": "tsx scripts/db-backup.mts backup",
+    "db:restore": "tsx scripts/db-backup.mts restore",
     "mock:ait": "tsx scripts/mock-ait.mts"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "@electric-sql/pglite": "^0.5.15",
     "drizzle-orm": "^0.45.4",
     "jose": "^6.2.15",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.69.0",
     "mammoth": "^1.13.0",
     "next": "16.4.5",

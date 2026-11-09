@@ -18,7 +18,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     return apiError(403, "LINK_EXPIRED", "This link has expired. Open the document again from Avsar.");
   }
   const db = await getDb();
-  const found = await readDocumentForViewer(db, id, { id: session.identity.id, canViewAny: can(session.roles, "candidate.view"), viaEmployer: () => employerMayViewDocument(db, session.identity.id, id) });
+  const found = await readDocumentForViewer(db, id, { id: session.identity.id, canViewAny: can(session.roles, "document.view_any"), viaEmployer: () => employerMayViewDocument(db, session.identity.id, id) });
   if (!found) return apiError(404, "NOT_FOUND", "Document not found");
   return new Response(new Uint8Array(found.bytes), {
     headers: {

@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
 
 /**
- * GET /api/health — readiness for the host's health checks and uptime monitoring.
+ * GET /api/health — READINESS (dependencies and configuration) for the host's health checks and monitoring.
+ * Liveness (process is up, no dependency calls) is GET /api/health/live.
  * Public response: overall status and pass/fail per dependency, never values or setting names.
  * With header `x-health-token: <AVSAR_HEALTH_TOKEN>` it also lists missing production settings by name.
  */
@@ -39,6 +40,10 @@ export async function GET(request: Request) {
   try { await within(storage().check(), 3000); checks.storage = "ok"; } catch { checks.storage = "fail"; }
   checks.email = emailMode() === "unconfigured" ? "fail" : "ok";
   checks.sso = tathastuConfig().config ? "ok" : "degraded";
+  if (process.env.NODE_ENV === "production") {
+    const problems = productionEnvProblems();
+    checks.configuration = problems.some((p) => p.critical) ? "fail" : problems.length ? "degraded" : "ok";
+  }
 
   const status = Object.values(checks).includes("fail") ? "fail" : Object.values(checks).includes("degraded") ? "degraded" : "ok";
   const token = process.env.AVSAR_HEALTH_TOKEN;
