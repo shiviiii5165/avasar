@@ -9,6 +9,7 @@ import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import pg from "pg";
 
+import { pgPoolOptions } from "./pg-options";
 import * as schema from "./schema";
 
 /**
@@ -30,7 +31,7 @@ declare global {
 async function create(): Promise<Db> {
   const url = process.env.DATABASE_URL;
   if (url) {
-    const pool = new pg.Pool({ connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 10) });
+    const pool = new pg.Pool(pgPoolOptions(url, Number(process.env.DATABASE_POOL_MAX ?? 10)));
     return drizzlePg(pool, { schema }) as unknown as Db;
   }
   if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_EMBEDDED_DB !== "1") {

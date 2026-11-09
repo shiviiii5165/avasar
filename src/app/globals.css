@@ -136,11 +136,22 @@ body {
 .door-halo { animation: halo var(--door-cycle) ease-in-out infinite; }
 .leaf-sway { animation: leaf-sway 7s ease-in-out infinite; transform-origin: 90% 10%; }
 
+/* Opportunity cards walk out of the doorway while it is open, then return before it closes. */
+@keyframes door-card {
+  0%, 30% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.25); }
+  46% { opacity: 1; transform: translate(0, 0) scale(1); }
+  52% { transform: translate(0, -1.5cqh) scale(1); }
+  70% { opacity: 1; transform: translate(0, 0) scale(1); }
+  84%, 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.25); }
+}
+.door-card { opacity: 0; animation: door-card var(--door-cycle) var(--ease-out-soft) infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .door-leaf, .door-light, .door-seam, .door-spill, .door-halo, .leaf-sway { animation: none !important; }
   .door-leaf { transform: rotateY(-28deg); }
   .door-light, .door-halo { opacity: 0.8; }
   .door-spill { opacity: 0.7; transform: scaleX(0.7); }
   .door-seam { opacity: 0; }
+  .door-card { animation: none !important; opacity: 1; transform: none; }
   *, *::before, *::after { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

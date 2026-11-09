@@ -16,6 +16,7 @@ import pg from "pg";
 
 import * as schema from "../src/server/db/schema";
 import type { Db } from "../src/server/db/client";
+import { pgPoolOptions } from "../src/server/db/pg-options";
 import { seedSamples } from "../src/server/seed";
 
 const MIGRATIONS = path.join(process.cwd(), "src/server/db/migrations");
@@ -25,7 +26,7 @@ async function main() {
   let db: Db;
   let close: () => Promise<void>;
   if (process.env.DATABASE_URL) {
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+    const pool = new pg.Pool(pgPoolOptions(process.env.DATABASE_URL, 2));
     const d = drizzlePg(pool, { schema });
     await migratePg(d, { migrationsFolder: MIGRATIONS });
     db = d as unknown as Db;

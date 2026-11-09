@@ -36,6 +36,7 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
   if (session) redirect(returnTo);
   const ssoReady = Boolean(tathastuConfig().config);
   const dev = devAuthEnabled();
+  const loginHref = `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:px-8">
@@ -46,12 +47,16 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
           <p role="alert" className="mt-6 rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{ERRORS[error] ?? ERRORS.unavailable}</p>
         )}
         <div className="mt-8 space-y-3">
-          {ssoReady ? (
-            <a href={`/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`} className={buttonClass("primary", "lg", "w-full")}>Continue with AI Tathastu</a>
-          ) : (
-            <p className="rounded-lg border border-line bg-surface px-4 py-3 text-sm text-muted">
-              Sign-in with AI Tathastu is being connected. You can keep exploring opportunities without an account.
+          <a href={loginHref} className={buttonClass("primary", "lg", "w-full")}>Continue with AI Tathastu</a>
+          <div className="rounded-lg border border-line bg-surface px-4 py-3 text-sm text-muted">
+            <p><span className="font-semibold text-navy">Already on AI Tathastu?</span> Log in there and you come straight back here.</p>
+            <p className="mt-2">
+              <span className="font-semibold text-navy">New?</span> Create your free AI Tathastu account. The same account also works on Avsar and Collaborate.{" "}
+              <a href={`${loginHref}&signup=1`} className="font-semibold text-orange underline-offset-2 hover:underline">Create an AI Tathastu account</a>
             </p>
+          </div>
+          {!ssoReady && (
+            <p className="text-xs text-muted">Sign-in is still being connected in this environment. You can keep exploring opportunities meanwhile.</p>
           )}
           <p className="flex items-start gap-2 text-xs text-muted">
             <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />

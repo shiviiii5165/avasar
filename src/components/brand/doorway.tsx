@@ -1,3 +1,14 @@
+import type { CSSProperties } from "react";
+import { Award, BriefcaseBusiness, GraduationCap, Trophy } from "lucide-react";
+
+/** Final resting spots (container units of the door box); --dx/--dy point back to the doorway centre. */
+const CARDS = [
+  { label: "Internship", icon: GraduationCap, fg: "text-[#6b3fd6]", bg: "bg-[#f1e9ff]/85", left: "-20cqw", top: "30cqh", dx: "42cqw", dy: "14cqh" },
+  { label: "Fellowship", icon: Award, fg: "text-[#2f6fe0]", bg: "bg-[#e8f0ff]/85", left: "64cqw", top: "30cqh", dx: "-42cqw", dy: "14cqh" },
+  { label: "Competition", icon: Trophy, fg: "text-[#ea7a1a]", bg: "bg-[#fff1e2]/85", left: "-20cqw", top: "52cqh", dx: "42cqw", dy: "-8cqh" },
+  { label: "First Job", icon: BriefcaseBusiness, fg: "text-[#2f9e57]", bg: "bg-[#fff8e6]/85", left: "64cqw", top: "52cqh", dx: "-42cqw", dy: "-8cqh" },
+];
+
 /**
  * The Avsar doorway: a real, animated scene (no video, no image). The door leaf swings on its hinge
  * with a CSS 3D transform while warm light behind it brightens and spills across the floor.
@@ -11,7 +22,7 @@ export function Doorway({ className = "" }: { className?: string }) {
       <div className="door-halo absolute left-1/2 top-[8%] h-[78%] w-[70%] -translate-x-1/2 rounded-[45%] bg-[radial-gradient(ellipse_at_center,rgba(255,196,110,0.55),rgba(255,214,160,0.18)_45%,transparent_70%)] blur-2xl" />
 
       {/* Wall and frame */}
-      <div className="relative mx-auto aspect-[3/5] w-[62%] max-w-[360px]">
+      <div className="relative mx-auto aspect-[3/5] w-[62%] max-w-[360px] [container-type:size]">
         {/* Frame moulding */}
         <div className="absolute -inset-[5%] rounded-t-[6px] bg-gradient-to-b from-[#f3ece7] to-[#e7ddd8] shadow-[inset_0_0_0_2px_rgba(255,255,255,0.7),0_20px_40px_-20px_rgba(60,40,90,0.35)]" />
         <div className="absolute -inset-[2.5%] rounded-t-[4px] bg-[#efe7e2] shadow-[inset_0_2px_6px_rgba(90,70,110,0.18)]" />
@@ -38,6 +49,20 @@ export function Doorway({ className = "" }: { className?: string }) {
 
         {/* Light spilling onto the floor */}
         <div className="door-spill absolute left-[-30%] right-[-30%] top-full h-[34%] bg-[radial-gradient(ellipse_at_50%_0%,rgba(255,214,140,0.95),rgba(255,180,100,0.45)_35%,transparent_70%)] [clip-path:polygon(28%_0,72%_0,100%_100%,0_100%)] blur-[2px]" />
+
+        {/* Opportunities stepping out through the open door */}
+        <div className="door-cards absolute inset-0">
+          {CARDS.map((c, i) => (
+            <div
+              key={c.label}
+              className={`door-card absolute flex w-[56cqw] flex-col items-center gap-1.5 rounded-2xl border border-white/80 px-2 py-[4cqw] shadow-[0_12px_30px_-12px_rgba(60,40,90,0.35)] backdrop-blur-md ${c.bg}`}
+              style={{ left: c.left, top: c.top, "--dx": c.dx, "--dy": c.dy, animationDelay: `${i * 0.18}s` } as CSSProperties}
+            >
+              <c.icon className={`size-[9cqw] ${c.fg}`} strokeWidth={2.2} />
+              <span className="text-[clamp(0.7rem,6.5cqw,1rem)] font-semibold text-navy">{c.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
