@@ -617,3 +617,11 @@ export const jobs = pgTable("jobs", {
   createdAt: createdAt(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 }, (t) => [uniqueIndex("jobs_idempotency").on(t.idempotencyKey), index("jobs_claim").on(t.status, t.runAt)]);
+
+// ─── Abuse protection ──────────────────────────────────────────────────────
+/** Fixed-window request counters, shared by every app instance (no extra infrastructure). Old windows are pruned. */
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  count: integer("count").notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.key, t.windowStart] })]);

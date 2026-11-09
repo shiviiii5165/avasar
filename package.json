@@ -12,10 +12,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --conditions=react-server scripts/db.ts migrate",
     "db:seed": "tsx --conditions=react-server scripts/db.ts seed",
-    "worker": "tsx --conditions=react-server scripts/worker.ts"
+    "worker": "tsx --conditions=react-server scripts/worker.ts",
+    "db:backup": "node scripts/db-backup.mjs backup",
+    "db:restore": "node scripts/db-backup.mjs restore",
+    "mock:ait": "tsx scripts/mock-ait.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
+    "@aws-sdk/client-s3": "^3.1164.0",
     "@electric-sql/pglite": "^0.5.15",
     "drizzle-orm": "^0.45.4",
     "jose": "^6.2.15",

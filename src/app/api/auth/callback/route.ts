@@ -8,6 +8,7 @@ import { publicUrl, tathastuConfig } from "@/server/config";
 import { getDb } from "@/server/db/client";
 import { applyTathastuProfile, fetchTathastuProfile, recordSyncFailure } from "@/server/services/profile-sync";
 import { ensureProfile } from "@/server/services/profiles";
+import { clientIp, rateLimit } from "@/server/rate-limit";
 
 /**
  * GET /api/auth/callback — the redirect URI registered with AI Tathastu for Avsar's own client.
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const db = await getDb();
+  if (!(await rateLimit(db, "callback", `ip:${clientIp(request.headers)}`)).ok) return fail("rate_limited");
   try {
     const { identity, returnTo, accessToken } = await completeFlow(db, config, { code: params.get("code"), state: params.get("state"), error: params.get("error") });
     const row = await upsertIdentity(db, identity);

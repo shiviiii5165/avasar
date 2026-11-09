@@ -9,6 +9,7 @@ import { getDb } from "@/server/db/client";
 import { adminRoles } from "@/server/db/schema";
 import { ensureProfile } from "@/server/services/profiles";
 import { apiError, sameOrigin } from "@/server/http";
+import { clientIp, rateLimit, TOO_MANY } from "@/server/rate-limit";
 
 /**
  * DEVELOPMENT ONLY sign-in for synthetic personas, so the product can be exercised before AI Tathastu
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
   const key = String(form.get("persona") ?? "candidate") as keyof typeof PERSONAS;
   const persona = PERSONAS[key] ?? PERSONAS.candidate;
   const db = await getDb();
+  if (!(await rateLimit(db, "devLogin", `ip:${clientIp(request.headers)}`)).ok) return apiError(429, "RATE_LIMITED", TOO_MANY);
   const row = await upsertIdentity(db, { provider: "dev", subject: persona.subject, email: persona.email, emailVerified: true, name: persona.name });
   await ensureProfile(db, row.id, persona.name); // same as the real callback: no onboarding step
   for (const role of persona.roles) await db.insert(adminRoles).values({ identityId: row.id, role }).onConflictDoNothing();

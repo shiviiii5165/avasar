@@ -31,6 +31,7 @@ import {
 } from "@/server/services/profiles";
 import { fileReport, openTicket, reportSchema, supportSchema } from "@/server/services/trust";
 import { audit } from "@/server/audit";
+import { rateLimit, TOO_MANY } from "@/server/rate-limit";
 
 export type ActionState = { ok: boolean; message?: string; errors?: Record<string, string> } | null;
 
@@ -60,6 +61,7 @@ export async function toggleSaveAction(opportunityId: string, path: string) {
 
 export async function reportAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireUser();
+  if (!(await rateLimit(await getDb(), "report", `id:${s.identity.id}`)).ok) return { ok: false, message: TOO_MANY };
   const parsed = reportSchema.safeParse(formObject(fd));
   if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
   try {
@@ -135,6 +137,7 @@ export async function removeSectionAction(section: Section, id: string) {
 // ─── Resumes ───────────────────────────────────────────────────────────────
 export async function uploadResumeAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCandidate();
+  if (!(await rateLimit(await getDb(), "upload", `id:${s.identity.id}`)).ok) return { ok: false, message: TOO_MANY };
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, errors: { file: "Choose a PDF or Word file." } };
   if (file.size > 5 * 1024 * 1024) return { ok: false, errors: { file: "Files must be 5 MB or smaller." } };
@@ -167,6 +170,7 @@ export async function applyAction(slug: string, _: ActionState, fd: FormData): P
   const db = await getDb();
   const opp = await getOpportunityBySlug(db, slug);
   if (!opp) return { ok: false, message: "This opportunity is no longer accepting applications." };
+  if (!(await rateLimit(db, "apply", `profile:${s.profileId}`)).ok) return { ok: false, message: TOO_MANY };
   const profile = await loadProfile(db, s.profileId);
   if (!profile) return { ok: false, message: "Your profile couldn't be loaded." };
   const answers: Record<string, string> = {};
@@ -258,6 +262,6 @@ export async function deleteAccountAction(_: ActionState, fd: FormData): Promise
     await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.identityId, s.identity.id));
     await audit(tx, { actorId: s.identity.id, actorRole: "candidate", action: "account.delete", targetType: "identity", targetId: s.identity.id });
   });
-  for (const key of keys) await storage.remove(key).catch(() => undefined);
+  for (const key of keys) await storage().remove(key).catch(() => undefined);
   redirect("/?account_deleted=1");
 }

@@ -5,6 +5,7 @@ import { ActionForm } from "@/components/forms/action-form";
 import { Card, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
+import { rateLimit } from "@/server/rate-limit";
 import type { ResumeExtraction } from "@/server/ai/types";
 import { ResumeIntelError, suggestFromResume } from "@/server/services/resume-intel";
 
@@ -22,9 +23,11 @@ const SECTIONS: { key: keyof ResumeExtraction; title: string; label: (v: never) 
 export default async function ResumeSuggestions({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const s = await requireCandidate(`/app/profile/resume/${id}`);
+  const db = await getDb();
+  if (!(await rateLimit(db, "resumeRead", `id:${s.identity.id}`)).ok) return <StateMessage kind="error" title="Please wait a little" body="You have read resumes many times in the last hour. Try again later." />;
   let data: Awaited<ReturnType<typeof suggestFromResume>>;
   try {
-    data = await suggestFromResume(await getDb(), s.identity.id, s.profileId, id);
+    data = await suggestFromResume(db, s.identity.id, s.profileId, id);
   } catch (err) {
     if (err instanceof ResumeIntelError) return <StateMessage kind="error" title="We couldn't read this resume" body={err.message} action={<Link href="/app/profile#resumes" className="font-semibold text-purple hover:underline">Back to profile</Link>} />;
     throw err;

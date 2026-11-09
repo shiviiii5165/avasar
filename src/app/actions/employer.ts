@@ -12,6 +12,9 @@ import * as emp from "@/server/services/employer";
 
 import { validateOpportunityForm } from "./admin";
 import type { ActionState } from "./candidate";
+import { rateLimit, TOO_MANY } from "@/server/rate-limit";
+
+const limited = async (name: "message" | "invite", id: string) => !(await rateLimit(await getDb(), name, `id:${id}`)).ok;
 
 /**
  * Employer Studio actions. Authorization lives in the employer service (membership + role + verification,
@@ -64,6 +67,7 @@ export async function requestVerificationAction(orgId: string, _: ActionState, f
 export async function inviteAction(orgId: string, _: ActionState, fd: FormData): Promise<ActionState> {
   const s = await me();
   try {
+    if (await limited("invite", s.identity.id)) return { ok: false, message: TOO_MANY };
     const { link } = await emp.inviteMember(await getDb(), s.identity.id, orgId, { email: fd.get("email"), role: fd.get("role") });
     revalidatePath(`${base(orgId)}/settings`);
     return { ok: true, message: `Invitation created and emailed. You can also share this one-time link directly: ${link}` };
@@ -96,6 +100,7 @@ export async function removeMemberAction(orgId: string, memberId: string): Promi
 
 export async function acceptInviteAction(token: string): Promise<ActionState> {
   const s = await me();
+  if (await limited("invite", s.identity.id)) return { ok: false, message: TOO_MANY };
   let orgId: string;
   try { orgId = await emp.acceptInvitation(await getDb(), s.identity.id, token); } catch (e) { return fail(e); }
   redirect(`${base(orgId)}?joined=1`);
@@ -177,6 +182,7 @@ export async function assessmentResultAction(orgId: string, applicationId: strin
 
 export async function messageAction(orgId: string, applicationId: string, _: ActionState, fd: FormData): Promise<ActionState> {
   const s = await me();
+  if (await limited("message", s.identity.id)) return { ok: false, message: TOO_MANY };
   try { await emp.sendEmployerMessage(await getDb(), s.identity.id, orgId, applicationId, fd.get("body")); } catch (e) { return fail(e); }
   revalidatePath(`${base(orgId)}/applicants/${applicationId}`);
   return { ok: true, message: "Message sent." };
@@ -185,6 +191,7 @@ export async function messageAction(orgId: string, applicationId: string, _: Act
 /** Candidate reply on their own application thread. */
 export async function candidateReplyAction(applicationId: string, _: ActionState, fd: FormData): Promise<ActionState> {
   const s = await requireCandidate(`/app/applications/${applicationId}`);
+  if (await limited("message", s.identity.id)) return { ok: false, message: TOO_MANY };
   try { await emp.sendCandidateMessage(await getDb(), s.identity.id, s.profileId, applicationId, fd.get("body")); } catch (e) { return fail(e); }
   revalidatePath(`/app/applications/${applicationId}`);
   return { ok: true, message: "Reply sent." };

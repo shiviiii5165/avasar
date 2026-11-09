@@ -38,3 +38,12 @@ Final Privacy and Terms text, DPDP compliance review, retention periods, grievan
 - Dashboard: sync status + Recommended for You; profile page shows the source of each record.
 - Verified: tsc clean, eslint clean, vitest 48/48, next build OK. Phase-by-phase status: IMPLEMENTATION_STATUS.md.
 
+
+## 2026-11-09: roadmap phases 1–5
+- Phase 1: in-application requirement answers; shared recommendation engine (16 tests); hydration warning traced to Playwright's screenshot caret style (test harness), not the app.
+- Phase 2: Employer Studio at /studio (gated), with org isolation tests.
+- Phase 3: grounded resume suggestions and career intelligence; optional Claude provider.
+- Phase 4: categories registry with structured fields and application questions.
+- Phase 5: storage, email, rate limiting, health, monitoring, CI, backups.
+- Verified: tsc, eslint, 104 unit/integration tests, next build, 35 browser steps across 4 suites. Real SSO still blocked on AI Tathastu registering the avsar client.
+

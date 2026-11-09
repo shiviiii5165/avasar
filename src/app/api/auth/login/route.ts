@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { safeReturnTo, startFlow } from "@/server/auth/tathastu";
 import { publicUrl, tathastuConfig } from "@/server/config";
 import { getDb } from "@/server/db/client";
+import { clientIp, rateLimit } from "@/server/rate-limit";
 
 /**
  * GET /api/auth/login?returnTo=/path[&prompt=none|consent]
@@ -16,8 +17,10 @@ export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
   const returnTo = safeReturnTo(sp.get("returnTo"));
   const prompt = sp.get("prompt") === "none" ? "none" : sp.get("prompt") === "consent" ? "consent" : undefined;
+  const db = await getDb();
+  if (!(await rateLimit(db, "login", `ip:${clientIp(request.headers)}`)).ok) return NextResponse.redirect(new URL("/sign-in?error=rate_limited", publicUrl()));
   try {
-    return NextResponse.redirect(await startFlow(await getDb(), config, returnTo, { prompt }));
+    return NextResponse.redirect(await startFlow(db, config, returnTo, { prompt }));
   } catch (err) {
     console.error("[auth] could not start sign-in:", err instanceof Error ? err.message : err);
     return NextResponse.redirect(new URL("/sign-in?error=unavailable", publicUrl()));

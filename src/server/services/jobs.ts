@@ -4,6 +4,7 @@ import { and, eq, lte, sql } from "drizzle-orm";
 
 import type { Db } from "../db/client";
 import { jobs, opportunities, userIdentities } from "../db/schema";
+import { sendEmail } from "../email";
 
 /**
  * Durable background jobs in PostgreSQL: idempotent enqueue (by key), claim with SKIP LOCKED, retries with
@@ -39,7 +40,8 @@ export async function runJob(db: Db, job: JobRow, handlers: Record<string, Handl
     await db.update(jobs).set({ status: "done", finishedAt: new Date(), lastError: null, lockedAt: null }).where(eq(jobs.id, job.id));
   } catch (err) {
     const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
-    const dead = job.attempts >= job.maxAttempts;
+    // Permanent failures (e.g. an address the provider rejects) dead-letter at once instead of retrying.
+    const dead = job.attempts >= job.maxAttempts || (err as { permanent?: boolean }).permanent === true;
     await db
       .update(jobs)
       .set({ status: dead ? "dead" : "queued", lastError: message, lockedAt: null, runAt: dead ? job.runAt : new Date(now.getTime() + backoffMs(job.attempts)) })
@@ -64,17 +66,4 @@ export const defaultHandlers: Record<string, Handler> = {
   },
 };
 
-async function sendEmail(msg: { to: string; subject: string; text: string }) {
-  const endpoint = process.env.AVSAR_EMAIL_WEBHOOK_URL;
-  if (!endpoint) {
-    console.info(`[email] provider not configured; would send "${msg.subject}" to ${msg.to.replace(/(.).+(@.+)/, "$1***$2")}`);
-    return;
-  }
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${process.env.AVSAR_EMAIL_WEBHOOK_TOKEN ?? ""}` },
-    body: JSON.stringify(msg),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`email provider returned ${res.status}`); // retried with backoff
-}
+

@@ -1,8 +1,6 @@
 import "server-only";
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
 
 import { and, eq, isNull } from "drizzle-orm";
 
@@ -10,29 +8,13 @@ import { audit } from "../audit";
 import { signingSecret } from "../config";
 import type { Db } from "../db/client";
 import { documentAccessLog, documents, resumes } from "../db/schema";
+import { storage } from "../storage";
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const URL_TTL_SECONDS = 300;
 
-/**
- * Private object storage behind a small adapter. Local disk (outside public/) in development; an
- * S3-compatible bucket in production is the documented next step (docs/AVSAR_ARCHITECTURE.md §Storage).
- */
-interface Storage {
-  put(key: string, bytes: Buffer): Promise<void>;
-  get(key: string): Promise<Buffer>;
-  remove(key: string): Promise<void>;
-}
-const ROOT = path.join(process.cwd(), ".data/uploads");
-const localStorage: Storage = {
-  async put(key, bytes) {
-    await mkdir(ROOT, { recursive: true });
-    await writeFile(path.join(ROOT, key), bytes, { flag: "wx" });
-  },
-  get: (key) => readFile(path.join(ROOT, key)),
-  remove: (key) => rm(path.join(ROOT, key), { force: true }),
-};
-export const storage: Storage = localStorage;
+/** Storage lives in ../storage (local disk in development, S3-compatible in production). */
+export { storage } from "../storage";
 
 /** Content-based type detection (the browser's type and the file name are not trusted). */
 export function detectType(bytes: Buffer): { mime: string; ext: "pdf" | "docx" } | null {
@@ -57,7 +39,7 @@ export async function uploadResume(db: Db, owner: { identityId: string; profileI
   if (existing.length >= 5) throw new UploadError("LIMIT", "You can keep up to 5 resumes. Delete one first.");
 
   const key = `${randomUUID()}.${type.ext}`;
-  await storage.put(key, file.bytes);
+  await storage().put(key, file.bytes, type.mime);
   try {
     return await db.transaction(async (tx) => {
       const safeName = file.name.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || `resume.${type.ext}`;
@@ -68,7 +50,7 @@ export async function uploadResume(db: Db, owner: { identityId: string; profileI
       return resume;
     });
   } catch (err) {
-    await storage.remove(key); // never leave orphaned bytes behind a failed write
+    await storage().remove(key); // never leave orphaned bytes behind a failed write
     throw err;
   }
 }
@@ -96,7 +78,7 @@ export async function deleteResume(db: Db, owner: { identityId: string; profileI
     if (!used.length) await tx.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, r.doc.id));
     await tx.insert(documentAccessLog).values({ documentId: r.doc.id, actorIdentityId: owner.identityId, action: "delete" });
   });
-  if (!used.length) await storage.remove(r.doc.storageKey);
+  if (!used.length) await storage().remove(r.doc.storageKey);
   if (r.resume.isDefault) {
     const [next] = await db.select().from(resumes).where(eq(resumes.profileId, owner.profileId)).limit(1);
     if (next) await db.update(resumes).set({ isDefault: true }).where(eq(resumes.id, next.id));
@@ -131,5 +113,5 @@ export async function readDocumentForViewer(db: Db, documentId: string, viewer: 
   if (!own && !viewer.canViewAny && !asEmployer) return null; // indistinguishable from missing
   await db.insert(documentAccessLog).values({ documentId, actorIdentityId: viewer.id, action: "view" });
   if (!own) await audit(db, { actorId: viewer.id, actorRole: asEmployer ? "employer" : "admin", action: "document.view", targetType: "document", targetId: documentId });
-  return { doc, bytes: await storage.get(doc.storageKey) };
+  return { doc, bytes: await storage().get(doc.storageKey) };
 }

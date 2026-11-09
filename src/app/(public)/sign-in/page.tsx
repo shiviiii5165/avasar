@@ -18,6 +18,7 @@ const ERRORS: Record<string, string> = {
   sso_not_configured: "Sign-in with AI Tathastu isn't available yet in this environment.",
   account_disabled: "This account has been disabled. Contact support if you think this is a mistake.",
   unavailable: "Sign-in is temporarily unavailable. Please try again.",
+  rate_limited: "Too many sign-in attempts from your network. Please wait a minute and try again.",
 };
 
 type SP = Promise<{ returnTo?: string; error?: string }>;
