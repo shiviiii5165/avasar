@@ -40,29 +40,25 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
 
   return (
     <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:px-8">
-      <div className="max-w-md">
-        <h1 className="font-serif text-4xl text-navy sm:text-5xl">Welcome to <em className="italic text-orange">Avsar</em></h1>
-        <p className="mt-3 text-muted">Sign in with your AI Tathastu account. Avsar keeps its own profile for you, and nothing is shared without your choice.</p>
+      <div className="mx-auto w-full max-w-md lg:mx-0">
+        <h1 className="font-serif text-4xl leading-tight text-navy sm:text-5xl">Sign in to <em className="italic text-orange">Avsar</em></h1>
+        <p className="mt-4 text-lg text-navy-soft">Continue with your AI Tathastu account to explore opportunities and manage your applications.</p>
         {error && (
           <p role="alert" className="mt-6 rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{ERRORS[error] ?? ERRORS.unavailable}</p>
         )}
-        <div className="mt-8 space-y-3">
-          <a href={loginHref} className={buttonClass("primary", "lg", "w-full")}>Continue with AI Tathastu</a>
-          <div className="rounded-lg border border-line bg-surface px-4 py-3 text-sm text-muted">
-            <p><span className="font-semibold text-navy">Already on AI Tathastu?</span> Log in there and you come straight back here.</p>
-            <p className="mt-2">
-              <span className="font-semibold text-navy">New?</span> Create your free AI Tathastu account. The same account also works on Avsar and Collaborate.{" "}
-              <a href={`${loginHref}&signup=1`} className="font-semibold text-orange underline-offset-2 hover:underline">Create an AI Tathastu account</a>
-            </p>
-          </div>
-          {!ssoReady && (
-            <p className="text-xs text-muted">Sign-in is still being connected in this environment. You can keep exploring opportunities meanwhile.</p>
-          )}
-          <p className="flex items-start gap-2 text-xs text-muted">
-            <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />
-            Avsar never sees your AI Tathastu password. We verify your identity with signed tokens and keep our own secure session.
-          </p>
-        </div>
+        <a href={loginHref} className={buttonClass("primary", "lg", "mt-10 w-full")}>Continue with AI Tathastu</a>
+        {/* AI Tathastu has no separate sign-up page: its login creates the account for a new email, then returns here. */}
+        <p className="mt-5 text-center text-sm text-muted">
+          New to AI Tathastu?{" "}
+          <a href={loginHref} className="font-semibold text-orange underline-offset-4 hover:underline">Create a free account</a>
+        </p>
+        {!ssoReady && (
+          <p className="mt-4 text-center text-xs text-muted">Sign-in is still being connected in this environment.</p>
+        )}
+        <p className="mt-10 flex items-center justify-center gap-1.5 border-t border-line pt-5 text-xs text-muted">
+          <ShieldCheck aria-hidden className="size-3.5 shrink-0 text-success" />
+          Your password stays with AI Tathastu. Avsar never sees it.
+        </p>
 
         {dev && (
           <section aria-labelledby="dev-title" className="mt-10 rounded-xl border-2 border-dashed border-orange/60 bg-peach-soft/50 p-5">
