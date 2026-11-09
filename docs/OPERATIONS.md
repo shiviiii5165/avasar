@@ -50,7 +50,7 @@ npm run mock:ait         # optional: LOCAL MOCK of AI Tathastu on :3401 (not rea
 - **Data:** only for data damage, restore into a NEW database from the provider's point-in-time recovery, verify it on staging, then switch `DATABASE_URL`. `npm run db:restore` never targets production.
 
 ### Real AI Tathastu SSO go-live (after AI Tathastu registers the `avsar` client)
-1. AI Tathastu's owner registers client `avsar` with the exact callback `https://<avsar-host>/api/auth/callback` and the profile scopes (see docs/AI_TATHASTU_INTEGRATION.md).
+1. AI Tathastu's owner registers client `avsar` with the exact callback `https://avasar.aitathastu.com/api/auth/tathastu/callback` and the profile scopes (see docs/AI_TATHASTU_INTEGRATION.md).
 2. Put `AVSAR_AIT_CLIENT_ID=avsar`, `AVSAR_AIT_CLIENT_SECRET` and `AVSAR_AIT_BASE_URL` in the host's secret store (never chat or git).
 3. In staging: sign in with a real account, confirm the profile import, refresh (`prompt=none`), reconnect (`prompt=consent`), sign out, and a denied consent. Only then repeat in production.
 

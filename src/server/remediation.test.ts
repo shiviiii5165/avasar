@@ -117,3 +117,21 @@ describe("F. staff document permissions (least privilege)", () => {
     expect(can(["support_agent"], "document.view_any")).toBe(false);
   });
 });
+
+import { canonicalRedirect } from "../proxy";
+
+describe("canonical host (avasar.aitathastu.com)", () => {
+  const pub = "https://avasar.aitathastu.com";
+  it("redirects the Vercel host to the canonical domain, keeping path and query", () => {
+    expect(canonicalRedirect("https://avasar-orcin.vercel.app/opportunities?q=react", "avasar-orcin.vercel.app", pub)).toBe("https://avasar.aitathastu.com/opportunities?q=react");
+    expect(canonicalRedirect("https://avasar-orcin.vercel.app/api/auth/login?returnTo=%2Fapp", "avasar-orcin.vercel.app", pub)).toBe("https://avasar.aitathastu.com/api/auth/login?returnTo=%2Fapp");
+  });
+  it("leaves the canonical host and health checks alone, and does nothing without a valid public URL", () => {
+    expect(canonicalRedirect("https://avasar.aitathastu.com/app", "avasar.aitathastu.com", pub)).toBeNull();
+    expect(canonicalRedirect("https://avasar.aitathastu.com/app", "AVASAR.AITATHASTU.COM", pub)).toBeNull();
+    expect(canonicalRedirect("https://avasar-orcin.vercel.app/api/health", "avasar-orcin.vercel.app", pub)).toBeNull();
+    expect(canonicalRedirect("https://avasar-orcin.vercel.app/api/health/live", "avasar-orcin.vercel.app", pub)).toBeNull();
+    expect(canonicalRedirect("https://x.vercel.app/", "x.vercel.app", undefined)).toBeNull();
+    expect(canonicalRedirect("https://x.vercel.app/", "x.vercel.app", "not a url")).toBeNull();
+  });
+});

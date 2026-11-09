@@ -68,9 +68,10 @@ Refresh: `/api/auth/login?prompt=none`. `login_required` / `consent_required` le
 ## Registration checklist for the AI Tathastu administrator
 Avsar cannot sign in real students until this is done on AI Tathastu (Avsar does not change AI Tathastu):
 1. **Client ID:** add `avsar` to `IntegrationClientId` (`src/db/schema.ts`, text column, no migration) and an `INTEGRATION_CLIENTS`
-   entry: name "Avsar", origin `https://<avsar-staging-host>` (production origin later), `requested: ["skills", "projects", "experience", "education", "achievements"]`.
+   entry: name "Avsar", origin `https://avasar.aitathastu.com`, `requested: ["skills", "projects", "experience", "education", "achievements"]`.
 2. **Feature flag:** add `avsar_profile_api` to `src/lib/feature-flags.ts` (and the client → flag map) and enable it for staging.
-3. **Callback:** `INTEGRATION_AVSAR_REDIRECT_URIS=https://<avsar-staging-host>/api/auth/tathastu/callback` (exact; add production later).
+3. **Callback:** `INTEGRATION_AVSAR_REDIRECT_URIS=https://avasar.aitathastu.com/api/auth/tathastu/callback` (exact; only this
+   host — `avasar-orcin.vercel.app` redirects to it, so it must NOT be registered).
    If unset, AI Tathastu accepts exactly that path on the registered origin anyway.
 4. **PKCE S256:** required; do **not** set `INTEGRATION_AVSAR_PKCE_OPTIONAL`.
 5. **Client secret:** generate a long random secret and set `INTEGRATION_AVSAR_CLIENT_SECRET` in AI Tathastu's secret store; give the
@@ -87,7 +88,7 @@ section filtering, real key rotation timing, and that the deployed AI Tathastu m
 | `AVSAR_AIT_BASE_URL` | AI Tathastu's base URL for that environment (e.g. `https://www.aitathastu.com`) |
 | `AVSAR_AIT_CLIENT_ID` | `avsar` |
 | `AVSAR_AIT_CLIENT_SECRET` | the secret from step 5 |
-| `AVSAR_PUBLIC_URL` | `https://<avsar-staging-host>` (the callback becomes `{this}/api/auth/tathastu/callback`) |
+| `AVSAR_PUBLIC_URL` | `https://avasar.aitathastu.com` (the callback becomes `{this}/api/auth/tathastu/callback`; other hosts redirect here) |
 | `AVSAR_AIT_REDIRECT_URI` | optional; only if it must differ, and then it must exactly match step 3 |
 | `AVSAR_AIT_ISSUER` | optional; defaults to `https://www.aitathastu.com` |
 | `AVSAR_DEV_AUTH` | unset (ignored in production anyway) |
