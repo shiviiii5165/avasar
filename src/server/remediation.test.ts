@@ -101,7 +101,7 @@ describe("E. document parsing limits", () => {
     await expect(checkDocx(Buffer.from("PK\u0003\u0004 not really a zip"))).rejects.toThrow(/damaged/);
     const empty = new JSZip(); empty.file("other.xml", "<a/>");
     await expect(checkDocx(await empty.generateAsync({ type: "nodebuffer" }))).rejects.toThrow(/no document content/);
-    await expect(documentText(Buffer.alloc(PARSE_LIMITS.maxBytes + 1), "application/pdf")).rejects.toThrow(/5 MB/);
+    await expect(documentText(Buffer.alloc(PARSE_LIMITS.maxBytes + 1), "application/pdf")).rejects.toThrow(/4 MB/);
     await expect(documentText(Buffer.from("x"), "text/html")).rejects.toThrow(/Only PDF and Word/);
   });
   it("rejects a malformed PDF without crashing", async () => {

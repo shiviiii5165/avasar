@@ -25,7 +25,7 @@ Status key:
 | C1 | 16-step progressive onboarding, skippable | Done | `app/onboarding` | E2E |
 | D1 | Talent profile incl. skill levels + evidence, links, preferences | Done | `services/profiles.ts` | tests, E2E |
 | D2 | Visibility private/application/discoverable, private default | Done | schema, Settings | E2E |
-| E1 | Resumes: PDF/DOCX, content validation, 5 MB, versions, default, delete, signed links, access log | Done (local storage) | `services/documents.ts` | tests, E2E |
+| E1 | Resumes: PDF/DOCX, content validation, 4 MB, versions, default, delete, signed links, access log | Done (local storage) | `services/documents.ts` | tests, E2E |
 | E2 | Resume parsing with confirmation | Planned R7 | — | — |
 | F1 | Structured listings, category details, versions | Done | schema | tests |
 | F2 | Search filters, sorting, pagination | Done (education filter via eligibility only) | `searchOpportunities` | tests, E2E |

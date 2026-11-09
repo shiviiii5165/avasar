@@ -10,7 +10,8 @@ import type { Db } from "../db/client";
 import { documentAccessLog, documents, resumes } from "../db/schema";
 import { storage } from "../storage";
 
-export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+/** 4 MB: below Vercel's 4.5 MB request-body limit for functions, so uploads never fail at the platform edge. */
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const URL_TTL_SECONDS = 300;
 
 /** Storage lives in ../storage (local disk in development, S3-compatible in production). */
@@ -32,7 +33,7 @@ export class UploadError extends Error {
 
 export async function uploadResume(db: Db, owner: { identityId: string; profileId: string }, file: { name: string; bytes: Buffer }, label?: string) {
   if (!file.bytes.length) throw new UploadError("EMPTY", "The file is empty.");
-  if (file.bytes.length > MAX_UPLOAD_BYTES) throw new UploadError("TOO_LARGE", "Files must be 5 MB or smaller.");
+  if (file.bytes.length > MAX_UPLOAD_BYTES) throw new UploadError("TOO_LARGE", "Files must be 4 MB or smaller.");
   const type = detectType(file.bytes);
   if (!type) throw new UploadError("TYPE", "Upload a PDF or Word (.docx) file.");
   const existing = await db.select({ id: resumes.id, version: resumes.version }).from(resumes).innerJoin(documents, eq(resumes.documentId, documents.id)).where(and(eq(resumes.profileId, owner.profileId), isNull(documents.deletedAt)));

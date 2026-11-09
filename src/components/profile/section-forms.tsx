@@ -147,7 +147,7 @@ export function CertificationSection({ p }: { p: LoadedProfile }) {
 export function ResumeUpload() {
   return (
     <ActionForm action={uploadResumeAction} submitLabel="Upload resume" resetOnSuccess>
-      <Input name="file" label="Resume (PDF or Word .docx, up to 5 MB)" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+      <Input name="file" label="Resume (PDF or Word .docx, up to 4 MB)" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
       <Input name="label" label="Label (optional)" placeholder="e.g. Frontend roles" maxLength={80} />
       <p className="text-xs text-muted">Your resume stays private. It&apos;s shared only with organizations you apply to, and only the version you choose.</p>
     </ActionForm>

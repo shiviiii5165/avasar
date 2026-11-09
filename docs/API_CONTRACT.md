@@ -39,7 +39,7 @@ Error shape: `{ "error": { "code": "...", "message": "..." } }`.
 ## Limits
 - **Search:** 12 per page.
 - **Admin lists:** 100–200 rows (cursor pagination is a follow-up).
-- **Uploads:** 5 MB, 5 resumes per person.
+- **Uploads:** 4 MB (below Vercel's 4.5 MB request limit), 5 resumes per person.
 - **Imports:** 500 items per batch.
 - **Reports:** 10 per hour.
 

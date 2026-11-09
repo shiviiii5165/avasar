@@ -25,7 +25,7 @@
 **Output:** React escaping. The only raw HTML is JSON-LD, with `<` escaped.
 
 **Uploads:**
-- Content sniffing (PDF signature, or DOCX zip containing `word/document.xml`), 5 MB limit.
+- Content sniffing (PDF signature, or DOCX zip containing `word/document.xml`), 4 MB limit.
 - Random keys, stored outside `public/`, served `nosniff` and `no-store`.
 - HMAC links bound to the viewer, valid 5 minutes; access logged, and staff access audited.
 

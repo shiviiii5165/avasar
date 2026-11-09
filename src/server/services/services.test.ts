@@ -150,7 +150,9 @@ describe("documents", () => {
   });
   it("uploads privately, signs short-lived per-viewer links and deletes", async () => {
     await expect(uploadResume(db, { identityId: candidateId, profileId }, { name: "evil.pdf", bytes: Buffer.from("MZ...") })).rejects.toThrow(UploadError);
-    await expect(uploadResume(db, { identityId: candidateId, profileId }, { name: "big.pdf", bytes: Buffer.concat([PDF, Buffer.alloc(6 * 1024 * 1024)]) })).rejects.toThrow(/5 MB/);
+    await expect(uploadResume(db, { identityId: candidateId, profileId }, { name: "big.pdf", bytes: Buffer.concat([PDF, Buffer.alloc(6 * 1024 * 1024)]) })).rejects.toThrow(/4 MB/);
+    // Just over the 4 MB cap (Vercel accepts request bodies up to 4.5 MB) is refused.
+    await expect(uploadResume(db, { identityId: candidateId, profileId }, { name: "edge.pdf", bytes: Buffer.concat([PDF, Buffer.alloc(4 * 1024 * 1024)]) })).rejects.toThrow(/4 MB/);
     const r = await uploadResume(db, { identityId: candidateId, profileId }, { name: "Cand CV.pdf", bytes: PDF });
     expect(r.isDefault).toBe(true);
     const url = new URL(signedDocumentUrl(r.documentId, candidateId), "http://x");

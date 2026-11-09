@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
       "*.css": { loaders: ["@tailwindcss/turbopack"], as: "*.css" },
     },
   },
-  experimental: { serverActions: { bodySizeLimit: "6mb" } }, // resume upload limit is 5 MB
+  experimental: { serverActions: { bodySizeLimit: "4.5mb" } }, // resume uploads are capped at 4 MB (Vercel functions accept up to 4.5 MB)
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

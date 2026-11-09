@@ -11,7 +11,7 @@ import { requireCandidate, requireUser } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { userIdentities } from "@/server/db/schema";
 import { ApplyError, changeApplicationStatus, submitApplication } from "@/server/services/applications";
-import { deleteResume, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
+import { deleteResume, MAX_UPLOAD_BYTES, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
 import { deleteSavedSearch, saveSearch, toggleSaved } from "@/server/services/engagement";
 import { markAllRead, NOTIFICATION_KINDS, setPreference, type NotificationKind } from "@/server/services/notifications";
 import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
@@ -147,7 +147,7 @@ export async function uploadResumeAction(_: ActionState, fd: FormData): Promise<
   if (!(await rateLimit(await getDb(), "upload", `id:${s.identity.id}`)).ok) return { ok: false, message: TOO_MANY };
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, errors: { file: "Choose a PDF or Word file." } };
-  if (file.size > 5 * 1024 * 1024) return { ok: false, errors: { file: "Files must be 5 MB or smaller." } };
+  if (file.size > MAX_UPLOAD_BYTES) return { ok: false, errors: { file: "Files must be 4 MB or smaller." } };
   try {
     await uploadResume(await getDb(), { identityId: s.identity.id, profileId: s.profileId }, { name: file.name, bytes: Buffer.from(await file.arrayBuffer()) }, String(fd.get("label") ?? ""));
   } catch (err) {

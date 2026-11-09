@@ -5,7 +5,7 @@ import "server-only";
  * the limits below bound memory and time for malformed or hostile files but are not process isolation.
  */
 export const PARSE_LIMITS = {
-  maxBytes: 5 * 1024 * 1024,              // same as the upload limit
+  maxBytes: 4 * 1024 * 1024,              // same as the upload limit (MAX_UPLOAD_BYTES)
   docxMaxEntries: 400,                     // files inside the .docx zip
   docxMaxUncompressed: 30 * 1024 * 1024,   // total declared uncompressed size
   docxMaxDocumentXml: 15 * 1024 * 1024,    // word/document.xml uncompressed
@@ -44,7 +44,7 @@ export async function checkDocx(bytes: Buffer): Promise<void> {
 }
 
 export async function documentText(bytes: Buffer, mimeType: string): Promise<string> {
-  if (bytes.length > PARSE_LIMITS.maxBytes) throw new DocumentTextError("Files must be 5 MB or smaller.");
+  if (bytes.length > PARSE_LIMITS.maxBytes) throw new DocumentTextError("Files must be 4 MB or smaller.");
   let text = "";
   if (mimeType === "application/pdf") {
     const { extractText, getDocumentProxy } = await import("unpdf");
