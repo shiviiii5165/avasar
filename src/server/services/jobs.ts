@@ -54,6 +54,10 @@ export const defaultHandlers: Record<string, Handler> = {
     if (!who?.email) return; // nothing to send to; in-app notification already exists
     await sendEmail({ to: who.email, subject: String(job.payload.title), text: `${job.payload.body ?? ""}\n\n${process.env.AVSAR_PUBLIC_URL ?? ""}${job.payload.link ?? ""}` });
   },
+  /** Organization invitation. The link carries a one-time token; acceptance requires signing in, and never matches on email. */
+  "email.invitation": async (_db, job) => {
+    await sendEmail({ to: String(job.payload.to), subject: `You're invited to ${job.payload.orgName} on Avsar Employer Studio`, text: `Accept the invitation (expires in 7 days):\n${process.env.AVSAR_PUBLIC_URL ?? ""}${job.payload.link}` });
+  },
   "opportunity.expire": async (db) => {
     // Published listings whose deadline passed become "expired" (never deleted).
     await db.update(opportunities).set({ status: "expired", updatedAt: new Date() }).where(and(eq(opportunities.status, "published"), lte(opportunities.deadline, new Date())));

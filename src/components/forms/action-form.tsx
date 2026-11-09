@@ -19,7 +19,7 @@ export function useFieldError(name: string): string | null {
  * the form after every action); clears only on success when resetOnSuccess is set. Without JavaScript the
  * native form action still runs.
  */
-export function ActionForm({ action, children, submitLabel, className = "", resetOnSuccess = false }: { action: Action; children: ReactNode; submitLabel?: string; className?: string; resetOnSuccess?: boolean }) {
+export function ActionForm({ action, children, submitLabel, className = "", resetOnSuccess = false }: { action: Action; children?: ReactNode; submitLabel?: string; className?: string; resetOnSuccess?: boolean }) {
   const [state, formAction, pending] = useActionState(action, null);
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => {

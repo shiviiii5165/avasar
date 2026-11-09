@@ -267,6 +267,9 @@ export const organizations = pgTable("organizations", {
   website: text("website"),
   domain: text("domain"),
   description: text("description"),
+  industry: text("industry"),
+  city: text("city"),
+  createdBy: uuid("created_by").references(() => userIdentities.id),
   verificationStatus: orgVerificationStatus("verification_status").notNull().default("unverified"),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -288,8 +291,12 @@ export const organizationInvitations = pgTable("organization_invitations", {
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  /** Accepted by whoever presented the token while signed in. Never matched by email. */
+  acceptedBy: uuid("accepted_by").references(() => userIdentities.id),
+  invitedBy: uuid("invited_by").references(() => userIdentities.id),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: createdAt(),
-});
+}, (t) => [uniqueIndex("organization_invitations_token").on(t.tokenHash)]);
 
 export const verificationRequests = pgTable("verification_requests", {
   id: id(),
@@ -480,16 +487,27 @@ export const assessments = pgTable("assessments", {
   id: id(),
   applicationId: uuid("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
+  instructions: text("instructions"),
   dueAt: timestamp("due_at", { withTimezone: true }),
   result: text("result"),
+  score: integer("score"),
+  maxScore: integer("max_score"),
+  feedback: text("feedback"),
+  createdBy: uuid("created_by").references(() => userIdentities.id),
   createdAt: createdAt(),
 });
 export const interviews = pgTable("interviews", {
   id: id(),
   applicationId: uuid("application_id").notNull().references(() => applications.id, { onDelete: "cascade" }),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
-  mode: text("mode"),
-  outcome: text("outcome"),
+  durationMinutes: integer("duration_minutes"),
+  mode: text("mode"), // video | phone | onsite
+  location: text("location"), // meeting link or address
+  interviewers: text("interviewers"),
+  status: text("status").notNull().default("scheduled"), // scheduled | completed | cancelled
+  outcome: text("outcome"), // advance | hold | decline (a person's recommendation, never automated)
+  feedback: text("feedback"),
+  createdBy: uuid("created_by").references(() => userIdentities.id),
   createdAt: createdAt(),
 });
 export const internalNotes = pgTable("internal_notes", {

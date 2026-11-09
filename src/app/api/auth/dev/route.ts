@@ -19,6 +19,9 @@ const PERSONAS = {
   candidate: { subject: "dev-candidate", name: "Asha Rao (dev)", email: "asha.dev@example.invalid", roles: [] },
   admin: { subject: "dev-admin", name: "Avsar Ops (dev)", email: "ops.dev@example.invalid", roles: ["platform_admin"] },
   moderator: { subject: "dev-moderator", name: "Moderator (dev)", email: "mod.dev@example.invalid", roles: ["moderator"] },
+  verifier: { subject: "dev-verifier", name: "Verification Officer (dev)", email: "verify.dev@example.invalid", roles: ["verification_officer"] },
+  employer: { subject: "dev-employer", name: "Riya Recruiter (dev)", email: "employer.dev@example.invalid", roles: [] },
+  employer2: { subject: "dev-employer-2", name: "Other Org Owner (dev)", email: "employer2.dev@example.invalid", roles: [] },
 } as const;
 
 export async function POST(request: Request) {
@@ -33,7 +36,7 @@ export async function POST(request: Request) {
   for (const role of persona.roles) await db.insert(adminRoles).values({ identityId: row.id, role }).onConflictDoNothing();
   const session = await createSession(db, row.id);
   await audit(db, { actorId: row.id, actorRole: "candidate", action: "auth.dev_sign_in", targetType: "identity", targetId: row.id, metadata: { persona: key } });
-  const fallback = persona.roles.length ? "/admin" : "/app/discover";
+  const fallback = persona.roles.length ? "/admin" : key.startsWith("employer") ? "/studio" : "/app/discover";
   const returnTo = safeReturnTo(String(form.get("returnTo") ?? "") || fallback);
   const res = NextResponse.redirect(new URL(returnTo, publicUrl()), { status: 303 });
   res.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt));

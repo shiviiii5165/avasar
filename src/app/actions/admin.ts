@@ -29,6 +29,11 @@ async function guard(p: Permission) {
 }
 const denied: ActionState = { ok: false, message: "You don't have permission to do that." };
 
+/** Form → opportunity input object. Shared with Employer Studio actions. */
+export async function parseOpportunityForm(fd: FormData) {
+  return opportunityForm(fd);
+}
+
 function opportunityForm(fd: FormData) {
   const get = (k: string) => (fd.get(k) === null ? undefined : String(fd.get(k)));
   return {

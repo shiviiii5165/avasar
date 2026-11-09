@@ -61,6 +61,9 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
               <button name="persona" value="candidate" className={buttonClass("secondary", "sm")}>Candidate</button>
               <button name="persona" value="admin" className={buttonClass("secondary", "sm")}>Platform admin</button>
               <button name="persona" value="moderator" className={buttonClass("secondary", "sm")}>Moderator</button>
+              <button name="persona" value="verifier" className={buttonClass("secondary", "sm")}>Verification officer</button>
+              <button name="persona" value="employer" className={buttonClass("secondary", "sm")}>Employer</button>
+              <button name="persona" value="employer2" className={buttonClass("secondary", "sm")}>Other employer</button>
             </form>
           </section>
         )}

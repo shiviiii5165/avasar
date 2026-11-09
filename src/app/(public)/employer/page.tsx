@@ -33,7 +33,10 @@ export default function EmployerStudioPage() {
           </li>
         ))}
       </ul>
-      <Link href="/contact" className={buttonClass("primary", "lg")}>List an opportunity with us</Link>
+      <div className="flex flex-wrap gap-3">
+        {features.employerStudio() && <Link href="/studio" className={buttonClass("primary", "lg")}>Open Employer Studio</Link>}
+        <Link href="/contact" className={buttonClass(features.employerStudio() ? "secondary" : "primary", "lg")}>List an opportunity with us</Link>
+      </div>
     </ContentPage>
   );
 }

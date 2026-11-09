@@ -119,11 +119,17 @@ export function verifyDocumentSignature(documentId: string, viewerId: string, ex
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
 
-export async function readDocumentForViewer(db: Db, documentId: string, viewer: { id: string; canViewAny: boolean }) {
+/**
+ * `canViewAny`: Avsar staff with candidate.view. `viaEmployer`: decides whether an organization member may open
+ * a resume that was submitted to their organization (checked lazily, only when needed).
+ */
+export async function readDocumentForViewer(db: Db, documentId: string, viewer: { id: string; canViewAny: boolean; viaEmployer?: () => Promise<boolean> }) {
   const [doc] = await db.select().from(documents).where(and(eq(documents.id, documentId), isNull(documents.deletedAt)));
   if (!doc) return null;
-  if (doc.ownerIdentityId !== viewer.id && !viewer.canViewAny) return null; // indistinguishable from missing
+  const own = doc.ownerIdentityId === viewer.id;
+  const asEmployer = !own && !viewer.canViewAny && (await viewer.viaEmployer?.()) === true;
+  if (!own && !viewer.canViewAny && !asEmployer) return null; // indistinguishable from missing
   await db.insert(documentAccessLog).values({ documentId, actorIdentityId: viewer.id, action: "view" });
-  if (doc.ownerIdentityId !== viewer.id) await audit(db, { actorId: viewer.id, actorRole: "admin", action: "document.view", targetType: "document", targetId: documentId });
+  if (!own) await audit(db, { actorId: viewer.id, actorRole: asEmployer ? "employer" : "admin", action: "document.view", targetType: "document", targetId: documentId });
   return { doc, bytes: await storage.get(doc.storageKey) };
 }

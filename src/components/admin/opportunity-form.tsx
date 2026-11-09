@@ -1,22 +1,24 @@
 import { saveOpportunityAction } from "@/app/actions/admin";
+import type { ActionState } from "@/app/actions/candidate";
 import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
 import type { OpportunityFull } from "@/server/services/opportunities";
 
 const LEVELS = [["higher_secondary", "Class 12"], ["diploma", "Diploma"], ["bachelors", "Bachelor's"], ["masters", "Master's"], ["doctorate", "Doctorate"]] as const;
 
-export function OpportunityForm({ o }: { o?: OpportunityFull }) {
+/** Shared by Admin Studio and Employer Studio. Employers pass their own action and a locked organization name. */
+export function OpportunityForm({ o, action, lockedOrganization }: { o?: OpportunityFull; action?: (s: ActionState, fd: FormData) => Promise<ActionState>; lockedOrganization?: string }) {
   const d = (o?.details ?? {}) as { stipendNote?: string; conversionPossible?: boolean; deliverables?: string };
   const req = o?.skills.filter((s) => s.required).map((s) => s.name).join(", ") ?? "";
   const pref = o?.skills.filter((s) => !s.required).map((s) => s.name).join(", ") ?? "";
   const e = o?.eligibility;
   const date = o?.deadline ? new Date(o.deadline.getTime() - o.deadline.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
   return (
-    <ActionForm action={saveOpportunityAction.bind(null, o?.id ?? null)} submitLabel={o ? "Save changes" : "Create draft"}>
+    <ActionForm action={action ?? saveOpportunityAction.bind(null, o?.id ?? null)} submitLabel={o ? "Save changes" : "Create draft"}>
       {o?.status === "published" && <p className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">Saving changes to a published listing sends it back to review and takes it offline until re-approved.</p>}
       <fieldset className="grid gap-4 sm:grid-cols-2">
         <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">Basics</legend>
         <div className="sm:col-span-2"><Input name="title" label="Title" required defaultValue={o?.title} maxLength={140} /></div>
-        <Input name="organizationName" label="Organization" required defaultValue={o?.organizationName} />
+        {lockedOrganization ? <Input name="organizationName" label="Organization" defaultValue={lockedOrganization} readOnly hint="Listings are published in your organization's verified name." /> : <Input name="organizationName" label="Organization" required defaultValue={o?.organizationName} />}
         <Select name="category" label="Category" required defaultValue={o?.category ?? "job"}>
           <option value="job">Job</option><option value="internship">Internship</option><option value="gig">Freelance / gig</option>
         </Select>

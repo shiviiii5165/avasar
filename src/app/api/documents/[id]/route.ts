@@ -3,6 +3,7 @@ import { getDb } from "@/server/db/client";
 import { can } from "@/server/domain/permissions";
 import { apiError } from "@/server/http";
 import { readDocumentForViewer, verifyDocumentSignature } from "@/server/services/documents";
+import { employerMayViewDocument } from "@/server/services/employer";
 
 /**
  * GET /api/documents/:id?exp=&sig= — streams a private document. Requires BOTH a valid session and a
@@ -16,7 +17,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   if (!verifyDocumentSignature(id, session.identity.id, Number(url.searchParams.get("exp")), url.searchParams.get("sig") ?? "")) {
     return apiError(403, "LINK_EXPIRED", "This link has expired. Open the document again from Avsar.");
   }
-  const found = await readDocumentForViewer(await getDb(), id, { id: session.identity.id, canViewAny: can(session.roles, "candidate.view") });
+  const db = await getDb();
+  const found = await readDocumentForViewer(db, id, { id: session.identity.id, canViewAny: can(session.roles, "candidate.view"), viaEmployer: () => employerMayViewDocument(db, session.identity.id, id) });
   if (!found) return apiError(404, "NOT_FOUND", "Document not found");
   return new Response(new Uint8Array(found.bytes), {
     headers: {

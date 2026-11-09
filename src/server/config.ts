@@ -60,5 +60,7 @@ export function bootstrapSuperAdmins(): string[] {
 
 /** Feature gates for releases that are built but not yet switched on for real users. */
 export const features = {
+  /** Employer Studio workspace. On in development; in production only when the owner enables it. Publishing stays admin-only regardless. */
+  employerStudio: () => env("AVSAR_FEATURE_EMPLOYER_STUDIO") === "1" || !isProduction(),
   employerSelfPublishing: () => env("AVSAR_FEATURE_EMPLOYER_PUBLISHING") === "1",
 };

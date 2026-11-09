@@ -233,19 +233,25 @@ function columnsFor(input: OpportunityInput) {
   };
 }
 
-export async function createOpportunity(db: Db, input: OpportunityInput, actorId: string) {
+/** Who is acting and for which organization. Defaults: Avsar staff, no organization account. */
+export interface OpportunityActor { role?: "admin" | "employer"; orgId?: string | null; orgVerified?: boolean }
+
+export async function createOpportunity(db: Db, input: OpportunityInput, actorId: string, by: OpportunityActor = {}) {
   return db.transaction(async (tx) => {
     const base = slugify(`${input.title} ${input.organizationName}`) || "opportunity";
     const slug = `${base}-${createHash("sha1").update(`${base}${Date.now()}${Math.random()}`).digest("hex").slice(0, 6)}`;
-    const [row] = await tx.insert(opportunities).values({ ...columnsFor(input), slug, status: "draft", createdBy: actorId, questions: [] }).returning();
+    const [row] = await tx
+      .insert(opportunities)
+      .values({ ...columnsFor(input), slug, status: "draft", createdBy: actorId, questions: [], orgId: by.orgId ?? null, verification: by.orgVerified ? "org_verified" : "unverified" })
+      .returning();
     await writeChildren(tx, row.id, input);
     await snapshot(tx, row, actorId);
-    await audit(tx, { actorId, actorRole: "admin", action: "opportunity.create", targetType: "opportunity", targetId: row.id });
+    await audit(tx, { actorId, actorRole: by.role ?? "admin", action: "opportunity.create", targetType: "opportunity", targetId: row.id, metadata: by.orgId ? { orgId: by.orgId } : undefined });
     return row;
   });
 }
 
-export async function updateOpportunity(db: Db, id: string, input: OpportunityInput, actorId: string) {
+export async function updateOpportunity(db: Db, id: string, input: OpportunityInput, actorId: string, by: OpportunityActor = {}) {
   return db.transaction(async (tx) => {
     const [cur] = await tx.select().from(opportunities).where(eq(opportunities.id, id)).for("update");
     if (!cur) throw new Error("NOT_FOUND");
@@ -258,7 +264,7 @@ export async function updateOpportunity(db: Db, id: string, input: OpportunityIn
       .returning();
     await writeChildren(tx, id, input);
     await snapshot(tx, row, actorId);
-    await audit(tx, { actorId, actorRole: "admin", action: "opportunity.update", targetType: "opportunity", targetId: id, metadata: { version: row.version, returnedToReview: backToReview } });
+    await audit(tx, { actorId, actorRole: by.role ?? "admin", action: "opportunity.update", targetType: "opportunity", targetId: id, metadata: { version: row.version, returnedToReview: backToReview } });
     return row;
   });
 }
@@ -269,7 +275,7 @@ export class TransitionError extends Error {
   }
 }
 
-export async function transitionOpportunity(db: Db, id: string, to: OpportunityStatus, actorId: string, reason?: string) {
+export async function transitionOpportunity(db: Db, id: string, to: OpportunityStatus, actorId: string, reason?: string, by: OpportunityActor = {}) {
   return db.transaction(async (tx) => {
     const [cur] = await tx.select().from(opportunities).where(eq(opportunities.id, id)).for("update");
     if (!cur) throw new TransitionError("Opportunity not found");
@@ -283,7 +289,7 @@ export async function transitionOpportunity(db: Db, id: string, to: OpportunityS
       .set({ status: to, updatedAt: new Date(), publishedAt: to === "published" ? new Date() : cur.publishedAt, lastVerifiedAt: to === "published" ? new Date() : cur.lastVerifiedAt })
       .where(eq(opportunities.id, id))
       .returning();
-    await audit(tx, { actorId, actorRole: "admin", action: `opportunity.${to}`, targetType: "opportunity", targetId: id, metadata: { from: cur.status, reason: reason ?? null } });
+    await audit(tx, { actorId, actorRole: by.role ?? "admin", action: `opportunity.${to}`, targetType: "opportunity", targetId: id, metadata: { from: cur.status, reason: reason ?? null } });
     return row;
   });
 }

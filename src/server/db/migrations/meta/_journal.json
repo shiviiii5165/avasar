@@ -36,6 +36,20 @@
       "when": 1793947098713,
       "tag": "0004_education_level_answer",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793949956295,
+      "tag": "0005_employer_studio",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793949986899,
+      "tag": "0006_assessment_records",
+      "breakpoints": true
     }
   ]
 }
