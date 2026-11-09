@@ -1,3 +1,4 @@
+import { CATEGORY_KEYS, mergeQuestions, type CategoryKey } from "../domain/categories";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -22,7 +23,7 @@ export interface OpportunityFull extends OpportunityRow {
 // ─── Public discovery ──────────────────────────────────────────────────────
 export const searchSchema = z.object({
   q: z.string().trim().max(100).optional(),
-  category: z.enum(["job", "internship", "gig"]).optional(),
+  category: z.enum(CATEGORY_KEYS).optional(),
   workMode: z.enum(["remote", "hybrid", "onsite"]).optional(),
   location: z.string().trim().max(60).optional(),
   employmentType: z.enum(["full_time", "part_time", "temporary", "contract"]).optional(),
@@ -70,6 +71,13 @@ export async function searchOpportunities(db: Db, input: SearchInput, now = new 
 }
 
 /** All open listings (bounded) for personalized ranking; the public marketplace keeps its own pagination. */
+/** Categories that currently have publicly visible listings, in registry order. Empty categories aren't shown. */
+export async function liveCategories(db: Db, now = new Date()): Promise<CategoryKey[]> {
+  const rows = await db.selectDistinct({ c: opportunities.category }).from(opportunities).where(publicVisibility(now));
+  const have = new Set(rows.map((r) => r.c as string));
+  return CATEGORY_KEYS.filter((k) => have.has(k));
+}
+
 export async function listOpenOpportunities(db: Db, limit = 300, now = new Date()) {
   const rows = await db.select().from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt)).limit(limit);
   return withDetails(db, rows);
@@ -149,7 +157,7 @@ export function toFacts(o: OpportunityFull): OpportunityFacts {
 const optInt = z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v), z.coerce.number().int().min(0).optional());
 export const opportunityInput = z.object({
   title: z.string().trim().min(4).max(140),
-  category: z.enum(["job", "internship", "gig"]),
+  category: z.enum(CATEGORY_KEYS),
   employmentType: z.enum(["full_time", "part_time", "temporary", "contract"]).optional(),
   organizationName: z.string().trim().min(2).max(120),
   summary: z.string().trim().max(240).optional(),
@@ -176,12 +184,15 @@ export const opportunityInput = z.object({
   stipendNote: z.string().trim().max(200).optional(),
   conversionPossible: z.boolean().default(false),
   deliverables: z.string().trim().max(1_000).optional(),
+  /** Category-specific fields, already validated by parseCategoryDetails (see domain/categories). */
+  details: z.record(z.string(), z.unknown()).optional(),
 }).refine((v) => v.compMin === undefined || v.compMax === undefined || v.compMax >= v.compMin, { message: "Maximum compensation must be at least the minimum", path: ["compMax"] });
 export type OpportunityInput = z.infer<typeof opportunityInput>;
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
 
 function detailsFor(input: OpportunityInput): Record<string, unknown> {
+  if (input.details) return input.details;
   if (input.category === "internship") return { stipendNote: input.stipendNote ?? null, conversionPossible: input.conversionPossible, certificate: null };
   if (input.category === "gig") return { deliverables: input.deliverables ?? null };
   return {};
@@ -242,7 +253,7 @@ export async function createOpportunity(db: Db, input: OpportunityInput, actorId
     const slug = `${base}-${createHash("sha1").update(`${base}${Date.now()}${Math.random()}`).digest("hex").slice(0, 6)}`;
     const [row] = await tx
       .insert(opportunities)
-      .values({ ...columnsFor(input), slug, status: "draft", createdBy: actorId, questions: [], orgId: by.orgId ?? null, verification: by.orgVerified ? "org_verified" : "unverified" })
+      .values({ ...columnsFor(input), slug, status: "draft", createdBy: actorId, questions: mergeQuestions(input.category, []), orgId: by.orgId ?? null, verification: by.orgVerified ? "org_verified" : "unverified" })
       .returning();
     await writeChildren(tx, row.id, input);
     await snapshot(tx, row, actorId);
@@ -259,7 +270,7 @@ export async function updateOpportunity(db: Db, id: string, input: OpportunityIn
     const backToReview = cur.status === "published" || cur.status === "approved" || cur.status === "paused";
     const [row] = await tx
       .update(opportunities)
-      .set({ ...columnsFor(input), version: cur.version + 1, updatedAt: new Date(), status: backToReview ? "in_review" : cur.status, publishedAt: backToReview ? null : cur.publishedAt })
+      .set({ ...columnsFor(input), questions: mergeQuestions(input.category, cur.questions), version: cur.version + 1, updatedAt: new Date(), status: backToReview ? "in_review" : cur.status, publishedAt: backToReview ? null : cur.publishedAt })
       .where(eq(opportunities.id, id))
       .returning();
     await writeChildren(tx, id, input);
@@ -326,7 +337,7 @@ export async function importBatch(db: Db, sourceId: string, items: unknown[], ac
       continue;
     }
     const it = parsed.data;
-    const category = ["job", "internship", "gig"].includes(it.category ?? "") ? (it.category as "job" | "internship" | "gig") : "job";
+    const category = (CATEGORY_KEYS as readonly string[]).includes(it.category ?? "") ? (it.category as CategoryKey) : "job";
     const workMode = ["remote", "hybrid", "onsite"].includes(it.workMode ?? "") ? (it.workMode as "remote" | "hybrid" | "onsite") : "onsite";
     const deadline = it.deadline ? new Date(it.deadline) : null;
     if (it.title.trim().length < 4) issues.push("Title too short");

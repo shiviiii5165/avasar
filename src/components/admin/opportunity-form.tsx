@@ -1,13 +1,18 @@
 import { saveOpportunityAction } from "@/app/actions/admin";
 import type { ActionState } from "@/app/actions/candidate";
 import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
+import { CATEGORIES, categoryDef } from "@/server/domain/categories";
 import type { OpportunityFull } from "@/server/services/opportunities";
 
 const LEVELS = [["higher_secondary", "Class 12"], ["diploma", "Diploma"], ["bachelors", "Bachelor's"], ["masters", "Master's"], ["doctorate", "Doctorate"]] as const;
 
-/** Shared by Admin Studio and Employer Studio. Employers pass their own action and a locked organization name. */
-export function OpportunityForm({ o, action, lockedOrganization }: { o?: OpportunityFull; action?: (s: ActionState, fd: FormData) => Promise<ActionState>; lockedOrganization?: string }) {
-  const d = (o?.details ?? {}) as { stipendNote?: string; conversionPossible?: boolean; deliverables?: string };
+/**
+ * Shared by Admin Studio and Employer Studio. The category is chosen before the form opens (`category`) and
+ * stays fixed while editing, so each category shows only its own fields.
+ */
+export function OpportunityForm({ o, action, lockedOrganization, category }: { o?: OpportunityFull; action?: (s: ActionState, fd: FormData) => Promise<ActionState>; lockedOrganization?: string; category?: string }) {
+  const def = categoryDef(o?.category ?? category ?? "job") ?? CATEGORIES[0];
+  const d = (o?.details ?? {}) as Record<string, unknown>;
   const req = o?.skills.filter((s) => s.required).map((s) => s.name).join(", ") ?? "";
   const pref = o?.skills.filter((s) => !s.required).map((s) => s.name).join(", ") ?? "";
   const e = o?.eligibility;
@@ -19,12 +24,13 @@ export function OpportunityForm({ o, action, lockedOrganization }: { o?: Opportu
         <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">Basics</legend>
         <div className="sm:col-span-2"><Input name="title" label="Title" required defaultValue={o?.title} maxLength={140} /></div>
         {lockedOrganization ? <Input name="organizationName" label="Organization" defaultValue={lockedOrganization} readOnly hint="Listings are published in your organization's verified name." /> : <Input name="organizationName" label="Organization" required defaultValue={o?.organizationName} />}
-        <Select name="category" label="Category" required defaultValue={o?.category ?? "job"}>
-          <option value="job">Job</option><option value="internship">Internship</option><option value="gig">Freelance / gig</option>
-        </Select>
-        <Select name="employmentType" label="Job type (jobs only)" defaultValue={o?.employmentType ?? "full_time"}>
-          <option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option><option value="temporary">Temporary</option>
-        </Select>
+        <input type="hidden" name="category" value={def.key} />
+        <Input name="categoryLabel" label="Category" defaultValue={def.label} readOnly hint={o ? "The category is fixed once a listing exists." : undefined} />
+        {def.employment ? (
+          <Select name="employmentType" label="Job type" defaultValue={o?.employmentType ?? "full_time"}>
+            <option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option><option value="temporary">Temporary</option>
+          </Select>
+        ) : <div />}
         <Select name="workMode" label="Work mode" required defaultValue={o?.workMode ?? "onsite"}>
           <option value="onsite">On-site</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option>
         </Select>
@@ -35,21 +41,31 @@ export function OpportunityForm({ o, action, lockedOrganization }: { o?: Opportu
       </fieldset>
 
       <fieldset className="grid gap-4 sm:grid-cols-3">
-        <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">Compensation and timing</legend>
+        <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">{def.compensation ? "Compensation and timing" : "Timing"}</legend>
+        {def.compensation && <>
         <Input name="compMin" label="Pay from (₹)" type="number" min={0} defaultValue={o?.compMin ?? ""} />
         <Input name="compMax" label="Pay to (₹)" type="number" min={0} defaultValue={o?.compMax ?? ""} />
         <Select name="compPeriod" label="Per" defaultValue={o?.compPeriod ?? ""}><option value="">—</option><option value="month">Month</option><option value="year">Year</option><option value="project">Project</option><option value="total">Total</option></Select>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="unpaid" defaultChecked={o?.unpaid} className="size-4 accent-purple" /> Unpaid</label>
+        </>}
         <Input name="durationWeeks" label="Duration (weeks)" type="number" min={0} defaultValue={o?.durationWeeks ?? ""} />
         <Input name="deadline" label="Application deadline" type="datetime-local" defaultValue={date} />
       </fieldset>
 
-      <fieldset className="grid gap-4 sm:grid-cols-2">
-        <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">Category details</legend>
-        <Input name="stipendNote" label="Stipend note (internships)" defaultValue={d.stipendNote ?? ""} />
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="conversionPossible" defaultChecked={d.conversionPossible} className="size-4 accent-purple" /> Conversion to full-time possible</label>
-        <div className="sm:col-span-2"><Input name="deliverables" label="Deliverables (gigs)" defaultValue={d.deliverables ?? ""} /></div>
-      </fieldset>
+      {def.fields.length > 0 && (
+        <fieldset className="grid gap-4 sm:grid-cols-2">
+          <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">{def.label} details</legend>
+          {def.fields.map((f) => {
+            const v = d[f.key];
+            const name = `d_${f.key}`;
+            if (f.type === "checkbox") return <label key={f.key} className="flex items-center gap-2 text-sm"><input type="checkbox" name={name} defaultChecked={v === true} className="size-4 accent-purple" /> {f.label}</label>;
+            if (f.type === "select") return <Select key={f.key} name={name} label={f.label} required={f.required} defaultValue={typeof v === "string" ? v : ""}><option value="">Choose</option>{f.options!.map(([ov, ol]) => <option key={ov} value={ov}>{ol}</option>)}</Select>;
+            if (f.type === "longtext") return <div key={f.key} className="sm:col-span-2"><Textarea name={name} label={f.label} required={f.required} defaultValue={typeof v === "string" ? v : ""} maxLength={2000} rows={3} /></div>;
+            return <Input key={f.key} name={name} label={f.label} required={f.required} hint={f.hint} type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"} defaultValue={v === null || v === undefined ? "" : String(v)} />;
+          })}
+          {def.questions.length > 0 && <p className="text-xs text-muted sm:col-span-2">Every application to a {def.label.toLowerCase()} also asks: {def.questions.map((q) => q.label).join("; ")}.</p>}
+        </fieldset>
+      )}
 
       <fieldset className="grid gap-4 sm:grid-cols-2">
         <legend className="mb-2 text-sm font-bold uppercase tracking-wide text-muted">Skills and eligibility (hard requirements)</legend>

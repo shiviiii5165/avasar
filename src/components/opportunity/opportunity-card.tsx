@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui";
 import type { OpportunityFull } from "@/server/services/opportunities";
 
 import { CATEGORY_LABEL, deadlineLabel, EMPLOYMENT_LABEL, formatComp, placeLabel } from "./format";
+import { cardHighlight } from "@/server/domain/categories";
 
 export function VerificationBadge({ level }: { level: string }) {
   if (level === "org_verified") return <Badge tone="success"><BadgeCheck aria-hidden className="size-3.5" /> Verified organization</Badge>;
@@ -33,7 +34,11 @@ export function OpportunityCard({ o, match, saved }: { o: OpportunityFull; match
       {o.summary && <p className="mt-3 line-clamp-2 text-sm text-ink/80">{o.summary}</p>}
       <dl className="mt-4 grid gap-1.5 text-sm text-navy-soft">
         <div className="flex items-center gap-2"><MapPin aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Location</dt><dd>{placeLabel(o)}</dd></div>
-        <div className="flex items-center gap-2"><IndianRupee aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Compensation</dt><dd>{formatComp(o)}</dd></div>
+        {["job", "internship", "gig"].includes(o.category) || o.compMin !== null || o.compMax !== null ? (
+            <div className="flex items-center gap-2"><IndianRupee aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Compensation</dt><dd>{formatComp(o)}</dd></div>
+          ) : cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>) ? (
+            <div className="flex items-center gap-2"><IndianRupee aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Highlight</dt><dd>{cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>)}</dd></div>
+          ) : null}
         <div className="flex items-center gap-2"><Clock3 aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Deadline</dt><dd className={deadline.urgent ? "font-semibold text-orange-deep" : ""}>{deadline.text}</dd></div>
         <div className="flex items-center gap-2">
           {o.applicationMethod === "external" ? <ExternalLink aria-hidden className="size-4 shrink-0 text-muted" /> : <Briefcase aria-hidden className="size-4 shrink-0 text-muted" />}

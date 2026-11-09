@@ -9,9 +9,8 @@ import { features } from "@/server/config";
 import { getDb } from "@/server/db/client";
 import type { ApplicationStatus, OpportunityStatus } from "@/server/domain/workflows";
 import * as emp from "@/server/services/employer";
-import { opportunityInput } from "@/server/services/opportunities";
 
-import { parseOpportunityForm } from "./admin";
+import { validateOpportunityForm } from "./admin";
 import type { ActionState } from "./candidate";
 
 /**
@@ -104,8 +103,8 @@ export async function acceptInviteAction(token: string): Promise<ActionState> {
 
 export async function saveListingAction(orgId: string, opportunityId: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
   const s = await me();
-  const parsed = opportunityInput.safeParse(await parseOpportunityForm(fd));
-  if (!parsed.success) return { ok: false, errors: Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])) };
+  const parsed = await validateOpportunityForm(fd);
+  if (!parsed.ok) return { ok: false, errors: parsed.errors, message: "Please fix the highlighted fields." };
   const db = await getDb();
   let id: string;
   try {

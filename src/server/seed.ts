@@ -2,6 +2,7 @@
  * Inserts SAMPLE data (idempotent by slug). Used by `npm run db:seed` and by tests.
  * Never run against production: refuses when NODE_ENV=production.
  */
+import { mergeQuestions } from "./domain/categories";
 import { eq } from "drizzle-orm";
 
 import type { Db } from "./db/client";
@@ -24,10 +25,11 @@ export async function seedSamples(db: Db, now = new Date()) {
       compMin: s.compMin ?? null, compMax: s.compMax ?? null, compPeriod: s.compPeriod ?? null, unpaid: s.unpaid ?? false,
       durationWeeks: s.durationWeeks ?? null, experienceMinYears: s.experienceMinYears ?? null,
       deadline: new Date(now.getTime() + s.deadlineInDays * 86_400_000), applicationMethod: s.applicationMethod, externalUrl: s.externalUrl ?? null,
-      details: s.details ?? {}, questions: s.questions ?? [], status: "published", verification: s.verification ?? "unverified",
+      details: s.details ?? {}, questions: mergeQuestions(s.category, s.questions ?? []), status: "published", verification: s.verification ?? "unverified",
       sourceId: source.id, sourceProvider: source.name, isSample: true, publishedAt, lastVerifiedAt: publishedAt,
     }).returning();
-    await db.insert(opportunitySkills).values(sampleSkillRows(row.id, s));
+    const skillRows = sampleSkillRows(row.id, s);
+    if (skillRows.length) await db.insert(opportunitySkills).values(skillRows);
     await db.insert(opportunityEligibility).values({
       opportunityId: row.id, educationLevels: s.educationLevels ?? null, graduationYearMin: s.graduationYearMin ?? null,
       graduationYearMax: s.graduationYearMax ?? null, minExperienceYears: s.experienceMinYears ?? null,

@@ -132,3 +132,30 @@ describe("contextual requirement questions", () => {
     expect(describeAnswers(["education", "work_authorization"], { educationLevel: "diploma", workAuthorizedIndia: false }).map((a) => a.answer)).toEqual(["Diploma", "No"]);
   });
 });
+
+import { describeDetails, mergeQuestions, parseCategoryDetails } from "./categories";
+
+describe("opportunity categories", () => {
+  const form = (o: Record<string, string>) => (k: string) => o[k] ?? null;
+  it("enforces each category's own required fields", () => {
+    const r = parseCategoryDetails("hackathon", form({ d_format: "online" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(Object.keys(r.errors).sort()).toEqual(["d_eventStart", "d_teamSizeMax"]);
+    expect(parseCategoryDetails("job", form({})).ok).toBe(true);
+  });
+  it("validates types and cross-field rules", () => {
+    const bad = parseCategoryDetails("hackathon", form({ d_eventStart: "2026-12-05", d_eventEnd: "2026-12-01", d_format: "online", d_teamSizeMin: "5", d_teamSizeMax: "3" }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors).toMatchObject({ d_teamSizeMin: expect.any(String), d_eventEnd: expect.any(String) });
+    const sch = parseCategoryDetails("scholarship", form({ d_awardAmount: "₹50,000", d_academicRequirement: "CGPA 7+", d_seats: "abc" }));
+    expect(sch.ok).toBe(false);
+    expect(parseCategoryDetails("startup_program", form({ d_stage: "unicorn", d_benefits: "x" })).ok).toBe(false);
+  });
+  it("adds category application questions and describes details for the listing page", () => {
+    const q = mergeQuestions("hackathon", [{ key: "team_name", label: "dup", required: false }, { key: "motivation", label: "Why?", required: true }]);
+    expect(q.map((x) => x.key)).toEqual(["team_name", "team_members", "motivation"]);
+    const ok = parseCategoryDetails("scholarship", form({ d_awardAmount: "₹50,000 per year", d_academicRequirement: "70% in Class 12", d_renewable: "on" }));
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(describeDetails("scholarship", ok.details).map((d) => d.label)).toEqual(["Award amount", "Academic requirement", "Renewable each year"]);
+  });
+});

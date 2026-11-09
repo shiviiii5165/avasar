@@ -40,6 +40,7 @@ export const opportunityCategory = pgEnum("opportunity_category", [
   "job", "internship", "gig",
   // Extensible categories (later releases). Each has its own fields in `details` and its own flow.
   "hackathon", "competition", "scholarship", "fellowship", "research", "entrepreneurship", "startup_program",
+  "academic_project", "professional_project",
 ]);
 export const employmentType = pgEnum("employment_type", ["full_time", "part_time", "temporary", "contract"]);
 export const opportunityStatus = pgEnum("opportunity_status", ["draft", "imported", "in_review", "approved", "published", "paused", "closed", "expired", "rejected", "suspended"]);

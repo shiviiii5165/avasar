@@ -1,3 +1,5 @@
+import { CATEGORIES } from "@/server/domain/categories";
+
 /** Display helpers for opportunity data. Values that are missing are shown as missing, never invented. */
 const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
@@ -15,10 +17,7 @@ export function formatComp(o: { compMin: number | null; compMax: number | null; 
   return lo === hi ? `₹${inr.format(lo)}${period}` : `₹${inr.format(lo)}–${inr.format(hi)}${period}`;
 }
 
-export const CATEGORY_LABEL: Record<string, string> = {
-  job: "Job", internship: "Internship", gig: "Freelance / gig", hackathon: "Hackathon", competition: "Competition",
-  scholarship: "Scholarship", fellowship: "Fellowship", research: "Research", entrepreneurship: "Entrepreneurship", startup_program: "Startup program",
-};
+export const CATEGORY_LABEL: Record<string, string> = { ...Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label])), entrepreneurship: "Entrepreneurship" };
 export const WORK_MODE_LABEL: Record<string, string> = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" };
 export const EMPLOYMENT_LABEL: Record<string, string> = { full_time: "Full-time", part_time: "Part-time", temporary: "Temporary", contract: "Contract" };
 

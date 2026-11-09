@@ -8,7 +8,7 @@ import { getSession } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
-import { searchOpportunities, searchSchema } from "@/server/services/opportunities";
+import { liveCategories, searchOpportunities, searchSchema } from "@/server/services/opportunities";
 
 export const metadata: Metadata = { title: "Explore opportunities", description: "Jobs, internships and freelance gigs for students, freshers and early-career people in India." };
 
@@ -54,7 +54,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
       </div>
       {!parsed.success && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-4 py-2 text-sm text-warning">Some filters weren&apos;t valid and were ignored.</p>}
       <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-        <aside><OpportunityFilters value={input} /></aside>
+        <aside><OpportunityFilters value={input} categories={await liveCategories(db).catch(() => ["job", "internship", "gig"])} /></aside>
         <section aria-label="Results">
           {items.length === 0 ? (
             <StateMessage kind="empty" title="No opportunities match these filters" body="Try removing a filter or searching for a broader term." action={<Link href="/opportunities" className={buttonClass("secondary")}>Clear filters</Link>} />

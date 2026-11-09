@@ -2,12 +2,14 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 
 import { buttonClass, inputClass } from "@/components/ui";
+import { categoryDef } from "@/server/domain/categories";
 import type { SearchInput } from "@/server/services/opportunities";
 
 const select = `${inputClass} pr-8`;
 
 /** Search and filters as a plain GET form: works without JavaScript; the URL is the state. */
-export function OpportunityFilters({ value, action = "/opportunities" }: { value: Partial<SearchInput>; action?: string }) {
+/** `categories`: only those with live listings (empty categories aren't offered). */
+export function OpportunityFilters({ value, action = "/opportunities", categories = ["job", "internship", "gig"] }: { value: Partial<SearchInput>; action?: string; categories?: string[] }) {
   return (
     <form action={action} method="get" role="search" aria-label="Search opportunities" className="space-y-4 rounded-xl border border-line bg-surface p-4 shadow-card">
       <div className="relative">
@@ -20,9 +22,7 @@ export function OpportunityFilters({ value, action = "/opportunities" }: { value
           <label htmlFor="category" className="text-xs font-semibold text-navy">Category</label>
           <select id="category" name="category" defaultValue={value.category ?? ""} className={select}>
             <option value="">All categories</option>
-            <option value="job">Jobs</option>
-            <option value="internship">Internships</option>
-            <option value="gig">Freelance &amp; gigs</option>
+            {categories.map((c) => <option key={c} value={c}>{categoryDef(c)?.plural ?? c}</option>)}
           </select>
         </div>
         <div>

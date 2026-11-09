@@ -52,7 +52,7 @@ describe("identity and sessions", () => {
 describe("discovery", () => {
   it("returns only published, open listings with filters and pagination", async () => {
     const all = await searchOpportunities(db, searchSchema.parse({}));
-    expect(all.total).toBe(9);
+    expect(all.total).toBe(12); // 9 job/internship/gig samples + hackathon, scholarship, research
     const interns = await searchOpportunities(db, searchSchema.parse({ category: "internship" }));
     expect(interns.items.every((i) => i.category === "internship")).toBe(true);
     const bySkill = await searchOpportunities(db, searchSchema.parse({ q: "pytorch" }));

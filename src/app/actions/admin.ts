@@ -13,7 +13,8 @@ import type { AdminRole, Permission } from "@/server/domain/permissions";
 import type { ApplicationStatus, OpportunityStatus } from "@/server/domain/workflows";
 import { changeApplicationStatus } from "@/server/services/applications";
 import { notify } from "@/server/services/notifications";
-import { createOpportunity, importBatch, opportunityInput, transitionOpportunity, TransitionError, updateOpportunity } from "@/server/services/opportunities";
+import { createOpportunity, importBatch, opportunityInput, transitionOpportunity, TransitionError, updateOpportunity, type OpportunityInput } from "@/server/services/opportunities";
+import { parseCategoryDetails } from "@/server/domain/categories";
 import { MODERATION_ACTIONS, resolveCase } from "@/server/services/trust";
 
 import type { ActionState } from "./candidate";
@@ -29,9 +30,17 @@ async function guard(p: Permission) {
 }
 const denied: ActionState = { ok: false, message: "You don't have permission to do that." };
 
-/** Form → opportunity input object. Shared with Employer Studio actions. */
-export async function parseOpportunityForm(fd: FormData) {
-  return opportunityForm(fd);
+/**
+ * Form → validated opportunity input, including the category's own fields (`d_*`). Shared with Employer
+ * Studio. Errors are keyed by field name so they show next to the right input.
+ */
+export async function validateOpportunityForm(fd: FormData): Promise<{ ok: true; data: OpportunityInput } | { ok: false; errors: Record<string, string> }> {
+  const parsed = opportunityInput.safeParse(opportunityForm(fd));
+  const errors: Record<string, string> = parsed.success ? {} : Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message]));
+  const det = parseCategoryDetails(String(fd.get("category") ?? ""), (k) => (fd.get(k) === null ? null : String(fd.get(k))));
+  if (!det.ok) Object.assign(errors, det.errors);
+  if (!parsed.success || !det.ok) return { ok: false, errors };
+  return { ok: true, data: { ...parsed.data, details: det.details } };
 }
 
 function opportunityForm(fd: FormData) {
@@ -52,8 +61,8 @@ function opportunityForm(fd: FormData) {
 export async function saveOpportunityAction(id: string | null, _: ActionState, fd: FormData): Promise<ActionState> {
   const s = await guard("opportunity.create");
   if (!s) return denied;
-  const parsed = opportunityInput.safeParse(opportunityForm(fd));
-  if (!parsed.success) return { ok: false, errors: Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])) };
+  const parsed = await validateOpportunityForm(fd);
+  if (!parsed.ok) return { ok: false, errors: parsed.errors, message: "Please fix the highlighted fields." };
   const db = await getDb();
   const row = id ? await updateOpportunity(db, z.string().uuid().parse(id), parsed.data, s.identity.id) : await createOpportunity(db, parsed.data, s.identity.id);
   revalidatePath("/admin", "layout");

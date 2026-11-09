@@ -7,7 +7,7 @@ import { normalizeSkill } from "./domain/skills";
 
 export interface SampleOpportunity {
   title: string;
-  category: "job" | "internship" | "gig";
+  category: import("./domain/categories").CategoryKey;
   employmentType?: "full_time" | "part_time" | "temporary" | "contract";
   organizationName: string;
   summary: string;
@@ -140,7 +140,42 @@ export const SAMPLE_OPPORTUNITIES: SampleOpportunity[] = [
     applicationMethod: "internal", required: ["Electrical Engineering", "AutoCAD"], preferred: ["MATLAB"],
     educationLevels: ["bachelors"], graduationYearMin: 2025, graduationYearMax: 2026, requiresWorkAuthorizationIndia: true, questions: [WHY], verification: "org_verified",
   },
-];
+  {
+    title: "Smart Cities Hackathon 2026",
+    category: "hackathon",
+    organizationName: "Nagarik Tech Collective (sample)",
+    summary: "48-hour hackathon building tools for city services, open to student teams.",
+    description: "Form a team of two to four and build a working prototype that makes a city service easier to use: water, transport, waste or public health. Mentors from civic-tech groups help over the weekend; the best teams present to municipal officers.",
+    responsibilities: "Form a team and pick a theme\nBuild and demo a working prototype\nPresent to the jury",
+    workMode: "hybrid", locations: ["Bengaluru"], deadlineInDays: 18, applicationMethod: "internal",
+    required: [], preferred: ["React", "Python", "Figma"],
+    details: { eventStart: "2026-12-05", eventEnd: "2026-12-07", format: "hybrid", teamSizeMin: 2, teamSizeMax: 4, themes: "Water, transport, waste, public health", prizes: "₹1,00,000 total; incubation interviews" },
+    verification: "source_verified",
+  },
+  {
+    title: "First-Generation Learners Scholarship",
+    category: "scholarship",
+    organizationName: "Vidya Setu Foundation (sample)",
+    summary: "Annual scholarship for first-generation college students in engineering and sciences.",
+    description: "Supports students who are the first in their family to attend college. Recipients receive an annual award for tuition and books, plus a mentor for the academic year. Renewable each year subject to academic progress.",
+    responsibilities: "Maintain academic progress\nMeet your mentor once a month",
+    workMode: "remote", locations: [], deadlineInDays: 35, applicationMethod: "internal",
+    required: [], preferred: [], educationLevels: ["bachelors", "diploma"], graduationYearMin: 2026, graduationYearMax: 2030,
+    details: { awardAmount: "₹50,000 per year", academicRequirement: "At least 70% in Class 12 or CGPA 7.0 in the latest semester", seats: 40, renewable: true },
+    verification: "org_verified",
+  },
+  {
+    title: "Undergraduate Research Assistant: Low-cost Air Sensors",
+    category: "research",
+    organizationName: "Institute Environmental Lab (sample)",
+    summary: "Help calibrate low-cost air-quality sensors against reference monitors.",
+    description: "Join a university environmental lab for a semester to collect and clean sensor data, compare it with reference monitors, and write up calibration results. Suitable for students comfortable with Python and basic statistics.",
+    responsibilities: "Collect and clean sensor data\nCompare with reference monitors\nWrite up calibration results",
+    workMode: "onsite", locations: ["Pune"], compMin: 8000, compMax: 8000, compPeriod: "month", deadlineInDays: 25, applicationMethod: "internal",
+    required: ["Python"], preferred: ["Statistics", "Pandas"], educationLevels: ["bachelors", "masters"],
+    details: { researchArea: "Environmental sensing and calibration", requiredQualifications: "Undergraduate in engineering or sciences; Python", duration: "One semester (about 16 weeks)", supervisor: "Air Quality Group" },
+    verification: "source_verified",
+  },];
 
 export function sampleSkillRows(opportunityId: string, s: SampleOpportunity) {
   const req = s.required.map((name) => ({ opportunityId, name, normalized: normalizeSkill(name), required: true }));

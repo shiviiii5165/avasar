@@ -1,3 +1,4 @@
+import { CATEGORY_KEYS } from "../domain/categories";
 import "server-only";
 
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
@@ -79,7 +80,7 @@ const date = z.preprocess((v) => (v === "" || v == null ? null : v), z.string().
 export const profileSchemas = {
   basics: z.object({ fullName: z.string().trim().min(2).max(100), headline: str(140), city: str(60), region: str(60) }),
   stage: z.object({ careerStage: z.enum(["student", "fresher", "early_career", "experienced", "career_switcher"]) }),
-  interests: z.object({ interests: list(400), preferredCategories: z.array(z.enum(["job", "internship", "gig"])).default([]) }),
+  interests: z.object({ interests: list(400), preferredCategories: z.array(z.enum(CATEGORY_KEYS)).default([]) }),
   roles: z.object({ preferredRoles: list(400) }),
   locations: z.object({ preferredLocations: list(400) }),
   workModes: z.object({ workModes: z.array(z.enum(["remote", "hybrid", "onsite"])).default([]) }),

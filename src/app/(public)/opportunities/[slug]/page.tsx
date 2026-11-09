@@ -10,6 +10,7 @@ import { OpportunityCard, SampleBadge, VerificationBadge } from "@/components/op
 import { ReportForm } from "@/components/opportunity/report-form";
 import { Badge, buttonClass } from "@/components/ui";
 import { getSession } from "@/server/auth/session";
+import { describeDetails } from "@/server/domain/categories";
 import { getDb } from "@/server/db/client";
 import { evaluateEligibility } from "@/server/domain/eligibility";
 import { matchOpportunity } from "@/server/domain/matching";
@@ -49,10 +50,11 @@ export default async function OpportunityPage({ params, searchParams }: { params
   if (session) await recordView(db, session.identity.id, o.id).catch(() => undefined);
   const similar = await similarOpportunities(db, o);
   const deadline = deadlineLabel(o.deadline);
-  const details = o.details as { stipendNote?: string; conversionPossible?: boolean; certificate?: boolean; deliverables?: string };
+  const categoryDetails = describeDetails(o.category, o.details as Record<string, unknown>);
+  const jobLike = ["job", "internship", "gig"].includes(o.category);
 
   // Structured data for search engines: only real (non-sample) published listings.
-  const jsonLd = !o.isSample && {
+  const jsonLd = !o.isSample && jobLike && {
     "@context": "https://schema.org",
     "@type": "JobPosting",
     title: o.title,
@@ -88,12 +90,13 @@ export default async function OpportunityPage({ params, searchParams }: { params
 
           <dl className="mt-6 grid gap-4 rounded-xl border border-line bg-surface p-5 sm:grid-cols-2">
             <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Location</dt><dd className="mt-0.5 text-navy">{placeLabel(o)}</dd></div>
-            <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Compensation</dt><dd className="mt-0.5 text-navy">{formatComp(o)}</dd></div>
+            {(jobLike || o.compMin !== null || o.compMax !== null) && <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Compensation</dt><dd className="mt-0.5 text-navy">{formatComp(o)}</dd></div>}
             <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Deadline</dt><dd className={`mt-0.5 ${deadline.urgent ? "font-semibold text-orange-deep" : "text-navy"}`}>{deadline.text}</dd></div>
             {o.durationWeeks && <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Duration</dt><dd className="mt-0.5 text-navy">{o.durationWeeks} weeks</dd></div>}
             {o.experienceMinYears !== null && <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Experience</dt><dd className="mt-0.5 text-navy">{o.experienceMinYears === 0 ? "No experience needed" : `${o.experienceMinYears}+ years`}</dd></div>}
-            {details.stipendNote && <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Stipend</dt><dd className="mt-0.5 text-navy">{details.stipendNote}{details.conversionPossible ? " · conversion possible" : ""}</dd></div>}
-            {details.deliverables && <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Deliverables</dt><dd className="mt-0.5 text-navy">{details.deliverables}</dd></div>}
+            {categoryDetails.map((d) => (
+              <div key={d.label} className={d.value.length > 60 ? "sm:col-span-2" : undefined}><dt className="text-xs font-semibold uppercase tracking-wide text-muted">{d.label}</dt><dd className="mt-0.5 whitespace-pre-line text-navy">{d.value}</dd></div>
+            ))}
           </dl>
 
           <section className="mt-8">

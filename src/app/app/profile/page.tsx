@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/forms/buttons";
 import { ActionForm, Input, Select } from "@/components/forms/action-form";
 import { CertificationSection, EducationSection, ExperienceSection, ProjectSection, ResumeUpload, SourceBadge } from "@/components/profile/section-forms";
 import { SyncStatusCard } from "@/components/profile/sync-status";
+import { CATEGORIES } from "@/server/domain/categories";
 import { Badge, buttonClass, Card, PageHeader } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
@@ -115,7 +116,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           <ActionForm action={saveProfileFieldsAction.bind(null, "interests")} submitLabel="Save interests">
             <fieldset className="space-y-2">
               <legend className="text-sm font-semibold text-navy">Looking for</legend>
-              {[["job", "Jobs"], ["internship", "Internships"], ["gig", "Freelance & gigs"]].map(([v, l]) => (
+              {CATEGORIES.map((c) => [c.key, c.plural]).map(([v, l]) => (
                 <label key={v} className="flex items-center gap-2 text-sm"><input type="checkbox" name="preferredCategories[]" value={v} defaultChecked={pr.preferredCategories.includes(v)} className="size-4 accent-purple" /> {l}</label>
               ))}
             </fieldset>

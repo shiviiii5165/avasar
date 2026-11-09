@@ -8,12 +8,13 @@ import { getDb } from "@/server/db/client";
 import { rankForBrowse, recommend } from "@/server/domain/recommend";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
-import { listOpenOpportunities, searchOpportunities, searchSchema, toFacts } from "@/server/services/opportunities";
+import { categoryDef } from "@/server/domain/categories";
+import { listOpenOpportunities, liveCategories, searchOpportunities, searchSchema, toFacts } from "@/server/services/opportunities";
 import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Opportunities for you" };
 
-const TABS = [["", "All Opportunities"], ["job", "Jobs"], ["internship", "Internships"], ["gig", "Freelance & Gigs"]] as const;
+
 
 type SP = Promise<{ category?: string; q?: string; sort?: string; page?: string }>;
 
@@ -30,13 +31,17 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const query = input.success ? input.data : searchSchema.parse({});
   const byMatch = sp.sort === "match" || !sp.sort;
 
-  const [profile, open, result, saved, facts] = await Promise.all([
+  const [profile, open, result, saved, facts, live] = await Promise.all([
     loadProfile(db, session.profileId),
     listOpenOpportunities(db),
     searchOpportunities(db, query),
     savedIds(db, session.identity.id),
     candidateFactsFor(db, session.profileId),
+    liveCategories(db),
   ]);
+  // Core tabs always show; other categories only when they have live listings.
+  const tabCats = [...new Set(["job", "internship", "gig", ...live])];
+  const TABS: [string, string][] = [["", "All Opportunities"], ...tabCats.map((c) => [c, categoryDef(c)?.plural ?? c] as [string, string])];
   const matches = matchAll(facts, [...open, ...result.items]);
 
   const asCandidates = (list: typeof open) => list.map((o) => ({ id: o.id, item: o, facts: toFacts(o) }));
