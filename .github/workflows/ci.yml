@@ -82,9 +82,9 @@ jobs:
     # No DATABASE_URL, no secrets and no external service are available to this job.
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # The `runner` context isn't available in job-level env, so the output folder (runner.temp) is set per step.
     env:
       CI: "true"
-      AVSAR_E2E_OUT: ${{ runner.temp }}/avsar-playwright
       DATABASE_URL: ""
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
@@ -100,13 +100,15 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser tests (mock AI Tathastu, isolated embedded database)
         run: npm run test:e2e
+        env:
+          AVSAR_E2E_OUT: ${{ runner.temp }}/avsar-playwright
       - name: Upload Playwright HTML report
         if: ${{ !cancelled() }}
         # actions/upload-artifact v4.6.2, pinned to its commit SHA
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: playwright-report
-          path: ${{ env.AVSAR_E2E_OUT }}/report
+          path: ${{ runner.temp }}/avsar-playwright/report
           retention-days: 14
           if-no-files-found: ignore
       - name: Upload failure screenshots and traces
@@ -114,6 +116,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: playwright-failures
-          path: ${{ env.AVSAR_E2E_OUT }}/results
+          path: ${{ runner.temp }}/avsar-playwright/results
           retention-days: 14
           if-no-files-found: ignore
