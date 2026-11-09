@@ -12,6 +12,7 @@ import { Badge, buttonClass, Card, PageHeader } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { signedDocumentUrl } from "@/server/services/documents";
+import { normalizeSkill } from "@/server/domain/skills";
 import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Profile" };
@@ -29,6 +30,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const { sync, synced, resume_applied } = await searchParams;
   const ownSkills = p.skills.filter((s) => s.source === "avsar");
   const importedSkills = p.skills.filter((s) => s.source === "ai_tathastu");
+  // Skills AI Tathastu verified from evidence (GitHub, assessments), as shared at the last sync.
+  const verified = new Set((pr.aitInsights.skills ?? []).filter((x) => x.verified).map((x) => normalizeSkill(x.name)));
 
   return (
     <div className="space-y-6">
@@ -52,7 +55,13 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         {importedSkills.length > 0 && <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">From AI Tathastu · edit there</p>}
         {importedSkills.length > 0 && (
           <ul className="mt-2 flex flex-wrap gap-2" aria-label="Skills from AI Tathastu">
-            {importedSkills.map((s) => <li key={s.id}><Badge tone="purple">{s.name}{s.level ? ` · ${s.level}` : ""}</Badge></li>)}
+            {importedSkills.map((s) => (
+              <li key={s.id}>
+                <Badge tone={verified.has(s.normalized) ? "success" : "purple"}>
+                  {s.name}{s.level ? ` · ${s.level}` : ""}{verified.has(s.normalized) ? " · verified" : ""}
+                </Badge>
+              </li>
+            ))}
           </ul>
         )}
         {ownSkills.length > 0 && <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted">Added in Avsar</p>}

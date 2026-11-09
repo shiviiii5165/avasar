@@ -129,3 +129,55 @@ describe("profile fetch errors", () => {
     expect(p.education).toHaveLength(before);
   });
 });
+
+describe("intelligence-layer data from AI Tathastu", () => {
+  it("maps AI Tathastu engine levels in order and leaves 'Not assessed' unknown", () => {
+    const m = mapProjection(projectionSchema.parse(projection({
+      skills: { items: ["Foundational", "Working", "Proficient", "Advanced", "Not assessed"].map((level, i) => ({ name: `S${i}`, category: null, verified: false, verificationStatus: null, proficiency: null, level })) },
+    })));
+    expect(m.skills!.map((s) => s.level)).toEqual(["beginner", "intermediate", "advanced", "expert", null]);
+  });
+
+  it("onboarding-only student (shape seen in production): education comes from the onboarding university", () => {
+    const m = mapProjection(projectionSchema.parse(projection({
+      identity: { id: "ait-sub-1", email: null, name: "Student", headline: null, avatarUrl: null, careerRole: { id: "ai", label: "AI Engineer" }, location: { city: "Phagwara", country: "India" }, university: "Lovely Professional University", degree: "B.Tech", specialization: "Computer Science", academicYear: "3rd year", expectedGraduationYear: 2027 },
+      education: [], skills: { items: [] }, projects: [], experience: [], achievements: [],
+      privacy: { scopes: { education: true, skills: true, projects: true, experience: true, achievements: true }, masked: [] },
+    })));
+    expect(m.education).toEqual([expect.objectContaining({ institution: "Lovely Professional University", level: "bachelors", field: "Computer Science", graduationYear: 2027 })]);
+    expect(m.insights.academic).toEqual({ university: "Lovely Professional University", degree: "B.Tech", specialization: "Computer Science", academicYear: "3rd year", graduationYear: 2027 });
+    expect(m.withheld).toEqual([]);
+  });
+
+  it("never invents education when education wasn't shared or nothing was entered", () => {
+    const base = { id: "ait-sub-1", email: null, name: null, headline: null, avatarUrl: null, careerRole: null, location: null };
+    const notShared = mapProjection(projectionSchema.parse(projection({ identity: { ...base, university: "LPU" }, education: null, privacy: { scopes: { education: false }, masked: ["education"] } })));
+    expect(notShared.education).toEqual([]); // withheld → imported rows removed, nothing synthesised
+    const nothing = mapProjection(projectionSchema.parse(projection({ identity: base, education: [] })));
+    expect(nothing.education).toEqual([]);
+  });
+
+  it("keeps verified skills, readiness, goals and activity as insights; null when not shared", () => {
+    const full = mapProjection(projectionSchema.parse(projection({
+      skills: {
+        items: [{ name: "Python", category: "language", evidenceStrength: 0.8, verified: true, verificationStatus: "verified", proficiency: 62.4, level: "Proficient" }],
+        erisReadiness: { score: 0.63, role: "ml_engineer", byRole: { ml_engineer: 0.63 }, gaps: [{ skill: "PyTorch", readiness: 0.2, weight: 1 }], computedAt: null },
+      },
+      goals: { targetRole: { id: "ml_engineer", label: "ML Engineer" }, needs: [{ skill: "PyTorch", priority: "High", state: "missing", expectedLevel: "Working" }], assessed: true, collaborationIntents: [] },
+      activity: { connectedSources: ["github"], github: { repositories: 7, recent: [{ name: "r", url: null, stars: 1, languages: ["Python", "Jupyter"], lastCommitAt: null }] }, profileUpdatedAt: null },
+    })));
+    expect(full.insights.skills).toEqual([{ name: "Python", verified: true, proficiency: 62, evidenceStrength: 0.8 }]);
+    expect(full.insights.readiness).toEqual({ score: 63, gaps: [{ skill: "PyTorch", readiness: 0.2 }] });
+    expect(full.insights.goals).toEqual({ targetRole: "ML Engineer", needs: [{ skill: "PyTorch", priority: "High", state: "missing" }], assessed: true });
+    expect(full.insights.activity).toEqual({ connectedSources: ["github"], repositories: 7, languages: ["Python", "Jupyter"] });
+
+    const bare = mapProjection(projectionSchema.parse(projection({ skills: null, privacy: { scopes: { skills: false }, masked: ["skills"] } })));
+    expect(bare.insights).toMatchObject({ skills: null, readiness: null, goals: null, activity: null });
+  });
+
+  it("stores the insights on the profile at sync", async () => {
+    await applyTathastuProfile(db, profileId, projection({ goals: { targetRole: { id: "fe", label: "Frontend Developer" }, needs: [], assessed: false } }), "ait-sub-1", actor);
+    const p = (await loadProfile(db, profileId))!;
+    expect(p.profile.aitInsights.goals).toEqual({ targetRole: "Frontend Developer", needs: [], assessed: false });
+  });
+});

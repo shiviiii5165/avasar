@@ -93,6 +93,7 @@ export async function applyTathastuProfile(db: Db, profileId: string, raw: unkno
         ...updates,
         preferredRoles,
         importedFields: imported,
+        aitInsights: m.insights,
         aitScopes: m.scopes,
         aitSyncedAt: new Date(),
         aitSyncStatus: m.withheld.length || m.unconfirmed.length ? "partial" : "ok",

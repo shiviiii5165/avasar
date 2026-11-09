@@ -26,12 +26,43 @@ export const projectionSchema = z.object({
     headline: s,
     avatarUrl: s,
     careerRole: z.object({ id: z.string(), label: z.string() }).nullish(),
+    careerRoleOther: s,
     location: z.object({ city: s, country: s }).nullish(),
+    // Additive academic answers from onboarding (AI Tathastu contract v1, optional).
+    university: s,
+    degree: s,
+    specialization: s,
+    academicYear: s,
+    graduationYear: z.number().int().nullish(),
+    expectedGraduationYear: z.number().int().nullish(),
   }),
   education: arr(z.object({ institution: s, degree: s, fieldOfStudy: s, dates: s, grade: s })),
   skills: z
     .object({
-      items: z.array(z.object({ name: z.string(), category: s, verified: z.boolean().nullish(), verificationStatus: s, proficiency: z.number().nullish(), level: s })),
+      items: z.array(z.object({ name: z.string(), category: s, evidenceStrength: z.number().nullish(), verified: z.boolean().nullish(), verificationStatus: s, proficiency: z.number().nullish(), level: s })),
+      // Shared only under the separate "eris" consent. Score is 0–1.
+      erisReadiness: z
+        .object({ score: z.number(), gaps: z.array(z.object({ skill: z.string(), readiness: z.number().nullish() }).passthrough()).nullish() })
+        .passthrough()
+        .nullish(),
+    })
+    .nullish(),
+  goals: z
+    .object({
+      targetRole: z.object({ id: z.string(), label: z.string() }).nullish(),
+      needs: z.array(z.object({ skill: z.string(), priority: s, state: s, expectedLevel: s })).nullish(),
+      assessed: z.boolean().nullish(),
+    })
+    .nullish(),
+  activity: z
+    .object({
+      connectedSources: z.array(z.string()).nullish(),
+      github: z
+        .object({
+          repositories: z.number().nullish(),
+          recent: z.array(z.object({ name: z.string(), url: s, languages: z.array(z.string()).nullish(), lastCommitAt: s })).nullish(),
+        })
+        .nullish(),
     })
     .nullish(),
   projects: arr(z.object({ key: z.string(), title: z.string(), description: s, technologies: z.array(z.string()).nullish(), links: z.array(z.string()).nullish() })),
@@ -42,6 +73,19 @@ export const projectionSchema = z.object({
 });
 export type Projection = z.infer<typeof projectionSchema>;
 
+export interface TathastuInsights {
+  /** Skills AI Tathastu has verified from evidence, and its 0–100 proficiency where it assessed one. */
+  skills: { name: string; verified: boolean; proficiency: number | null; evidenceStrength: number | null }[] | null;
+  /** Interview readiness (0–100) for the target role and its weakest skills. Requires the "eris" consent. */
+  readiness: { score: number; gaps: { skill: string; readiness: number | null }[] } | null;
+  /** Target role and the skills it still needs, from AI Tathastu's career engine. Requires the "eris" consent. */
+  goals: { targetRole: string | null; needs: { skill: string; priority: string | null; state: string | null }[]; assessed: boolean } | null;
+  /** GitHub activity summary. Requires the "activity" consent. */
+  activity: { connectedSources: string[]; repositories: number | null; languages: string[] } | null;
+  /** Academic answers from onboarding. */
+  academic: { university: string | null; degree: string | null; specialization: string | null; academicYear: string | null; graduationYear: number | null };
+}
+
 export interface MappedProfile {
   subject: string;
   identity: { fullName: string | null; headline: string | null; city: string | null; country: string | null; careerRole: string | null };
@@ -51,6 +95,8 @@ export interface MappedProfile {
   experiences: { organization: string; title: string; kind: string; startDate: string | null; endDate: string | null; current: boolean; description: string | null; sourceKey: string }[] | null;
   certifications: { name: string; issuer: string | null; issuedOn: string | null; url: string | null; sourceKey: string }[] | null;
   achievements: { kind: string; title: string; issuer: string | null; date: string | null; url: string | null; sourceKey: string }[] | null;
+  /** Signals from AI Tathastu's intelligence layer, kept as-is for insights (each null when not shared). */
+  insights: TathastuInsights;
   scopes: Record<string, boolean>;
   /** Sections the student chose not to share: null AND listed in privacy.masked (or scope explicitly false). Imported rows for these are removed. */
   withheld: string[];
@@ -96,6 +142,17 @@ export function parseDateRange(dates: string | null): { start: string | null; en
 }
 
 const SKILL_LEVELS: SkillLevel[] = ["beginner", "intermediate", "advanced", "expert"];
+/**
+ * AI Tathastu's engine labels (Foundational 0, Working 25, Proficient 50, Advanced 75), capitalised as it sends
+ * them, mapped in order onto Avsar's levels. Lowercase values are Avsar's own vocabulary and pass through.
+ * "Not assessed" (and anything unknown) stays null.
+ */
+const AIT_LEVELS: Record<string, SkillLevel> = { Foundational: "beginner", Working: "intermediate", Proficient: "advanced", Advanced: "expert" };
+export function skillLevelFrom(level: string | null | undefined): SkillLevel | null {
+  const l = level?.trim();
+  if (!l) return null;
+  return AIT_LEVELS[l] ?? (SKILL_LEVELS.includes(l as SkillLevel) ? (l as SkillLevel) : null);
+}
 const safeUrl = (u: string | null | undefined) => {
   if (!u) return null;
   try {
@@ -105,6 +162,31 @@ const safeUrl = (u: string | null | undefined) => {
     return null;
   }
 };
+
+/** Intelligence-layer signals, copied without inventing anything: missing → null. */
+export function insightsFrom(p: Projection): TathastuInsights {
+  const id = p.identity;
+  const r = p.skills?.erisReadiness;
+  const recent = p.activity?.github?.recent ?? [];
+  return {
+    skills: p.skills
+      ? p.skills.items.filter((it) => it.name.trim()).map((it) => ({
+          name: it.name.trim().slice(0, 60),
+          verified: it.verified === true || it.verificationStatus === "verified",
+          proficiency: typeof it.proficiency === "number" ? Math.max(0, Math.min(100, Math.round(it.proficiency))) : null,
+          evidenceStrength: typeof it.evidenceStrength === "number" ? it.evidenceStrength : null,
+        }))
+      : null,
+    readiness: r ? { score: Math.round(Math.max(0, Math.min(1, r.score)) * 100), gaps: (r.gaps ?? []).slice(0, 8).map((g) => ({ skill: g.skill, readiness: g.readiness ?? null })) } : null,
+    goals: p.goals
+      ? { targetRole: p.goals.targetRole?.label ?? null, needs: (p.goals.needs ?? []).slice(0, 12).map((n) => ({ skill: n.skill, priority: n.priority, state: n.state })), assessed: p.goals.assessed === true }
+      : null,
+    activity: p.activity
+      ? { connectedSources: p.activity.connectedSources ?? [], repositories: p.activity.github?.repositories ?? null, languages: [...new Set(recent.flatMap((x) => x.languages ?? []))].slice(0, 12) }
+      : null,
+    academic: { university: id.university, degree: id.degree, specialization: id.specialization, academicYear: id.academicYear, graduationYear: id.expectedGraduationYear ?? id.graduationYear ?? null },
+  };
+}
 
 export function mapProjection(p: Projection): MappedProfile {
   // Contract (AI Tathastu projection.ts): an unshared section is null AND listed in privacy.masked. A null
@@ -118,8 +200,15 @@ export function mapProjection(p: Projection): MappedProfile {
   /** Withheld → [] (remove imported rows); unconfirmed → null (leave untouched); shared → mapped rows. */
   const section = <T,>(k: (typeof SECTIONS)[number], rows: T[] | null): T[] | null => (rows !== null ? rows : withheld.includes(k) ? [] : null);
 
+  const id = p.identity;
+  const gradYear = id.expectedGraduationYear ?? id.graduationYear ?? null;
+  // Education shared but empty (no confirmed resume/LinkedIn entries yet): use the university the student
+  // entered at onboarding. Newer AI Tathastu versions send this fallback themselves; this covers older ones.
+  const educationIn = shared("education") && !(p.education ?? []).length && id.university
+    ? [{ institution: id.university, degree: id.degree, fieldOfStudy: id.specialization, dates: gradYear ? String(gradYear) : null, grade: null }]
+    : (p.education ?? []);
   const education = shared("education")
-    ? (p.education ?? [])
+    ? educationIn
         .filter((e) => e.institution)
         .map((e, i) => {
           const d = parseDateRange(e.dates);
@@ -140,10 +229,7 @@ export function mapProjection(p: Projection): MappedProfile {
   const skills = p.skills
     ? p.skills.items
         .filter((it) => it.name.trim())
-        .map((it) => {
-          const lvl = it.level?.toLowerCase() as SkillLevel | undefined;
-          return { name: it.name.trim().slice(0, 60), normalized: normalizeSkill(it.name), level: lvl && SKILL_LEVELS.includes(lvl) ? lvl : null, sourceKey: `skill:${normalizeSkill(it.name)}` };
-        })
+        .map((it) => ({ name: it.name.trim().slice(0, 60), normalized: normalizeSkill(it.name), level: skillLevelFrom(it.level), sourceKey: `skill:${normalizeSkill(it.name)}` }))
         .filter((it) => (seen.has(it.normalized) ? false : (seen.add(it.normalized), true)))
     : null;
 
@@ -198,6 +284,7 @@ export function mapProjection(p: Projection): MappedProfile {
     experiences: section("experience", experiences),
     certifications: section("achievements", certifications),
     achievements: section("achievements", achievements),
+    insights: insightsFrom(p),
     scopes: p.privacy?.scopes ?? {},
     withheld,
     unconfirmed,

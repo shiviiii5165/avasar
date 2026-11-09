@@ -34,7 +34,17 @@ test("mock provider: successful, partial and failed imports, reconnect, and Avsa
     await expect(page.getByText(/Profile imported from AI Tathastu/)).toBeVisible(); // compact status line
     await page.goto("/app/profile");
     await expect(page.getByText(/^Profile imported from AI Tathastu/)).toBeVisible();
-    await expect(page.getByRole("list", { name: "Skills from AI Tathastu" })).toContainText("React");
+    await expect(page.getByRole("list", { name: "Skills from AI Tathastu" })).toContainText("React · advanced · verified");
+  });
+
+  await test.step("intelligence-layer data reaches Career insights", async () => {
+    await page.goto("/app/insights");
+    const card = page.locator("section, div").filter({ has: page.getByRole("heading", { name: "From AI Tathastu" }) }).last();
+    await expect(card).toContainText("Frontend Developer");
+    await expect(card).toContainText("58 / 100");
+    await expect(card).toContainText("Testing");
+    await expect(card).toContainText("Accessibility · not yet proven");
+    await page.goto("/app/profile");
   });
 
   await test.step("add a skill in Avsar", async () => {

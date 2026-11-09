@@ -35,25 +35,28 @@ const localJwks = createLocalJWKSet({ keys: [jwk] });
 
 const codes = new Map<string, { challenge: string; redirectUri: string; exp: number }>();
 let linked = false;
-let shared = new Set(["education", "skills", "projects", "experience", "achievements"]);
+let shared = new Set(["education", "skills", "projects", "experience", "achievements", "eris", "activity"]);
 let profileFails = false;
 
 const FULL = {
   education: [{ institution: "College of Engineering Pune", degree: "B.Tech", fieldOfStudy: "Computer Science", dates: "2022 - 2026", grade: "8.4 CGPA" }],
-  skills: { items: ["React", "TypeScript", "HTML", "CSS", "Git", "JavaScript"].map((name) => ({ name, category: null, verified: false, verificationStatus: null, proficiency: null, level: null })) },
+  skills: { items: ["React", "TypeScript", "HTML", "CSS", "Git", "JavaScript"].map((name, i) => ({ name, category: null, evidenceStrength: i === 0 ? 0.8 : 0.3, verified: i === 0, verificationStatus: i === 0 ? "verified" : "claimed", proficiency: i === 0 ? 62 : null, level: i === 0 ? "Proficient" : null })) },
   projects: [{ key: "campus-events", title: "Campus events app", description: "A React app students use to find college events.", technologies: ["React", "TypeScript"], links: [] }],
   experience: [{ organization: "Pixel Labs", role: "Frontend Intern", dates: "Jun 2025 - Aug 2025", description: "Built accessible UI components." }],
   achievements: [{ type: "certification", title: "Responsive Web Design", issuer: "freeCodeCamp", date: "2024", url: null }],
 } as const;
 
 const profile = () => {
-  const sections = Object.fromEntries(Object.entries(FULL).map(([k, v]) => [k, shared.has(k) ? v : null]));
+  const sections: Record<string, unknown> = Object.fromEntries(Object.entries(FULL).map(([k, v]) => [k, shared.has(k) ? v : null]));
+  if (sections.skills && shared.has("eris")) sections.skills = { ...(sections.skills as object), erisReadiness: { score: 0.58, role: "frontend", byRole: { frontend: 0.58 }, gaps: [{ skill: "Testing", readiness: 0.2, weight: 1 }], computedAt: null } };
+  const goals = shared.has("eris") ? { targetRole: { id: "frontend", label: "Frontend Developer" }, needs: [{ skill: "Testing", priority: "High", state: "missing", expectedLevel: "Working" }, { skill: "Accessibility", priority: "Medium", state: "unverified", expectedLevel: "Working" }], assessed: true, collaborationIntents: [] } : null;
+  const activity = shared.has("activity") ? { connectedSources: ["github"], github: { repositories: 4, recent: [{ name: "campus-events", url: null, stars: 2, languages: ["TypeScript", "CSS"], lastCommitAt: null }] }, profileUpdatedAt: null } : null;
   const scopes = Object.fromEntries(["skills", "projects", "eris", "experience", "education", "achievements", "activity"].map((s) => [s, shared.has(s)]));
   return {
     schema: "ProfessionalProjectionV1", version: 1, audience: CLIENT_ID, generatedAt: new Date().toISOString(),
-    identity: { id: SUBJECT, email: "meera.mock@example.invalid", name: "Meera Iyer", headline: "Final-year Computer Science student", avatarUrl: null, careerRole: { id: "frontend", label: "Frontend Developer" }, location: { city: "Pune", country: "India" } },
-    ...sections, activity: null, goals: null,
-    privacy: { scopes, masked: [...Object.entries(sections).filter(([, v]) => v === null).map(([k]) => k), "activity", "goals"], hiddenProjects: 0, consentUpdatedAt: null },
+    identity: { id: SUBJECT, email: "meera.mock@example.invalid", name: "Meera Iyer", headline: "Final-year Computer Science student", avatarUrl: null, careerRole: { id: "frontend", label: "Frontend Developer" }, location: { city: "Pune", country: "India" }, university: "College of Engineering Pune", degree: "B.Tech", specialization: "Computer Science", academicYear: "4th year", expectedGraduationYear: 2026 },
+    ...sections, activity, goals,
+    privacy: { scopes, masked: [...Object.entries(sections).filter(([, v]) => v === null).map(([k]) => k), ...(activity ? [] : ["activity"]), ...(goals ? [] : ["goals"])], hiddenProjects: 0, consentUpdatedAt: null },
   };
 };
 
@@ -79,7 +82,7 @@ createServer(async (req, res) => {
 
   if (url.pathname.startsWith("/__mock/") && req.method === "POST") {
     if (url.pathname === "/__mock/disconnect") linked = false;
-    if (url.pathname === "/__mock/reset") { linked = false; shared = new Set(Object.keys(FULL)); }
+    if (url.pathname === "/__mock/reset") { linked = false; shared = new Set([...Object.keys(FULL), "eris", "activity"]); }
     if (url.pathname === "/__mock/reset") profileFails = false;
     if (url.pathname === "/__mock/share") shared = new Set((url.searchParams.get("sections") ?? "").split(",").filter(Boolean));
     if (url.pathname === "/__mock/fail-profile") profileFails = url.searchParams.get("on") !== "0";

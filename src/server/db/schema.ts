@@ -138,6 +138,8 @@ export const candidateProfiles = pgTable("candidate_profiles", {
   aitScopes: jsonb("ait_scopes").$type<Record<string, boolean>>().notNull().default({}),
   /** Identity fields last written by the import; a field the student has since edited in Avsar is no longer listed (Avsar edit wins). */
   importedFields: jsonb("imported_fields").$type<Record<string, string>>().notNull().default({}),
+  /** AI Tathastu intelligence signals (verified skills, readiness, goals, activity, onboarding academics); replaced on every sync. */
+  aitInsights: jsonb("ait_insights").$type<Partial<import("../integrations/tathastu-profile").TathastuInsights>>().notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("candidate_profiles_identity").on(t.identityId)]);

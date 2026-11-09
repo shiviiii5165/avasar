@@ -33,9 +33,34 @@ export default async function InsightsPage() {
   const plan = roadmap(roles[0] ?? null, new Map(ranked.map(([s, t]) => [s, t.length])), names);
   const dupes = duplicateSkills(names);
 
+  const ait = profile!.profile.aitInsights;
+  const hasAit = Boolean(ait.goals?.targetRole || ait.readiness || ait.goals?.needs?.length);
+
   return (
     <div className="space-y-6">
       <PageHeader title="Career insights" description={`Based on your profile and the ${relevant.length} open listing${relevant.length === 1 ? "" : "s"} in the categories you're interested in. Recomputed every time you visit.`} />
+      {hasAit && (
+        <Card>
+          <h2 className="text-lg font-semibold text-navy">From AI Tathastu</h2>
+          <p className="mt-1 text-xs text-muted">What AI Tathastu&apos;s career engine says about your evidence, shared with your permission. Updated each time your profile syncs.</p>
+          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+            {ait.goals?.targetRole && (
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Target role</dt><dd className="mt-1 font-semibold text-navy">{ait.goals.targetRole}</dd></div>
+            )}
+            {ait.readiness && (
+              <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted">Interview readiness</dt><dd className="mt-1 font-semibold text-navy">{ait.readiness.score} / 100</dd></div>
+            )}
+          </dl>
+          {ait.goals?.needs && ait.goals.needs.length > 0 && (
+            <>
+              <p className="mt-4 text-sm font-semibold text-navy">Skills this role still needs</p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {ait.goals.needs.map((n) => <li key={n.skill}><Badge tone={n.priority === "High" ? "orange" : "purple"}>{n.skill}{n.state === "unverified" ? " · not yet proven" : ""}</Badge></li>)}
+              </ul>
+            </>
+          )}
+        </Card>
+      )}
       {!profile!.skills.length ? (
         <StateMessage kind="empty" title="Add your skills first" body="Insights compare your skills with what open opportunities ask for." action={<Link href="/app/profile" className={buttonClass("primary")}>Add skills</Link>} />
       ) : (
