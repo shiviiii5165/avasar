@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { safeReturnTo, startFlow } from "@/server/auth/tathastu";
+import { safeReturnTo, startFlow, STATE_COOKIE } from "@/server/auth/tathastu";
 import { publicUrl, tathastuConfig } from "@/server/config";
 import { getDb } from "@/server/db/client";
 import { clientIp, rateLimit } from "@/server/rate-limit";
@@ -10,6 +10,7 @@ import { clientIp, rateLimit } from "@/server/rate-limit";
  *  - default: Continue with AI Tathastu (shows its sign-in/consent only if needed)
  *  - prompt=none: silent profile refresh for a linked student
  *  - prompt=consent: reconnect / change what's shared
+ * Sets a short-lived HttpOnly cookie holding the state, so only this browser can complete the sign-in.
  */
 export async function GET(request: Request) {
   const { config } = tathastuConfig();
@@ -20,7 +21,10 @@ export async function GET(request: Request) {
   const db = await getDb();
   if (!(await rateLimit(db, "login", `ip:${clientIp(request.headers)}`)).ok) return NextResponse.redirect(new URL("/sign-in?error=rate_limited", publicUrl()));
   try {
-    return NextResponse.redirect(await startFlow(db, config, returnTo, { prompt }));
+    const { url, state } = await startFlow(db, config, returnTo, { prompt });
+    const res = NextResponse.redirect(url);
+    res.cookies.set(STATE_COOKIE, state, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/api/auth", maxAge: 600 });
+    return res;
   } catch (err) {
     console.error("[auth] could not start sign-in:", err instanceof Error ? err.message : err);
     return NextResponse.redirect(new URL("/sign-in?error=unavailable", publicUrl()));

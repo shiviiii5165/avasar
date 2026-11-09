@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createMemoryDb, type Db } from "../db/client";
 import { upsertIdentity } from "../auth/identity";
 import { educationLevelFrom, mapProjection, projectionSchema } from "../integrations/tathastu-profile";
-import { applyTathastuProfile, ProfileSyncError } from "./profile-sync";
+import { applyTathastuProfile, fetchTathastuProfile, ProfileSyncError, recordSyncFailure } from "./profile-sync";
 import { addSectionItem, ensureProfile, loadProfile, replaceSkills, updateProfileFields } from "./profiles";
 
 /** Fixture shaped exactly like AI Tathastu's ProfessionalProjectionV1. */
@@ -35,7 +35,11 @@ describe("projection mapping", () => {
   it("maps without inventing values", () => {
     const m = mapProjection(projectionSchema.parse(projection({ education: null })));
     expect(m.education).toBeNull();
-    expect(m.withheld).toContain("education");
+    expect(m.withheld).not.toContain("education"); // null without privacy.masked = unconfirmed, not withdrawn
+    expect(m.unconfirmed).toContain("education");
+    const masked = mapProjection(projectionSchema.parse(projection({ education: null, privacy: { scopes: { education: false }, masked: ["education"] } })));
+    expect(masked.withheld).toEqual(["education"]);
+    expect(masked.education).toEqual([]); // withheld → imported rows removed
     expect(m.certifications?.[0].name).toBe("AWS CP");
     expect(m.achievements?.[0].kind).toBe("publication");
   });
@@ -68,8 +72,9 @@ describe("profile sync", () => {
     expect(p.skills.filter((s) => s.normalized === "react")).toHaveLength(1);
   });
 
-  it("removes a section the student stopped sharing", async () => {
-    await applyTathastuProfile(db, profileId, projection({ education: null }), "ait-sub-1", actor);
+  it("removes a section the student stopped sharing (null AND listed in privacy.masked, per contract)", async () => {
+    await applyTathastuProfile(db, profileId, projection(), "ait-sub-1", actor);
+    await applyTathastuProfile(db, profileId, projection({ education: null, privacy: { scopes: { education: false, skills: true }, masked: ["education"] } }), "ait-sub-1", actor);
     const p = (await loadProfile(db, profileId))!;
     expect(p.education.filter((e) => e.source === "ai_tathastu")).toHaveLength(0);
     expect(p.profile.aitSyncStatus).toBe("partial");
@@ -77,5 +82,50 @@ describe("profile sync", () => {
 
   it("rejects a profile for a different subject", async () => {
     await expect(applyTathastuProfile(db, profileId, projection(), "someone-else", actor)).rejects.toBeInstanceOf(ProfileSyncError);
+  });
+});
+
+describe("profile import safety (contract edge cases)", () => {
+  it("never treats an unmarked null section as consent withdrawal: existing imported rows are kept", async () => {
+    await applyTathastuProfile(db, profileId, projection(), "ait-sub-1", actor);
+    const before = (await loadProfile(db, profileId))!.projects.filter((p) => p.source === "ai_tathastu").length;
+    expect(before).toBeGreaterThan(0);
+    const m = await applyTathastuProfile(db, profileId, projection({ projects: null, privacy: { scopes: { projects: true }, masked: [] } }), "ait-sub-1", actor);
+    expect(m.unconfirmed).toEqual(["projects"]);
+    const p = (await loadProfile(db, profileId))!;
+    expect(p.projects.filter((x) => x.source === "ai_tathastu")).toHaveLength(before);
+    expect(p.profile.aitSyncStatus).toBe("partial");
+    expect(p.profile.aitSyncError).toMatch(/didn't confirm: projects/);
+  });
+  it("an empty shared section ([]) is a real update, distinct from withheld", async () => {
+    await applyTathastuProfile(db, profileId, projection(), "ait-sub-1", actor);
+    const m = await applyTathastuProfile(db, profileId, projection({ experience: [] }), "ait-sub-1", actor);
+    expect(m.withheld).not.toContain("experience");
+    expect((await loadProfile(db, profileId))!.experiences.filter((e) => e.source === "ai_tathastu")).toHaveLength(0);
+  });
+  it("rejects a profile issued for another app", async () => {
+    await expect(applyTathastuProfile(db, profileId, projection({ audience: "collaborate" }), "ait-sub-1", actor, "avsar")).rejects.toMatchObject({ code: "AUDIENCE_MISMATCH" });
+    await expect(applyTathastuProfile(db, profileId, projection({ audience: "avsar" }), "ait-sub-1", actor, "avsar")).resolves.toBeTruthy();
+  });
+  it("rejects a malformed profile without writing anything", async () => {
+    await expect(applyTathastuProfile(db, profileId, { schema: "Other" }, "ait-sub-1", actor)).rejects.toMatchObject({ code: "INVALID_PROFILE" });
+  });
+});
+
+describe("profile fetch errors", () => {
+  const fetchWith = (res: Response | Error) => (async () => { if (res instanceof Error) throw res; return res; }) as unknown as typeof fetch;
+  it("401 means disconnected; 403/429/503, timeouts and bad bodies are unavailable/invalid", async () => {
+    await expect(fetchTathastuProfile("https://idp.test/p", "t", fetchWith(Response.json({ error: "invalid_token" }, { status: 401 })))).rejects.toMatchObject({ code: "DISCONNECTED" });
+    for (const status of [403, 429, 503]) await expect(fetchTathastuProfile("https://idp.test/p", "t", fetchWith(Response.json({}, { status })))).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    await expect(fetchTathastuProfile("https://idp.test/p", "t", fetchWith(new DOMException("timeout", "TimeoutError") as unknown as Error))).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    await expect(fetchTathastuProfile("https://idp.test/p", "t", fetchWith(new Response("<html>", { status: 200 })))).rejects.toMatchObject({ code: "INVALID_PROFILE" });
+  });
+  it("records a failure without touching imported data, so sign-in can continue with a retry state", async () => {
+    await applyTathastuProfile(db, profileId, projection(), "ait-sub-1", actor);
+    const before = (await loadProfile(db, profileId))!.education.length;
+    await recordSyncFailure(db, profileId, "Avsar is no longer connected to your AI Tathastu account.");
+    const p = (await loadProfile(db, profileId))!;
+    expect(p.profile.aitSyncStatus).toBe("failed");
+    expect(p.education).toHaveLength(before);
   });
 });

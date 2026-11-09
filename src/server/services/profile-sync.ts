@@ -21,16 +21,17 @@ import { mapProjection, projectionSchema, type MappedProfile } from "../integrat
 const IDENTITY_FIELDS = ["fullName", "headline", "city", "country"] as const;
 
 export class ProfileSyncError extends Error {
-  constructor(public readonly code: "INVALID_PROFILE" | "SUBJECT_MISMATCH" | "UNAVAILABLE", message: string) {
+  constructor(public readonly code: "INVALID_PROFILE" | "SUBJECT_MISMATCH" | "AUDIENCE_MISMATCH" | "UNAVAILABLE" | "DISCONNECTED", message: string) {
     super(message);
   }
 }
 
-export async function applyTathastuProfile(db: Db, profileId: string, raw: unknown, expectedSubject: string, actorId: string | null): Promise<MappedProfile> {
+export async function applyTathastuProfile(db: Db, profileId: string, raw: unknown, expectedSubject: string, actorId: string | null, expectedAudience?: string): Promise<MappedProfile> {
   const parsed = projectionSchema.safeParse(raw);
   if (!parsed.success) throw new ProfileSyncError("INVALID_PROFILE", "AI Tathastu returned a profile Avsar couldn't read.");
   const m = mapProjection(parsed.data);
   if (m.subject !== expectedSubject) throw new ProfileSyncError("SUBJECT_MISMATCH", "The profile doesn't belong to the signed-in account.");
+  if (expectedAudience && parsed.data.audience && parsed.data.audience !== expectedAudience) throw new ProfileSyncError("AUDIENCE_MISMATCH", "The profile was issued for a different app.");
 
   await db.transaction(async (tx) => {
     const [cur] = await tx.select().from(candidateProfiles).where(eq(candidateProfiles.id, profileId)).for("update");
@@ -65,7 +66,9 @@ export async function applyTathastuProfile(db: Db, profileId: string, raw: unkno
     } else delete imported.careerRole;
 
     // Replace AI Tathastu-owned rows per section.
+    // rows === null: section not confirmed by the provider → leave existing imported rows untouched.
     const replace = async <T extends { id: unknown }>(table: typeof education | typeof experiences | typeof projects | typeof certifications | typeof achievements, rows: Record<string, unknown>[] | null) => {
+      if (rows === null) return null as unknown as T;
       await tx.delete(table).where(and(eq(table.profileId, profileId), eq(table.source, "ai_tathastu")));
       if (rows?.length) await tx.insert(table).values(rows.map((r) => ({ ...r, profileId, source: "ai_tathastu" })) as never);
       return null as unknown as T;
@@ -76,7 +79,7 @@ export async function applyTathastuProfile(db: Db, profileId: string, raw: unkno
     await replace(certifications, m.certifications);
     await replace(achievements, m.achievements);
 
-    await tx.delete(candidateSkills).where(and(eq(candidateSkills.profileId, profileId), eq(candidateSkills.source, "ai_tathastu")));
+    if (m.skills !== null) await tx.delete(candidateSkills).where(and(eq(candidateSkills.profileId, profileId), eq(candidateSkills.source, "ai_tathastu")));
     if (m.skills?.length) {
       const own = await tx.select({ normalized: candidateSkills.normalized }).from(candidateSkills).where(and(eq(candidateSkills.profileId, profileId), inArray(candidateSkills.normalized, m.skills.map((x) => x.normalized))));
       const ownSet = new Set(own.map((o) => o.normalized));
@@ -92,12 +95,12 @@ export async function applyTathastuProfile(db: Db, profileId: string, raw: unkno
         importedFields: imported,
         aitScopes: m.scopes,
         aitSyncedAt: new Date(),
-        aitSyncStatus: m.withheld.length ? "partial" : "ok",
-        aitSyncError: null,
+        aitSyncStatus: m.withheld.length || m.unconfirmed.length ? "partial" : "ok",
+        aitSyncError: m.unconfirmed.length ? `AI Tathastu didn't confirm: ${m.unconfirmed.join(", ")}. Previously imported data for these was kept.` : null,
         updatedAt: new Date(),
       })
       .where(eq(candidateProfiles.id, profileId));
-    await audit(tx, { actorId, actorRole: "system", action: "profile.ait_sync", targetType: "profile", targetId: profileId, metadata: { withheld: m.withheld } });
+    await audit(tx, { actorId, actorRole: "system", action: "profile.ait_sync", targetType: "profile", targetId: profileId, metadata: { withheld: m.withheld, unconfirmed: m.unconfirmed } });
   });
   return m;
 }
@@ -114,7 +117,14 @@ export async function fetchTathastuProfile(profileUrl: string, accessToken: stri
   } catch {
     throw new ProfileSyncError("UNAVAILABLE", "AI Tathastu didn't respond.");
   }
-  if (res.status === 401) throw new ProfileSyncError("UNAVAILABLE", "AI Tathastu rejected the access (the app may have been disconnected).");
-  if (!res.ok) throw new ProfileSyncError("UNAVAILABLE", `AI Tathastu returned ${res.status}.`);
-  return res.json();
+  // 401 invalid_token: the student disconnected Avsar or their AI Tathastu sessions were revoked. Imported
+  // data is kept (not silently deleted); the profile page offers Reconnect.
+  if (res.status === 401) throw new ProfileSyncError("DISCONNECTED", "Avsar is no longer connected to your AI Tathastu account. Reconnect to refresh your profile.");
+  if (res.status === 403) throw new ProfileSyncError("UNAVAILABLE", "Profile sharing with Avsar is switched off on AI Tathastu right now.");
+  if (!res.ok) throw new ProfileSyncError("UNAVAILABLE", `AI Tathastu returned ${res.status}. Try refreshing later.`);
+  try {
+    return await res.json();
+  } catch {
+    throw new ProfileSyncError("INVALID_PROFILE", "AI Tathastu returned a profile Avsar couldn't read.");
+  }
 }

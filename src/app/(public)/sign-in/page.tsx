@@ -12,7 +12,13 @@ export const metadata: Metadata = { title: "Sign in", robots: { index: false } }
 
 const ERRORS: Record<string, string> = {
   invalid_state: "Your sign-in session expired or was already used. Please try again.",
-  provider_error: "Sign-in was cancelled or refused by AI Tathastu.",
+  browser_mismatch: "Please finish signing in in the same browser you started in, then try again.",
+  access_denied: "You chose not to share your AI Tathastu account with Avsar. You can keep exploring without signing in.",
+  invalid_grant: "That sign-in link expired before it was used. Please try again.",
+  client_misconfigured: "Sign-in with AI Tathastu is misconfigured on our side. We've been notified; please try again later.",
+  login_required: "Please sign in to AI Tathastu, then try again.",
+  consent_required: "Please allow Avsar on AI Tathastu, then try again.",
+  provider_error: "AI Tathastu couldn't complete the sign-in. Please try again.",
   token_invalid: "We couldn't verify your sign-in. Please try again.",
   provider_unavailable: "AI Tathastu isn't responding right now. Please try again in a few minutes.",
   sso_not_configured: "Sign-in with AI Tathastu isn't available yet in this environment.",

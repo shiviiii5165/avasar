@@ -37,6 +37,7 @@ export const projectionSchema = z.object({
   projects: arr(z.object({ key: z.string(), title: z.string(), description: s, technologies: z.array(z.string()).nullish(), links: z.array(z.string()).nullish() })),
   experience: arr(z.object({ organization: s, role: s, dates: s, description: s })),
   achievements: arr(z.object({ type: z.string(), title: s, issuer: s, date: s, url: s })),
+  audience: z.string().nullish(),
   privacy: z.object({ scopes: z.record(z.string(), z.boolean()).nullish(), masked: z.array(z.string()).nullish() }).nullish(),
 });
 export type Projection = z.infer<typeof projectionSchema>;
@@ -51,8 +52,10 @@ export interface MappedProfile {
   certifications: { name: string; issuer: string | null; issuedOn: string | null; url: string | null; sourceKey: string }[] | null;
   achievements: { kind: string; title: string; issuer: string | null; date: string | null; url: string | null; sourceKey: string }[] | null;
   scopes: Record<string, boolean>;
-  /** Sections the student chose not to share (null in the projection). */
+  /** Sections the student chose not to share: null AND listed in privacy.masked (or scope explicitly false). Imported rows for these are removed. */
   withheld: string[];
+  /** Sections that came back null without the contract's "not shared" marker. Existing imported rows are left untouched. */
+  unconfirmed: string[];
 }
 
 /** Level only when the degree text clearly names one. */
@@ -104,9 +107,16 @@ const safeUrl = (u: string | null | undefined) => {
 };
 
 export function mapProjection(p: Projection): MappedProfile {
-  const nullSections = (["education", "skills", "projects", "experience", "achievements"] as const).filter((k) => p[k] == null);
-  const withheld = [...new Set([...(p.privacy?.masked ?? []), ...nullSections])];
+  // Contract (AI Tathastu projection.ts): an unshared section is null AND listed in privacy.masked. A null
+  // section without that marker is treated as "unknown" (never as consent withdrawal), so nothing is deleted.
+  const SECTIONS = ["education", "skills", "projects", "experience", "achievements"] as const;
+  const masked = new Set(p.privacy?.masked ?? []);
+  const nulls = SECTIONS.filter((k) => p[k] == null);
+  const withheld = nulls.filter((k) => masked.has(k) || p.privacy?.scopes?.[k] === false);
+  const unconfirmed = nulls.filter((k) => !withheld.includes(k));
   const shared = (k: keyof Projection) => p[k] !== null && p[k] !== undefined;
+  /** Withheld → [] (remove imported rows); unconfirmed → null (leave untouched); shared → mapped rows. */
+  const section = <T,>(k: (typeof SECTIONS)[number], rows: T[] | null): T[] | null => (rows !== null ? rows : withheld.includes(k) ? [] : null);
 
   const education = shared("education")
     ? (p.education ?? [])
@@ -182,13 +192,14 @@ export function mapProjection(p: Projection): MappedProfile {
       country: p.identity.location?.country ?? null,
       careerRole: p.identity.careerRole?.label ?? null,
     },
-    education,
-    skills,
-    projects,
-    experiences,
-    certifications,
-    achievements,
+    education: section("education", education),
+    skills: section("skills", skills),
+    projects: section("projects", projects),
+    experiences: section("experience", experiences),
+    certifications: section("achievements", certifications),
+    achievements: section("achievements", achievements),
     scopes: p.privacy?.scopes ?? {},
     withheld,
+    unconfirmed,
   };
 }

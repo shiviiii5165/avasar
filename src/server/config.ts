@@ -31,17 +31,19 @@ export interface TathastuConfig {
 export function tathastuConfig(): { config: TathastuConfig | null; missing: string[] } {
   const base = env("AVSAR_AIT_BASE_URL");
   const values = {
-    issuer: env("AVSAR_AIT_ISSUER") ?? base,
+    // AI Tathastu signs every integration token with this fixed issuer (src/lib/integrations/tokens.ts ISSUER),
+    // whatever domain it is served from. Override only if AI Tathastu changes it.
+    issuer: env("AVSAR_AIT_ISSUER") ?? "https://www.aitathastu.com",
     authorizeUrl: env("AVSAR_AIT_AUTHORIZE_URL") ?? (base && `${base}/integrations/authorize`),
     tokenUrl: env("AVSAR_AIT_TOKEN_URL") ?? (base && `${base}/api/integrations/sso/token`),
     jwksUrl: env("AVSAR_AIT_JWKS_URL") ?? (base && `${base}/api/integrations/jwks`),
     profileUrl: env("AVSAR_AIT_PROFILE_URL") ?? (base && `${base}/api/integrations/v1/profile`),
     clientId: env("AVSAR_AIT_CLIENT_ID"),
     clientSecret: env("AVSAR_AIT_CLIENT_SECRET"),
-    redirectUri: env("AVSAR_AIT_REDIRECT_URI") ?? `${publicUrl()}/api/auth/callback`,
-    scopes: env("AVSAR_AIT_SCOPES") ?? "openid profile email",
+    redirectUri: env("AVSAR_AIT_REDIRECT_URI") ?? `${publicUrl()}/api/auth/tathastu/callback`, // AI Tathastu's default path
+    scopes: env("AVSAR_AIT_SCOPES") ?? "", // unused: AI Tathastu ignores scope; the student chooses sections on its consent screen
   };
-  const missing = Object.entries(values).filter(([, v]) => !v).map(([k]) => k);
+  const missing = Object.entries(values).filter(([k, v]) => !v && k !== "scopes").map(([k]) => k);
   return { config: missing.length ? null : (values as TathastuConfig), missing };
 }
 
