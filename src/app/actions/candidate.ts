@@ -12,6 +12,7 @@ import { getDb } from "@/server/db/client";
 import { userIdentities } from "@/server/db/schema";
 import { ApplyError, changeApplicationStatus, submitApplication } from "@/server/services/applications";
 import { deleteResume, MAX_UPLOAD_BYTES, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
+import { StorageUnavailableError } from "@/server/storage";
 import { deleteSavedSearch, saveSearch, toggleSaved } from "@/server/services/engagement";
 import { markAllRead, NOTIFICATION_KINDS, setPreference, type NotificationKind } from "@/server/services/notifications";
 import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
@@ -153,6 +154,7 @@ export async function uploadResumeAction(_: ActionState, fd: FormData): Promise<
   } catch (err) {
     if (err instanceof UploadError) return { ok: false, errors: { file: err.message } };
     console.error("[resume] upload failed:", err instanceof Error ? err.message : err);
+    if (err instanceof StorageUnavailableError) return { ok: false, message: "Resume uploads aren't available right now. You can still browse and apply; we're fixing this." };
     return { ok: false, message: "Upload failed. Your file wasn't saved; please try again." };
   }
   revalidatePath("/app", "layout");

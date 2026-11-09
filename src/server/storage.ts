@@ -61,6 +61,9 @@ export function s3Storage(cfg: { bucket: string; region: string; endpoint?: stri
   };
 }
 
+/** Storage isn't configured on this deployment: retrying won't help, so callers say so plainly. */
+export class StorageUnavailableError extends Error {}
+
 let cached: Storage | null = null;
 
 /** The configured storage. Production refuses local disk, which isn't durable on most hosts. */
@@ -68,10 +71,10 @@ export function storage(): Storage {
   if (cached) return cached;
   if (process.env.AVSAR_STORAGE_DRIVER === "s3") {
     const bucket = process.env.AVSAR_S3_BUCKET, region = process.env.AVSAR_S3_REGION;
-    if (!bucket || !region) throw new Error("AVSAR_STORAGE_DRIVER=s3 needs AVSAR_S3_BUCKET and AVSAR_S3_REGION.");
+    if (!bucket || !region) throw new StorageUnavailableError("AVSAR_STORAGE_DRIVER=s3 needs AVSAR_S3_BUCKET and AVSAR_S3_REGION.");
     cached = s3Storage({ bucket, region, endpoint: process.env.AVSAR_S3_ENDPOINT || undefined, conditionalWrites: process.env.AVSAR_S3_CONDITIONAL_WRITES !== "0" });
   } else {
-    if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_LOCAL_STORAGE !== "1") throw new Error("Production requires S3-compatible storage (AVSAR_STORAGE_DRIVER=s3).");
+    if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_LOCAL_STORAGE !== "1") throw new StorageUnavailableError("Production requires S3-compatible storage (AVSAR_STORAGE_DRIVER=s3).");
     cached = localStorage;
   }
   return cached;

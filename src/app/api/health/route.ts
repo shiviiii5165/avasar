@@ -1,10 +1,9 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { and, count, eq, lte, sql } from "drizzle-orm";
 
 import { getDb } from "@/server/db/client";
 import { jobs } from "@/server/db/schema";
 import { emailMode } from "@/server/email";
+import { secretMatches } from "@/server/http";
 import { productionEnvProblems } from "@/server/env-check";
 import { tathastuConfig } from "@/server/config";
 import { storage } from "@/server/storage";
@@ -46,9 +45,7 @@ export async function GET(request: Request) {
   }
 
   const status = Object.values(checks).includes("fail") ? "fail" : Object.values(checks).includes("degraded") ? "degraded" : "ok";
-  const token = process.env.AVSAR_HEALTH_TOKEN;
-  const given = request.headers.get("x-health-token") ?? "";
-  const authorized = Boolean(token && given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token)));
+  const authorized = secretMatches(request.headers.get("x-health-token"), process.env.AVSAR_HEALTH_TOKEN);
   const body = {
     status,
     checks,
