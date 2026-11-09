@@ -10,6 +10,8 @@ import { employerListingTransition, orgDenialReason, type OrgPermission, type Or
 import type { OpportunityStatus } from "@/server/domain/workflows";
 import { EmployerError, getOrgOpportunity } from "@/server/services/employer";
 import { getOpportunityById } from "@/server/services/opportunities";
+import { classifyOpportunity, extractRequirements } from "@/server/domain/career";
+import { normalizeSkill } from "@/server/domain/skills";
 
 import { studioPage } from "../../context";
 
@@ -31,6 +33,9 @@ export default async function ListingPage({ params, searchParams }: { params: Pr
   const { saved, moved } = await searchParams;
   const available = ACTIONS.filter((a) => employerListingTransition(o.status, a.to));
   const v = ctx.org.verificationStatus as OrgVerification;
+  const listed = new Set(o.skills.map((s) => s.normalized));
+  const mentioned = extractRequirements(`${o.title}\n${o.description}\n${o.responsibilities ?? ""}`).filter((s) => !listed.has(normalizeSkill(s)));
+  const suggestedCategory = classifyOpportunity(`${o.title} ${o.description}`);
 
   return (
     <div className="space-y-6">
@@ -66,6 +71,12 @@ export default async function ListingPage({ params, searchParams }: { params: Pr
 
       <Card>
         <h3 className="mb-4 font-semibold text-navy">Details</h3>
+        {o.status === "draft" && (mentioned.length > 0 || (suggestedCategory && suggestedCategory !== o.category)) && (
+          <p className="mb-4 rounded-md bg-surface-muted px-3 py-2 text-sm text-muted">
+            Suggestions from your description (check before using):{mentioned.length > 0 ? <> skills mentioned but not listed as requirements: <strong className="text-navy">{mentioned.join(", ")}</strong>.</> : null}
+            {suggestedCategory && suggestedCategory !== o.category ? <> The text reads like a <strong className="text-navy">{suggestedCategory}</strong> listing.</> : null}
+          </p>
+        )}
         {o.status === "draft" && ctx.can("opportunity.draft") ? (
           <OpportunityForm o={o} action={saveListingAction.bind(null, orgId, o.id)} lockedOrganization={ctx.org.name} />
         ) : (

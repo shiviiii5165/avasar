@@ -6,6 +6,7 @@ import { getDb } from "@/server/db/client";
 import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
 import { searchOpportunities, searchSchema } from "@/server/services/opportunities";
 import { loadProfile } from "@/server/services/profiles";
+import { duplicateSkills, roadmap, suggestRoles } from "@/server/domain/career";
 
 export const metadata = { title: "Career insights" };
 
@@ -26,6 +27,10 @@ export default async function InsightsPage() {
   for (const o of relevant) for (const s of matches.get(o.id)?.missingRequiredSkills ?? []) gaps.set(s, [...(gaps.get(s) ?? []), o.title]);
   const ranked = [...gaps].sort((a, b) => b[1].length - a[1].length).slice(0, 8);
   const unbacked = profile!.skills.filter((s) => s.evidenceCount === 0);
+  const names = profile!.skills.map((s) => s.name);
+  const roles = suggestRoles(names);
+  const plan = roadmap(roles[0] ?? null, new Map(ranked.map(([s, t]) => [s, t.length])), names);
+  const dupes = duplicateSkills(names);
 
   return (
     <div className="space-y-6">
@@ -50,6 +55,41 @@ export default async function InsightsPage() {
               <p className="mt-3 text-sm text-muted">You already list every required skill in the open listings that interest you.</p>
             )}
           </Card>
+          {roles.length > 0 && (
+            <Card>
+              <h2 className="text-lg font-semibold text-navy">Roles your skills point to</h2>
+              <p className="mt-1 text-xs text-muted">Suggestions from the skills you already have, not predictions. Each shows what you have and what the role usually also needs.</p>
+              <ul className="mt-4 grid gap-3 md:grid-cols-3">
+                {roles.map((r) => (
+                  <li key={r.role} className="rounded-lg border border-line p-3 text-sm">
+                    <p className="font-semibold text-navy">{r.role}</p>
+                    <p className="mt-1 text-muted">You have: {r.have.join(", ")}</p>
+                    {r.missing.length > 0 && <p className="text-muted">Usually also: {r.missing.join(", ")}</p>}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+          {plan.length > 0 && (
+            <Card>
+              <h2 className="text-lg font-semibold text-navy">Your next steps{roles[0] ? ` toward ${roles[0].role}` : ""}</h2>
+              <ol className="mt-4 space-y-3">
+                {plan.map((s, i) => (
+                  <li key={s.skill} className="text-sm">
+                    <p className="font-semibold text-navy">{i + 1}. Learn {s.skill} <span className="font-normal text-muted">({s.why})</span></p>
+                    <p className="text-muted">Prove it: {s.project}</p>
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-3 text-xs text-muted">When you finish a project, add it to your profile so it counts as evidence.</p>
+            </Card>
+          )}
+          {dupes.length > 0 && (
+            <Card>
+              <h2 className="text-lg font-semibold text-navy">Possible duplicate skills</h2>
+              <p className="mt-1 text-sm text-muted">These look like the same skill spelled differently: {dupes.map((g) => g.join(" / ")).join("; ")}. Matching already treats them as one.</p>
+            </Card>
+          )}
           <Card>
             <h2 className="text-lg font-semibold text-navy">Strengthen your evidence</h2>
             <p className="mt-1 text-xs text-muted">Skills without a project or role behind them. Adding a project that uses them makes your profile more convincing.</p>
@@ -60,7 +100,7 @@ export default async function InsightsPage() {
             )}
             <Link href="/app/profile" className="mt-4 inline-block text-sm font-semibold text-purple hover:underline">Add a project</Link>
           </Card>
-          <p className="text-xs text-muted">Resume analysis, learning resources and AI-assisted roadmaps are planned for a later release and will always ask you to confirm anything they suggest.</p>
+          <p className="text-xs text-muted">Want to add details from your resume? Open <Link href="/app/profile#resumes" className="font-semibold text-purple hover:underline">your resumes</Link> and choose &ldquo;Suggest profile updates&rdquo;. Nothing is added until you confirm it.</p>
         </>
       )}
     </div>

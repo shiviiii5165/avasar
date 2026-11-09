@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 
@@ -19,12 +20,12 @@ const SYNC_MESSAGE: Record<string, string> = {
   consent_required: "Avsar isn't connected to your AI Tathastu account any more. Reconnect to import your profile again.",
 };
 
-export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ sync?: string; synced?: string }> }) {
+export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ sync?: string; synced?: string; resume_applied?: string }> }) {
   const session = await requireCandidate("/app/profile");
   const p = await loadProfile(await getDb(), session.profileId);
   if (!p) notFound();
   const pr = p.profile;
-  const { sync, synced } = await searchParams;
+  const { sync, synced, resume_applied } = await searchParams;
   const ownSkills = p.skills.filter((s) => s.source === "avsar");
   const importedSkills = p.skills.filter((s) => s.source === "ai_tathastu");
 
@@ -32,6 +33,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
     <div className="space-y-6">
       <PageHeader title={pr.fullName ?? "Your profile"} description={[pr.headline, pr.city, pr.country].filter(Boolean).join(" · ") || "Your Avsar profile, built from what you share on AI Tathastu."} />
 
+      {resume_applied && <p role="status" className="rounded-md bg-success-soft px-4 py-2 text-sm text-success">Added the items you confirmed from your resume.</p>}
       {synced && pr.aitSyncStatus !== "failed" && <p role="status" className="rounded-md bg-success-soft px-4 py-2 text-sm text-success">Profile refreshed from AI Tathastu.</p>}
       {sync && SYNC_MESSAGE[sync] && (
         <p role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-warning-soft px-4 py-3 text-sm text-warning">
@@ -160,6 +162,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
                   {r.isDefault && <Badge tone="purple">Default</Badge>}
                 </span>
                 <span className="flex items-center gap-1">
+                  <Link href={`/app/profile/resume/${r.id}`} className={buttonClass("ghost", "sm")}>Suggest profile updates</Link>
                   {!r.isDefault && <form action={defaultResumeAction.bind(null, r.id)}><button className={buttonClass("ghost", "sm")}>Make default</button></form>}
                   <form action={deleteResumeAction.bind(null, r.id)}><ConfirmButton label="Delete" message={`Delete "${r.label}"? Applications already submitted keep their copy.`} /></form>
                 </span>
