@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
 
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import { audit } from "../audit";
 import { bootstrapSuperAdmins } from "../config";
@@ -61,13 +61,24 @@ export interface SessionContext {
   profileId: string | null;
 }
 
+/**
+ * Resolves a session cookie in ONE database round trip: session, identity, admin roles and profile id together.
+ * It runs on every signed-in request, so each extra sequential query adds a full database round trip to
+ * every page. The checks are unchanged: token hash, not revoked, not expired, identity not disabled or deleted.
+ */
 export async function resolveSession(db: Db, token: string | undefined): Promise<SessionContext | null> {
   if (!token || token.length < 20) return null;
   const now = new Date();
   const [row] = await db
-    .select({ session: sessions, identity: userIdentities })
+    .select({
+      session: sessions,
+      identity: userIdentities,
+      profileId: candidateProfiles.id,
+      roles: sql<string[]>`coalesce((select array_agg(${adminRoles.role}::text) from ${adminRoles} where ${adminRoles.identityId} = ${userIdentities.id}), '{}'::text[])`,
+    })
     .from(sessions)
     .innerJoin(userIdentities, eq(sessions.identityId, userIdentities.id))
+    .leftJoin(candidateProfiles, eq(candidateProfiles.identityId, userIdentities.id))
     .where(and(eq(sessions.tokenHash, sha256(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, now)));
   if (!row || row.identity.disabledAt || row.identity.deletedAt) return null;
 
@@ -75,11 +86,7 @@ export async function resolveSession(db: Db, token: string | undefined): Promise
   if (now.getTime() - row.session.lastSeenAt.getTime() > 10 * 60 * 1000) {
     await db.update(sessions).set({ lastSeenAt: now }).where(eq(sessions.id, row.session.id));
   }
-  const [roles, [profile]] = await Promise.all([
-    db.select({ role: adminRoles.role }).from(adminRoles).where(eq(adminRoles.identityId, row.identity.id)),
-    db.select({ id: candidateProfiles.id }).from(candidateProfiles).where(eq(candidateProfiles.identityId, row.identity.id)),
-  ]);
-  return { sessionId: row.session.id, identity: row.identity, roles: roles.map((r) => r.role), profileId: profile?.id ?? null };
+  return { sessionId: row.session.id, identity: row.identity, roles: (row.roles ?? []) as AdminRole[], profileId: row.profileId ?? null };
 }
 
 export async function revokeSession(db: Db, token: string | undefined) {

@@ -28,6 +28,8 @@ const nextConfig: NextConfig = {
   // PGlite ships WASM and must load from node_modules at runtime rather than be bundled.
   serverExternalPackages: ["@electric-sql/pglite"],
   poweredByHeader: false,
+  // Development only: the default bottom-left indicator covers the dashboard sidebar's collapse/expand control.
+  devIndicators: { position: "bottom-right" },
   // Tailwind CSS v4 through its Turbopack loader (processes @import "tailwindcss" and @theme tokens).
   turbopack: {
     rules: {

@@ -42,6 +42,20 @@ for (const [label, viewport] of [["tablet", { width: 834, height: 1112 }], ["mob
       await expect(drawer).toBeHidden();
     });
 
+    test("menu drawer closes and marks the destination at once, even while the page is still loading", async ({ page }) => {
+      await page.goto("/app/discover");
+      await page.route((url) => url.pathname === "/app/saved", async (route) => {
+        if (route.request().headers()["rsc"]) await new Promise((r) => setTimeout(r, 3000));
+        await route.continue();
+      });
+      await page.getByRole("button", { name: "Open menu" }).click();
+      const drawer = page.getByRole("dialog", { name: "Menu" });
+      await drawer.getByRole("link", { name: "Saved" }).click();
+      await expect(drawer).toBeHidden({ timeout: 1000 });
+      await expect(page.getByRole("navigation", { name: "Candidate (mobile)" }).locator('a[aria-current="page"]')).toHaveText("Saved", { timeout: 1000 });
+      await expect(page.locator("main h1")).toHaveText("Saved", { timeout: 15_000 });
+    });
+
     test("bottom bar marks the current section", async ({ page }) => {
       await page.goto("/app/saved");
       await expect(page.getByRole("navigation", { name: "Candidate (mobile)" }).locator('a[aria-current="page"]')).toHaveText("Saved");

@@ -83,16 +83,26 @@ export const RANK_LIMIT = 500;
  * still comes first. Matching runs in TypeScript (eligibility rules, skills, education), so it can't be a
  * SQL ORDER BY; ranking is done on the server and only one page leaves it.
  */
-export async function searchOpportunitiesRanked(db: Db, input: SearchInput, rank: (items: OpportunityFull[]) => OpportunityFull[], now = new Date()) {
+export async function searchOpportunitiesRanked(db: Db, input: SearchInput, rank: (items: OpportunityFull[]) => OpportunityFull[] | Promise<OpportunityFull[]>, now = new Date()) {
   const filter = searchFilter(db, input, now);
   const [rows, [{ total }]] = await Promise.all([
     db.select().from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
     db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
   ]);
-  const ranked = rank(await withDetails(db, rows));
+  // `rank` may await data loaded in parallel (e.g. the candidate's profile), so the search never waits for it to start.
+  const ranked = await rank(await withDetails(db, rows));
   const start = (input.page - 1) * PAGE_SIZE;
   const ranks = Math.min(total, RANK_LIMIT);
   return { items: ranked.slice(start, start + PAGE_SIZE), total, page: input.page, pageCount: Math.max(1, Math.ceil(ranks / PAGE_SIZE)), truncated: total > RANK_LIMIT };
+}
+
+/**
+ * One page of an already-ranked, COMPLETE list, shaped like searchOpportunitiesRanked's result. Used when the
+ * unfiltered search would return exactly the open listings the page has already loaded, so they aren't fetched twice.
+ */
+export function rankedPage(ranked: OpportunityFull[], page: number) {
+  const start = (page - 1) * PAGE_SIZE;
+  return { items: ranked.slice(start, start + PAGE_SIZE), total: ranked.length, page, pageCount: Math.max(1, Math.ceil(ranked.length / PAGE_SIZE)), truncated: false };
 }
 
 /** All open listings (bounded) for personalized ranking; the public marketplace keeps its own pagination. */
@@ -104,8 +114,26 @@ export async function liveCategories(db: Db, now = new Date()): Promise<Category
 }
 
 export async function listOpenOpportunities(db: Db, limit = 300, now = new Date()) {
-  const rows = await db.select().from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt)).limit(limit);
-  return withDetails(db, rows);
+  // Same order as the search (newest first, id as tie-break), so a ranked list built from these rows is identical.
+  const rows = await db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(limit);
+  return rows.map(fromDetailRow);
+}
+
+/**
+ * A listing's skills and eligibility as columns of the listing query itself, so a list arrives in ONE round
+ * trip (and one consistent snapshot) instead of listings first, then their skills and eligibility. Used on the
+ * busiest dashboard pages. Both lookups use primary keys that start with opportunity_id.
+ */
+export const detailColumns = {
+  skills: sql<OpportunityFull["skills"]>`coalesce((select json_agg(json_build_object('name', s.name, 'normalized', s.normalized, 'required', s.required)) from ${opportunitySkills} s where s.opportunity_id = ${opportunities.id}), '[]'::json)`,
+  eligibility: sql<EligibilityRow | null>`(select json_build_object(
+    'opportunityId', e.opportunity_id, 'educationLevels', e.education_levels, 'graduationYearMin', e.graduation_year_min,
+    'graduationYearMax', e.graduation_year_max, 'minExperienceYears', e.min_experience_years, 'requiredCertifications', e.required_certifications,
+    'allowedLocations', e.allowed_locations, 'requiresWorkAuthorizationIndia', e.requires_work_authorization_india, 'notes', e.notes
+  ) from ${opportunityEligibility} e where e.opportunity_id = ${opportunities.id})`,
+};
+export function fromDetailRow(r: { o: OpportunityRow; skills: OpportunityFull["skills"]; eligibility: EligibilityRow | null }): OpportunityFull {
+  return { ...r.o, skills: r.skills ?? [], eligibility: r.eligibility ?? null };
 }
 
 export async function withDetails(db: Db, rows: OpportunityRow[]): Promise<OpportunityFull[]> {

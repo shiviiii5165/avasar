@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 
 import type { Db } from "../db/client";
 import { notificationPreferences, notifications } from "../db/schema";
@@ -36,9 +36,10 @@ export async function listNotifications(db: Db, identityId: string, limit = 50) 
   return db.select().from(notifications).where(eq(notifications.identityId, identityId)).orderBy(desc(notifications.createdAt)).limit(limit);
 }
 
+/** Counted in the database: the header shows this on every full page load, so no rows are transferred. */
 export async function unreadCount(db: Db, identityId: string) {
-  const rows = await db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.identityId, identityId), isNull(notifications.readAt)));
-  return rows.length;
+  const [row] = await db.select({ n: count() }).from(notifications).where(and(eq(notifications.identityId, identityId), isNull(notifications.readAt)));
+  return row?.n ?? 0;
 }
 
 export async function markAllRead(db: Db, identityId: string) {

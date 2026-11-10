@@ -8,11 +8,12 @@ import { buttonClass, inputClass, PageHeader, StateMessage } from "@/components/
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { rankForBrowse, recommend } from "@/server/domain/recommend";
-import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
+import type { CandidateFacts } from "@/server/domain/types";
+import { matchAll } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
 import { categoryDef } from "@/server/domain/categories";
-import { listOpenOpportunities, liveCategories, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts } from "@/server/services/opportunities";
-import { loadProfile } from "@/server/services/profiles";
+import { listOpenOpportunities, liveCategories, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "@/server/services/opportunities";
+import { loadProfile, toCandidateFacts } from "@/server/services/profiles";
 
 export const metadata = { title: "Opportunities for you" };
 
@@ -35,18 +36,32 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const input = searchSchema.safeParse({ ...raw, sort: uiSort === "match" ? "newest" : uiSort });
   const query = input.success ? input.data : searchSchema.parse({});
 
+  const asCandidates = (list: OpportunityFull[]) => list.map((o) => ({ id: o.id, item: o, facts: toFacts(o) }));
+  const byMatch = (facts: CandidateFacts | null, list: OpportunityFull[]) => (facts ? rankForBrowse(facts, asCandidates(list)).map((r) => r.item) : list);
+  const unfiltered = !query.q && !query.category && FILTER_KEYS.every((k) => query[k] === undefined);
+
+  // Everything starts at once (one database round trip per step, not one per loader). The profile is loaded once
+  // and its matching facts derived from it, instead of loading the same profile a second time.
+  const profileP = loadProfile(db, session.profileId);
+  const factsP = profileP.then((p) => (p ? toCandidateFacts(p) : null));
+  // Best match ranks the whole filtered set before paging; date sorts page in the database. With no search or
+  // filters, the filtered set IS the open listings loaded below, so it isn't fetched a second time.
+  const searchP = uiSort === "match"
+    ? unfiltered ? null : searchOpportunitiesRanked(db, query, async (list) => byMatch(await factsP, list))
+    : searchOpportunities(db, query);
+  searchP?.catch(() => undefined); // awaited below; this only stops an early failure elsewhere leaving it unhandled
   const [profile, open, saved, facts, live] = await Promise.all([
-    loadProfile(db, session.profileId),
-    listOpenOpportunities(db),
+    profileP,
+    listOpenOpportunities(db, RANK_LIMIT),
     savedIds(db, session.identity.id),
-    candidateFactsFor(db, session.profileId),
+    factsP,
     liveCategories(db),
   ]);
-  const asCandidates = (list: typeof open) => list.map((o) => ({ id: o.id, item: o, facts: toFacts(o) }));
-  // Best match ranks the whole filtered set before paging; date sorts page in the database.
-  const result = uiSort === "match" && facts
-    ? await searchOpportunitiesRanked(db, query, (list) => rankForBrowse(facts, asCandidates(list)).map((r) => r.item))
-    : await searchOpportunities(db, query);
+  const result = searchP
+    ? await searchP
+    : open.length < RANK_LIMIT
+      ? rankedPage(byMatch(facts, open), query.page)
+      : await searchOpportunitiesRanked(db, query, (list) => byMatch(facts, list)); // more open listings than one load holds
   // Core tabs always show; other categories only when they have live listings.
   const tabCats = [...new Set(["job", "internship", "gig", ...live])];
   const TABS: [string, string][] = [["", "All"], ...tabCats.map((c) => [c, categoryDef(c)?.plural ?? c] as [string, string])];
@@ -105,7 +120,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
               </p>
             )}
             {recommended.length ? (
-              <ul className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
                 {recommended.map((o) => {
                   const m = matches.get(o.id)!;
                   return (
@@ -173,7 +188,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
               {activeFilters.length ? <> · {activeFilters.length} filter{activeFilters.length > 1 ? "s" : ""}</> : null}
             </p>
             {items.length === 0 ? emptyState() : (
-              <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
                 {items.map((o) => {
                   const m = matches.get(o.id)!;
                   return <li key={o.id}><OpportunityCard o={o} saved={saved.has(o.id)} match={{ score: m.score, eligibility: m.eligibility.status }} /></li>;

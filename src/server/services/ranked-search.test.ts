@@ -7,7 +7,7 @@ import { upsertIdentity } from "../auth/identity";
 import { rankForBrowse } from "../domain/recommend";
 import type { CandidateFacts } from "../domain/types";
 import { candidateFactsFor } from "./candidate-context";
-import { createOpportunity, PAGE_SIZE, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "./opportunities";
+import { createOpportunity, listOpenOpportunities, PAGE_SIZE, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "./opportunities";
 import { ensureProfile, replaceSkills } from "./profiles";
 
 /**
@@ -85,6 +85,18 @@ describe("best-match ranking across pages", () => {
     const none = await searchOpportunitiesRanked(db, searchSchema.parse({ workMode: "onsite" }), rank);
     expect(none.total).toBe(0);
     expect(none.items).toEqual([]);
+  });
+
+  it("unfiltered: ranking the open listings already loaded gives exactly the database search's pages", async () => {
+    // The Opportunities page reuses its open listings for the unfiltered best-match list instead of fetching them twice.
+    const open = await listOpenOpportunities(db, RANK_LIMIT);
+    expect(open.length).toBeLessThan(RANK_LIMIT);
+    for (const page of [1, 2, 3]) {
+      const fromDb = await searchOpportunitiesRanked(db, searchSchema.parse({ page }), async (list) => rank(list));
+      const reused = rankedPage(rank(open), page);
+      expect(reused.items.map((o) => o.id)).toEqual(fromDb.items.map((o) => o.id));
+      expect({ total: reused.total, pageCount: reused.pageCount, truncated: reused.truncated }).toEqual({ total: fromDb.total, pageCount: fromDb.pageCount, truncated: fromDb.truncated });
+    }
   });
 
   it("keeps listings with unknown eligibility (missing profile data is not a rejection)", async () => {

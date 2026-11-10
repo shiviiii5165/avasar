@@ -29,21 +29,31 @@ const SECONDARY: Item[] = [
   { href: "/app/help", label: "Help", icon: HelpCircle },
 ];
 
-
 function isActive(pathname: string, href: string) {
   if (href === "/app") return pathname === "/app";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+const TOOLTIP =
+  "pointer-events-none absolute left-full top-1/2 z-40 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-card transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100";
+
 /**
- * Candidate app frame: header, collapsible desktop sidebar (icon-only when collapsed, tooltips on
- * hover and keyboard focus, preference kept in a cookie), and a mobile drawer plus bottom bar.
+ * Candidate app frame.
+ *  - Desktop (lg+): a full-height sidebar fixed to the left edge under the header. Expanded it shows icons and
+ *    labels; collapsed it shows icons with tooltips on hover and keyboard focus. The collapse/expand control sits
+ *    at the right end of the sidebar footer. The choice is kept in a cookie read by the server, so the first
+ *    paint already has the right width. The content column takes all remaining width in both states.
+ *  - Mobile and tablet: a menu drawer with every section plus a bottom bar with the five main ones.
+ *  - Clicked sections are marked active at once (before the server responds), so navigation never looks frozen.
  * The header's right side (admin link, bell, sign out) is rendered by the server and passed in.
  */
 export function CandidateShell({ initialCollapsed, unread, headerRight, children }: { initialCollapsed: boolean; unread: number; headerRight: ReactNode; children: ReactNode }) {
   const pathname = usePathname() ?? "/app";
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The section the user just clicked, shown as active until the URL actually changes. The most recent click
+  // wins, so rapid clicks never leave an older section highlighted.
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
 
@@ -58,12 +68,14 @@ export function CandidateShell({ initialCollapsed, unread, headerRight, children
     menuButton.current?.focus();
   }, []);
 
-  // Close the drawer when the route changes (a link inside it was followed).
+  // Route changed (link, back/forward, redirect): the real pathname is the truth again; close the drawer.
   const [lastPath, setLastPath] = useState(pathname);
   if (lastPath !== pathname) {
     setLastPath(pathname);
+    if (pendingHref) setPendingHref(null);
     if (drawerOpen) setDrawerOpen(false);
   }
+  const current = pendingHref ?? pathname;
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -81,14 +93,18 @@ export function CandidateShell({ initialCollapsed, unread, headerRight, children
     };
   }, [drawerOpen, closeDrawer]);
 
+  // Client-side navigation only (not new-tab clicks): highlight the destination now.
+  const onNavigate = (href: string) => () => setPendingHref(isActive(pathname, href) ? null : href);
+
   const badge = (item: Item) => (item.href === "/app/notifications" && unread > 0 ? (unread > 9 ? "9+" : String(unread)) : null);
 
-  const navLink = (item: Item, opts: { compact: boolean; secondary?: boolean }) => {
-    const active = isActive(pathname, item.href);
+  const navLink = (item: Item, opts: { compact: boolean; secondary?: boolean; inDrawer?: boolean }) => {
+    const active = isActive(current, item.href);
     const count = badge(item);
     return (
       <Link
         href={item.href}
+        onNavigate={() => { onNavigate(item.href)(); if (opts.inDrawer) setDrawerOpen(false); }}
         aria-current={active ? "page" : undefined}
         className={cx(
           "group relative flex items-center gap-3 rounded-lg text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-purple",
@@ -105,29 +121,24 @@ export function CandidateShell({ initialCollapsed, unread, headerRight, children
           <span aria-hidden className="rounded-full bg-orange px-1.5 text-[10px] font-bold leading-4 text-white">{count}</span>
         )}
         {count && opts.compact && <span aria-hidden className="absolute right-1.5 top-1.5 size-2 rounded-full bg-orange" />}
-        {opts.compact && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute left-full top-1/2 z-40 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-card transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
-          >
-            {item.label}
-          </span>
-        )}
+        {opts.compact && <span aria-hidden className={TOOLTIP}>{item.label}</span>}
       </Link>
     );
   };
 
-  const navLists = (compact: boolean) => (
+  const navLists = (compact: boolean, inDrawer = false) => (
     <>
-      <ul className="space-y-1">{PRIMARY.map((n) => <li key={n.href}>{navLink(n, { compact })}</li>)}</ul>
-      <ul className={cx("mt-4 space-y-1 border-t border-line pt-4")}>{SECONDARY.map((n) => <li key={n.href}>{navLink(n, { compact, secondary: true })}</li>)}</ul>
+      <ul className="space-y-1">{PRIMARY.map((n) => <li key={n.href}>{navLink(n, { compact, inDrawer })}</li>)}</ul>
+      <ul className="mt-4 space-y-1 border-t border-line pt-4">{SECONDARY.map((n) => <li key={n.href}>{navLink(n, { compact, secondary: true, inDrawer })}</li>)}</ul>
     </>
   );
+
+  const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
     <div className="min-h-dvh bg-surface-muted">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-2">
             <button
               ref={menuButton}
@@ -146,38 +157,40 @@ export function CandidateShell({ initialCollapsed, unread, headerRight, children
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 pb-28 sm:px-6 lg:gap-8 lg:px-8 lg:pb-10">
+      <div className="flex">
         <nav
           id="candidate-sidebar"
           aria-label="Candidate"
           className={cx(
-            "sticky top-[5.5rem] hidden h-[calc(100dvh-7rem)] shrink-0 flex-col self-start transition-[width] duration-200 ease-out motion-reduce:transition-none lg:flex",
-            collapsed ? "w-10" : "w-52",
+            // z-20: a sticky element is its own stacking layer; above the content (cards, search) so tooltips aren't covered, below the header.
+            "sticky top-16 z-20 hidden h-[calc(100dvh-4rem)] shrink-0 flex-col border-r border-line transition-[width] duration-200 ease-out motion-reduce:transition-none lg:flex",
+            collapsed ? "w-16" : "w-60",
           )}
         >
-          <div className="min-h-0 flex-1">{navLists(collapsed)}</div>
-          <button
-            type="button"
-            onClick={toggle}
-            aria-expanded={!collapsed}
-            aria-controls="candidate-sidebar"
-            className={cx(
-              "group relative mt-4 flex items-center gap-3 rounded-lg border-t border-line pt-3 text-sm text-muted outline-none hover:text-navy focus-visible:ring-2 focus-visible:ring-purple",
-              collapsed ? "w-10 justify-center" : "px-3",
-            )}
-          >
-            {collapsed ? <ChevronsRight aria-hidden className="size-4" /> : <ChevronsLeft aria-hidden className="size-4" />}
-            <span className={collapsed ? "sr-only" : ""}>{collapsed ? "Expand sidebar" : "Collapse sidebar"}</span>
-            {collapsed && (
-              <span aria-hidden className="pointer-events-none absolute left-full top-1/2 z-40 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-navy px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-card transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-                Expand sidebar
-              </span>
-            )}
-          </button>
+          {/* Collapsed icons keep overflow visible so their tooltips aren't clipped; expanded labels scroll on short screens. */}
+          <div className={cx("min-h-0 flex-1 p-3", collapsed ? "" : "overflow-y-auto")}>{navLists(collapsed)}</div>
+          <div className={cx("flex shrink-0 items-center border-t border-line p-3", collapsed ? "justify-center" : "justify-end")}>
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label={toggleLabel}
+              aria-expanded={!collapsed}
+              aria-controls="candidate-sidebar"
+              className="group relative flex size-10 items-center justify-center rounded-lg text-muted outline-none transition-colors hover:bg-surface hover:text-navy focus-visible:ring-2 focus-visible:ring-purple"
+            >
+              {collapsed ? <ChevronsRight aria-hidden className="size-4" /> : <ChevronsLeft aria-hidden className="size-4" />}
+              <span aria-hidden className={TOOLTIP}>{toggleLabel}</span>
+            </button>
+          </div>
         </nav>
 
-        <main id="main" className="min-w-0 flex-1">{children}</main>
+        <main id="main" aria-busy={pendingHref ? true : undefined} className="min-w-0 flex-1 px-4 py-6 pb-28 sm:px-6 lg:px-8 lg:pb-10">
+          <div className="mx-auto w-full max-w-[120rem]">{children}</div>
+        </main>
       </div>
+
+      {/* Slow navigation only (CSS keeps it invisible for the first 200 ms, so fast pages never flash it). */}
+      {pendingHref && <div role="progressbar" aria-label="Loading page" className="nav-pending pointer-events-none fixed inset-x-0 top-16 z-30 h-0.5 bg-purple" />}
 
       {/* Mobile drawer: every section, including the ones the bottom bar has no room for. */}
       {drawerOpen && (
@@ -190,7 +203,7 @@ export function CandidateShell({ initialCollapsed, unread, headerRight, children
                 <X aria-hidden className="size-5" />
               </button>
             </div>
-            <nav aria-label="Candidate (menu)">{navLists(false)}</nav>
+            <nav aria-label="Candidate (menu)">{navLists(false, true)}</nav>
           </div>
         </div>
       )}
@@ -199,10 +212,10 @@ export function CandidateShell({ initialCollapsed, unread, headerRight, children
       <nav aria-label="Candidate (mobile)" className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
         <ul className="grid grid-cols-5">
           {PRIMARY.map((n) => {
-            const active = isActive(pathname, n.href);
+            const active = isActive(current, n.href);
             return (
               <li key={n.href}>
-                <Link href={n.href} aria-current={active ? "page" : undefined}
+                <Link href={n.href} onNavigate={onNavigate(n.href)} aria-current={active ? "page" : undefined}
                   className={cx("flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px]", active ? "font-bold text-purple" : "font-medium text-navy-soft")}>
                   <n.icon aria-hidden className="size-5 text-purple" />{n.label}
                 </Link>

@@ -4,7 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 
 import type { Db } from "../db/client";
 import { opportunities, recentlyViewed, savedOpportunities, savedSearches } from "../db/schema";
-import { publicVisibility, withDetails } from "./opportunities";
+import { detailColumns, fromDetailRow, publicVisibility } from "./opportunities";
 
 export async function toggleSaved(db: Db, identityId: string, opportunityId: string): Promise<boolean> {
   const deleted = await db.delete(savedOpportunities).where(and(eq(savedOpportunities.identityId, identityId), eq(savedOpportunities.opportunityId, opportunityId))).returning();
@@ -22,13 +22,14 @@ export async function savedIds(db: Db, identityId: string): Promise<Set<string>>
 
 /** Saved listings, including ones that have since closed (shown as closed, never silently dropped). */
 export async function listSaved(db: Db, identityId: string) {
+  // One round trip: skills and eligibility come back as columns of the same query.
   const rows = await db
-    .select({ o: opportunities })
+    .select({ o: opportunities, ...detailColumns })
     .from(savedOpportunities)
     .innerJoin(opportunities, eq(savedOpportunities.opportunityId, opportunities.id))
     .where(eq(savedOpportunities.identityId, identityId))
     .orderBy(desc(savedOpportunities.createdAt));
-  return withDetails(db, rows.map((r) => r.o));
+  return rows.map(fromDetailRow);
 }
 
 export async function recordView(db: Db, identityId: string, opportunityId: string) {

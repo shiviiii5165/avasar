@@ -18,27 +18,30 @@ export async function ensureProfile(db: Db, identityId: string, name: string | n
   return existing;
 }
 
+/**
+ * The whole profile in ONE database round trip: every query is keyed by the profile id, so none has to wait
+ * for another (evidence is counted through a join on the candidate's skills rather than by skill ids).
+ * Several dashboard pages call this on each navigation; sequential waves here multiplied database latency.
+ */
 export async function loadProfile(db: Db, profileId: string) {
-  const [profile] = await db.select().from(candidateProfiles).where(eq(candidateProfiles.id, profileId));
-  if (!profile) return null;
-  const [edu, exp, proj, certs, skills, resumeRows] = await Promise.all([
+  const [[profile], edu, exp, proj, certs, skills, resumeRows, evidence, achievementRows] = await Promise.all([
+    db.select().from(candidateProfiles).where(eq(candidateProfiles.id, profileId)),
     db.select().from(education).where(eq(education.profileId, profileId)).orderBy(education.graduationYear),
     db.select().from(experiences).where(eq(experiences.profileId, profileId)).orderBy(experiences.startDate),
     db.select().from(projects).where(eq(projects.profileId, profileId)),
     db.select().from(certifications).where(eq(certifications.profileId, profileId)),
     db.select().from(candidateSkills).where(eq(candidateSkills.profileId, profileId)).orderBy(candidateSkills.name),
     db.select({ resume: resumes, doc: documents }).from(resumes).innerJoin(documents, eq(resumes.documentId, documents.id)).where(and(eq(resumes.profileId, profileId), isNull(documents.deletedAt))),
+    db.select({ skillId: skillEvidence.skillId, n: count() }).from(skillEvidence).innerJoin(candidateSkills, eq(skillEvidence.skillId, candidateSkills.id)).where(eq(candidateSkills.profileId, profileId)).groupBy(skillEvidence.skillId),
+    db.select().from(achievements).where(eq(achievements.profileId, profileId)),
   ]);
-  const evidence = skills.length
-    ? await db.select({ skillId: skillEvidence.skillId, n: count() }).from(skillEvidence).where(inArray(skillEvidence.skillId, skills.map((s) => s.id))).groupBy(skillEvidence.skillId)
-    : [];
+  if (!profile) return null;
   // Evidence: explicit links, plus projects that list the skill.
   const projectSkills = proj.flatMap((p) => p.skills.map(normalizeSkill));
   const skillsWithEvidence = skills.map((s) => ({
     ...s,
     evidenceCount: (evidence.find((e) => e.skillId === s.id)?.n ?? 0) + projectSkills.filter((k) => k === s.normalized).length,
   }));
-  const achievementRows = await db.select().from(achievements).where(eq(achievements.profileId, profileId));
   return { profile, education: edu, experiences: exp, projects: proj, certifications: certs, achievements: achievementRows, skills: skillsWithEvidence, resumes: resumeRows };
 }
 export type LoadedProfile = NonNullable<Awaited<ReturnType<typeof loadProfile>>>;

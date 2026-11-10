@@ -9,6 +9,7 @@ import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import pg from "pg";
 
+import { log } from "../log";
 import { pgPoolOptions } from "./pg-options";
 import * as schema from "./schema";
 
@@ -41,6 +42,9 @@ async function create(): Promise<Db> {
   const url = forceEmbedded() ? undefined : process.env.DATABASE_URL;
   if (url) {
     const pool = new pg.Pool(pgPoolOptions(url, Number(process.env.DATABASE_POOL_MAX ?? 10)));
+    // An idle pooled connection closed by the server or pooler emits "error" on the pool. Without a listener
+    // Node treats that as an uncaught exception and the process exits; the pool already drops the dead client.
+    pool.on("error", (err) => log("warn", "db.idle_client_error", { message: err.message }));
     return drizzlePg(pool, { schema }) as unknown as Db;
   }
   if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_EMBEDDED_DB !== "1") {
