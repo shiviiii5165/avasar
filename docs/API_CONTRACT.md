@@ -49,3 +49,38 @@ Error shape: `{ "error": { "code": "...", "message": "..." } }`.
 - `GET {base}/api/integrations/jwks`
 
 All are overridable through `AVSAR_AIT_*`.
+
+## Partner API: AI Tathastu internships (`GET /api/partner/v1/internships`)
+
+For AI Tathastu's dashboard only. Disabled unless `AVSAR_PARTNER_API_AIT=1`.
+
+**Authentication:** `Authorization: Bearer <assertion>`. The assertion is an ES256 JWT signed by AI Tathastu's integration key and verified against the same JWKS as sign-in (`AVSAR_AIT_JWKS_URL` or `AVSAR_AIT_BASE_URL`). No shared secret is involved. Required claims:
+
+| Claim | Value |
+|---|---|
+| `iss` | `AVSAR_AIT_ISSUER` (default `https://www.aitathastu.com`) |
+| `sub` | `ai-tathastu` |
+| `aud` | `avsar-partner-api` |
+| `scope` | `opportunities:read` |
+| `exp`, `iat`, `jti` | present; lifetime at most 300 seconds |
+
+A student's sign-in token is rejected. Call the canonical host (`AVSAR_PUBLIC_URL`): a redirect from another host drops the Authorization header.
+
+**Query parameters:** `page` (1–200, default 1), `pageSize` (1–50, default 25), `workMode` (`remote` | `hybrid` | `onsite`). The rate limit is 120 requests per minute per partner; over the limit the API returns 429 with `retry-after`.
+
+**What it returns:** only `category = internship`, `status = published`, deadline not passed (the marketplace's `publicVisibility` rule), and never sample listings. The order is newest published first, then id, and is stable across pages.
+
+**Response shape:** `{ schema: "PartnerInternshipV1", generatedAt, page, pageSize, total, hasMore, items[] }`. Each item has:
+- `id`, `slug`, `title`, `organization`, `summary`, `description`
+- `requiredSkills`, `preferredSkills`
+- `eligibility`: `{ educationLevels, graduationYearMin/Max, minExperienceYears, requiredCertifications, allowedLocations, requiresWorkAuthorizationIndia, notes }` or null
+- `locations`, `country`, `workMode`
+- `stipend`: `{ min, max, currency, period, note }` or null; plus `unpaid`, `durationWeeks`, `startDate`
+- `publishedAt`, `deadline` (null if none), `updatedAt`
+- `status` (always `"published"`), `verification`, `applicationMethod`
+- `url`: the Avsar listing page
+- `applyUrl`: `/app/apply/{slug}` for Avsar-hosted applications, or the listing page for external ones
+
+Applications are only ever created inside Avsar. This API cannot create or read applications and returns nothing about candidates.
+
+**Errors:** `{ error: { code, message } }` with status 401 `UNAUTHORIZED`, 400 `INVALID_QUERY`, 429 `RATE_LIMITED`, 503 `PARTNER_API_DISABLED`, or 503 `KEYS_UNAVAILABLE`.

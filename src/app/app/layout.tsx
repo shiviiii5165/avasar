@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { Bell, LogOut } from "lucide-react";
 
 import { CandidateShell } from "@/components/candidate/app-shell";
 import { NAV_COOKIE } from "@/components/candidate/nav-cookie";
+import { RETURN_PATH_HEADER } from "@/server/auth/return-path";
 import { requireUser } from "@/server/auth/session";
+import { safeReturnTo } from "@/server/auth/tathastu";
 import { getDb } from "@/server/db/client";
 import { unreadCount } from "@/server/services/notifications";
 
 export const metadata: Metadata = { robots: { index: false } };
 
 export default async function CandidateLayout({ children }: { children: React.ReactNode }) {
-  const session = await requireUser("/app");
+  // Return to the exact page after sign-in (e.g. /app/apply/<slug>), not the /app home.
+  // safeReturnTo keeps it an internal relative path; anything else falls back to /app.
+  const session = await requireUser(safeReturnTo((await headers()).get(RETURN_PATH_HEADER)));
   const [unread, jar] = await Promise.all([unreadCount(await getDb(), session.identity.id), cookies()]);
   const headerRight = (
     <div className="flex items-center gap-1">

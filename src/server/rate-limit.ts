@@ -22,6 +22,7 @@ export const LIMITS = {
   resumeRead: { limit: 20, windowSec: 3600 },   // resume suggestion runs per person
   supportIp: { limit: 5, windowSec: 3600 },     // public support form per client IP
   supportEmail: { limit: 3, windowSec: 3600 },  // public support form per email address
+  partnerApi: { limit: 120, windowSec: 60 },    // partner API calls per partner (AI Tathastu)
 } as const;
 export type LimitName = keyof typeof LIMITS;
 

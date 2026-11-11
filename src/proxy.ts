@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { RETURN_PATH_HEADER, requestPathOf } from "./server/auth/return-path";
+
 /**
  * Edge-level guard (Next 16 "proxy", formerly middleware). Authorization itself is enforced in every
  * server component, action and route; this only adds defense in depth:
@@ -31,7 +33,10 @@ export function proxy(request: NextRequest) {
     const target = canonicalRedirect(request.url, request.headers.get("host"), process.env.AVSAR_PUBLIC_URL);
     if (target) return NextResponse.redirect(target, 308);
   }
-  return NextResponse.next();
+  // Record the requested path for sign-in return (overwrites any client-supplied value).
+  const headers = new Headers(request.headers);
+  headers.set(RETURN_PATH_HEADER, requestPathOf(request.nextUrl));
+  return NextResponse.next({ request: { headers } });
 }
 
 // Everything except static build assets (those are immutable and host-independent).
