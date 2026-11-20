@@ -106,6 +106,30 @@ export async function applyTathastuProfile(db: Db, profileId: string, raw: unkno
   return m;
 }
 
+/**
+ * Consent withdrawn on AI Tathastu (integration.revoked, user_disconnected): removes everything AI Tathastu
+ * owns here: its section rows and skills, its intelligence signals and scopes, and identity fields still
+ * holding the imported value. The student's own additions and edits stay. Idempotent.
+ */
+export async function clearTathastuImport(db: Db, profileId: string, actorId: string | null) {
+  await db.transaction(async (tx) => {
+    const [cur] = await tx.select().from(candidateProfiles).where(eq(candidateProfiles.id, profileId)).for("update");
+    if (!cur) return;
+    for (const t of [education, experiences, projects, certifications, achievements, candidateSkills]) {
+      await tx.delete(t).where(and(eq(t.profileId, profileId), eq(t.source, "ai_tathastu")));
+    }
+    const imported = cur.importedFields ?? {};
+    const scrub: Record<string, null> = {};
+    for (const f of IDENTITY_FIELDS) if (imported[f] !== undefined && imported[f] === cur[f]) scrub[f] = null;
+    const preferredRoles = imported.careerRole ? cur.preferredRoles.filter((r) => r !== imported.careerRole) : cur.preferredRoles;
+    await tx
+      .update(candidateProfiles)
+      .set({ ...scrub, preferredRoles, importedFields: {}, aitInsights: {}, aitScopes: {}, aitSyncStatus: "never", aitSyncError: null, aitSyncedAt: null, updatedAt: new Date() })
+      .where(eq(candidateProfiles.id, profileId));
+    await audit(tx, { actorId, actorRole: "system", action: "profile.ait_unlinked", targetType: "profile", targetId: profileId });
+  });
+}
+
 export async function recordSyncFailure(db: Db, profileId: string, message: string) {
   await db.update(candidateProfiles).set({ aitSyncStatus: "failed", aitSyncError: message.slice(0, 300), updatedAt: new Date() }).where(eq(candidateProfiles.id, profileId));
 }

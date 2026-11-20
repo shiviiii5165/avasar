@@ -92,6 +92,25 @@ export const oauthFlows = pgTable("oauth_flows", {
   usedAt: timestamp("used_at", { withTimezone: true }),
 });
 
+/**
+ * AI Tathastu webhook deliveries (profile.updated, integration.revoked), one row per delivery id. A delivery
+ * is processed exactly once: a duplicate is acknowledged without re-applying, a failed one stays retryable,
+ * and one being processed elsewhere answers 409 until its lock expires. `outcome` is what the sender is told.
+ */
+export const aitWebhookDeliveries = pgTable("ait_webhook_deliveries", {
+  deliveryId: text("delivery_id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  /** AI Tathastu user id the event is about (no foreign key: deletions must outlive the identity). */
+  subject: text("subject"),
+  status: text("status").$type<"processing" | "processed" | "failed">().notNull().default("processing"),
+  outcome: text("outcome"),
+  attempts: integer("attempts").notNull().default(1),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  lastError: text("last_error"),
+  receivedAt: createdAt(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+}, (t) => [index("ait_webhook_deliveries_subject").on(t.subject)]);
+
 export const adminRoles = pgTable("admin_roles", {
   identityId: uuid("identity_id").notNull().references(() => userIdentities.id, { onDelete: "cascade" }),
   role: adminRole("role").notNull(),

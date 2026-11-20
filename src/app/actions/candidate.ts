@@ -2,14 +2,13 @@
 
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireCandidate, requireUser } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
-import { userIdentities } from "@/server/db/schema";
+import { deleteCandidateAccount } from "@/server/services/account";
 import { ApplyError, changeApplicationStatus, submitApplication } from "@/server/services/applications";
 import { deleteResume, MAX_UPLOAD_BYTES, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
 import { StorageUnavailableError } from "@/server/storage";
@@ -20,7 +19,6 @@ import { matchOpportunity } from "@/server/domain/matching";
 import { requirementQuestions, unansweredRequirements } from "@/server/domain/requirements";
 import {
   addSectionItem,
-  eraseCandidateData,
   loadProfile,
   profileSchemas,
   toCandidateFacts,
@@ -264,12 +262,11 @@ export async function deleteAccountAction(_: ActionState, fd: FormData): Promise
   const s = await requireUser();
   if (fd.get("confirm") !== "DELETE") return { ok: false, errors: { confirm: "Type DELETE to confirm." } };
   const db = await getDb();
-  const { sessions } = await import("@/server/db/schema");
-  const keys = s.profileId ? await eraseCandidateData(db, s.profileId) : [];
-  await db.transaction(async (tx) => {
-    await tx.update(userIdentities).set({ deletedAt: new Date(), email: null, name: null }).where(eq(userIdentities.id, s.identity.id));
-    await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.identityId, s.identity.id));
-    await audit(tx, { actorId: s.identity.id, actorRole: "candidate", action: "account.delete", targetType: "identity", targetId: s.identity.id });
+  const keys = await deleteCandidateAccount(db, {
+    identityId: s.identity.id,
+    profileId: s.profileId,
+    actor: { id: s.identity.id, role: "candidate" },
+    reason: "candidate_request",
   });
   for (const key of keys) await storage().remove(key).catch(() => undefined);
   redirect("/?account_deleted=1");

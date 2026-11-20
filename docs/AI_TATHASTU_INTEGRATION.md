@@ -77,7 +77,7 @@ Avsar cannot sign in real students until this is done on AI Tathastu (Avsar does
 5. **Client secret:** generate a long random secret and set `INTEGRATION_AVSAR_CLIENT_SECRET` in AI Tathastu's secret store; give the
    same value to the Avsar operator through a secret manager or a one-time secret link — never chat, email body or git.
 6. **Signing key:** `INTEGRATION_JWT_PRIVATE_KEY` must already be configured (it is shared by all integrations).
-7. **Optional:** `INTEGRATION_AVSAR_WEBHOOK_URL` / `_WEBHOOK_SECRET` (Avsar does not consume webhooks yet; leave unset).
+7. **Webhooks (automatic profiles and sync):** set `INTEGRATION_AVSAR_WEBHOOK_URL=https://avsar.aitathastu.com/api/webhooks/tathastu` and a long random `INTEGRATION_AVSAR_WEBHOOK_SECRET`; give Avsar the same secret as `AVSAR_AIT_WEBHOOK_SECRET`. Avsar verifies `X-AIT-Signature` (HMAC-SHA256 over `<t>.<raw body>`, 5-minute window), processes each delivery id once (`ait_webhook_deliveries`), and answers with an `outcome`: created, updated, up_to_date, deleted, unlinked, ignored, ignored_consent, conflict, invalid_identity, rejected or retryable. `profile.updated` with reason `auto_provision` creates the account and a private profile (matched by AI Tathastu id only, never by email); `integration.revoked` removes imported data, or deletes the Avsar account when the reason is `account_deleted`. Until the secret is set the endpoint answers 503 and AI Tathastu keeps retrying.
 
 **Unverified until registration:** live endpoint availability on the staging domain, the consent screen wording for Avsar, real
 section filtering, real key rotation timing, and that the deployed AI Tathastu matches the source read here.
