@@ -23,8 +23,9 @@ export const LIMITS = {
   supportIp: { limit: 5, windowSec: 3600 },     // public support form per client IP
   supportEmail: { limit: 3, windowSec: 3600 },  // public support form per email address
   partnerApi: { limit: 120, windowSec: 60 },    // partner API calls per partner (AI Tathastu)
-  webhook: { limit: 600, windowSec: 60 },
-  sourceRun: { limit: 6, windowSec: 3600 },     // manual "run now" per source (on top of the adapter's own request budget)       // signed AI Tathastu events per IP (a dispatch sends up to 100 at once)
+  webhook: { limit: 600, windowSec: 60 },       // signed AI Tathastu events per IP (a dispatch sends up to 100 at once)
+  sourceRun: { limit: 6, windowSec: 3600 },     // manual "run now" per source (on top of the adapter's own request budget)
+  search: { limit: 60, windowSec: 60 },         // listing searches/ranked pages per signed-in person or trusted client IP
 } as const;
 export type LimitName = keyof typeof LIMITS;
 
@@ -88,3 +89,15 @@ export const clientIpUntrusted = (env: Record<string, string | undefined> = proc
   env.NODE_ENV === "production" && !env.AVSAR_CLIENT_IP_HEADER && !(Number(env.AVSAR_TRUSTED_PROXY_HOPS) > 0);
 
 export const TOO_MANY = "Too many attempts. Please wait a little and try again.";
+
+/**
+ * Search and listing pages: per signed-in identity when there is one (always reliable), else per client IP, but
+ * ONLY when the IP is trustworthy. Without a trusted IP source every anonymous visitor shares one "untrusted"
+ * bucket, and a limit there would throttle the whole site together, so anonymous traffic is then left to the
+ * host's edge protection (and /api/health reports the missing configuration). Fails open (browsing never breaks).
+ */
+export async function searchAllowed(db: Db, headers: Headers, identityId: string | null, env: Record<string, string | undefined> = process.env, now = new Date()): Promise<RateResult> {
+  if (identityId) return rateLimit(db, "search", `id:${identityId}`, now);
+  if (clientIpUntrusted(env)) return { ok: true, remaining: LIMITS.search.limit, retryAfterSec: 0 };
+  return rateLimit(db, "search", `ip:${clientIp(headers, env)}`, now);
+}

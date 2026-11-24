@@ -6,11 +6,15 @@ import { OpportunityCard } from "@/components/opportunity/opportunity-card";
 import { SyncStatusCard } from "@/components/profile/sync-status";
 import { buttonClass, inputClass, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
+import { headers } from "next/headers";
+
 import { getDb } from "@/server/db/client";
+import { searchAllowed } from "@/server/rate-limit";
 import { rankForBrowse, recommend } from "@/server/domain/recommend";
 import type { Matcher } from "@/server/intelligence/canonical-match";
 import { matchAll } from "@/server/services/candidate-context";
-import { savedIds } from "@/server/services/engagement";
+import { DismissButton, SaveButton } from "@/components/forms/buttons";
+import { dismissedIds, savedIds } from "@/server/services/engagement";
 import { categoryDef } from "@/server/domain/categories";
 import { listOpenOpportunities, liveCategories, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "@/server/services/opportunities";
 import { matcherForProfile } from "@/server/services/career";
@@ -31,6 +35,15 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const sp = await searchParams;
   const session = await requireCandidate("/app/discover");
   const db = await getDb();
+  const rl = await searchAllowed(db, await headers(), session.identity.id);
+  if (!rl.ok) {
+    return (
+      <div className="py-16">
+        <StateMessage kind="unavailable" title="Too many searches in a short time" body={`Please wait about ${rl.retryAfterSec} seconds and try again.`} />
+      </div>
+    );
+  }
+
   // "Best match" (the default) isn't a database sort: fetch newest-first, then rank by explained match.
   const uiSort = sp.sort === "newest" || sp.sort === "deadline" ? sp.sort : "match";
   const raw = Object.fromEntries(Object.entries(sp).filter(([, v]) => v !== undefined && v !== ""));
@@ -51,12 +64,13 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
     ? unfiltered ? null : searchOpportunitiesRanked(db, query, async (list) => byMatch(await factsP, list))
     : searchOpportunities(db, query);
   searchP?.catch(() => undefined); // awaited below; this only stops an early failure elsewhere leaving it unhandled
-  const [profile, open, saved, facts, live] = await Promise.all([
+  const [profile, open, saved, facts, live, dismissed] = await Promise.all([
     profileP,
     listOpenOpportunities(db, RANK_LIMIT),
     savedIds(db, session.identity.id),
     factsP,
     liveCategories(db),
+    dismissedIds(db, session.identity.id),
   ]);
   const result = searchP
     ? await searchP
@@ -68,7 +82,8 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const TABS: [string, string][] = [["", "All"], ...tabCats.map((c) => [c, categoryDef(c)?.plural ?? c] as [string, string])];
   const matches = matchAll(facts, [...open, ...result.items]);
 
-  const rec = facts ? recommend(facts, asCandidates(open)) : { picks: [], limited: true };
+  const rec = facts ? recommend(facts, asCandidates(open), { exclude: dismissed }) : { picks: [], limited: true };
+  const hidden = open.filter((o) => dismissed.has(o.id));
   const recommended = rec.picks.map((r) => r.item);
   const items = result.items;
 
@@ -128,12 +143,29 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
                     <li key={o.id} className="flex flex-col gap-2">
                       <OpportunityCard o={o} saved={saved.has(o.id)} match={{ score: m.score, eligibility: m.eligibility.status }} />
                       {m.reasons[0] && <p className="px-1 text-xs text-muted"><span className="font-semibold text-navy-soft">Why it fits:</span> {m.reasons.slice(0, 2).join(" · ")}</p>}
+                      <div className="flex flex-wrap gap-2">
+                        <SaveButton opportunityId={o.id} saved={saved.has(o.id)} path="/app/discover" />
+                        <DismissButton opportunityId={o.id} title={o.title} />
+                      </div>
                     </li>
                   );
                 })}
               </ul>
             ) : (
               <p className="mt-2 text-sm text-muted">None of the open listings fit your profile closely yet. Browse them all below.</p>
+            )}
+            {hidden.length > 0 && (
+              <details className="mt-3 text-sm">
+                <summary className="cursor-pointer font-semibold text-navy">Hidden from recommendations ({hidden.length})</summary>
+                <ul className="mt-2 space-y-1">
+                  {hidden.map((o) => (
+                    <li key={o.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <Link href={`/opportunities/${o.slug}`} className="text-navy hover:underline">{o.title} · {o.organizationName}</Link>
+                      <DismissButton opportunityId={o.id} title={o.title} undo />
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </section>
 

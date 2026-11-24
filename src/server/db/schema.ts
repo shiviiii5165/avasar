@@ -620,6 +620,13 @@ export const savedOpportunities = pgTable("saved_opportunities", {
   createdAt: createdAt(),
 }, (t) => [primaryKey({ columns: [t.identityId, t.opportunityId] })]);
 
+/** "Not for me" on a recommendation. Only hides it from the student's own recommendations; never affects the listing. */
+export const dismissedOpportunities = pgTable("dismissed_opportunities", {
+  identityId: uuid("identity_id").notNull().references(() => userIdentities.id, { onDelete: "cascade" }),
+  opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.identityId, t.opportunityId] })]);
+
 export const savedSearches = pgTable("saved_searches", {
   id: id(),
   identityId: uuid("identity_id").notNull().references(() => userIdentities.id, { onDelete: "cascade" }),

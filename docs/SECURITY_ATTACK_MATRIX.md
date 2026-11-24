@@ -39,7 +39,7 @@ extraction with no tools.
 | A19 | Cache poisoning or cache authorization issues where applicable | PASS | code: private responses `cache-control: private, no-store` (documents, export, partner API); proxy overwrites the client-supplied return-path header (test: `return-path.test.ts`) |
 | A20 | Race conditions and duplicate-operation bugs | PASS | test: `ait-webhooks.test.ts` "concurrent provisioning… exactly one identity", `source-coverage.test.ts` "leases each due source once", `services.test.ts` "replays are idempotent" |
 | A21 | Business-logic abuse | PASS | test: `services.test.ts` "refuses duplicates, missing consent… closed listings", "never publishes without review" |
-| A22 | Missing or incorrect security headers | PARTIAL | live: HSTS, nosniff, XFO, Referrer-Policy, Permissions-Policy present; enforced CSP `script-src` allows `'unsafe-inline'`. FIXED part: strict nonce CSP added in report-only mode (`csp.test.ts`, verified locally on 3 pages: every script carries the nonce) |
+| A22 | Missing or incorrect security headers | PARTIAL | live: HSTS, nosniff, XFO, Referrer-Policy, Permissions-Policy present. FIXED in code: strict nonce CSP (`script-src 'self' 'nonce-…' 'strict-dynamic'`, no `unsafe-inline`) is ENFORCED on Vercel previews and wherever `AVSAR_CSP_MODE=enforce`; production stays report-only until the owner switches it after checking the preview. Local check with enforcement: one CSP header, every script nonced on `/`, `/terms`, `/opportunities`, `/sign-in`, and 0 CSP violations in headless Chromium (`csp.test.ts` covers the mode switch). Residual: production setting |
 | A23 | CORS and origin validation | PASS | code: no `Access-Control-Allow-*` header anywhere, so browsers block cross-origin reads by default |
 | A24 | API versioning and deprecated endpoint exposure | PASS | code: one versioned partner API (`/api/partner/v1`); the dev sign-in returns 404 in production (proxy + `devAuthEnabled`) |
 
@@ -77,7 +77,7 @@ extraction with no tools.
 | C7 | Sensitive data exposure in API responses | PASS | code: the export leaves out storage keys and internals; the partner API returns listings only |
 | C8 | PII leakage in logs, traces, error messages, or prompts | PASS | test: `production.test.ts` redaction; `ai.test.ts` "redacts contact details before text is sent to a provider" |
 | C9 | Consent boundaries between AI Tathastu, Collaborate, and AVSAR | PARTIAL | test: per-section consent and audience checks (`profile-sync.test.ts`, `ait-webhooks.test.ts`, which also reject `aud=collaborate`). **Gap (configuration):** production answers 503 to AI Tathastu events, so consent withdrawal and account deletion are not delivered until `AVSAR_AIT_WEBHOOK_SECRET` is set in both apps |
-| C10 | Data deletion and retention behavior | PARTIAL | test: `ait-webhooks.test.ts` "account_deleted deletes the Avsar account…", "user_disconnected removes AI Tathastu data"; same production gap as C9 |
+| C10 | Data deletion and retention behavior | PARTIAL | test: `ait-webhooks.test.ts` "account_deleted deletes the Avsar account…", "user_disconnected removes AI Tathastu data". FIXED: deletion left saved listings, saved searches (typed queries), recently viewed, notifications, preferences and admin roles on the minimized account; now erased, analytics unlinked (`services.test.ts` "account deletion erases…"). Residual: same production webhook gap as C9 |
 | C11 | Access to private files through predictable URLs | PASS | code: random ids + HMAC signature bound to viewer and expiry (`verifyDocumentSignature`) |
 | C12 | Authorization consistency between UI and backend | PASS | code: hidden buttons are never the control; every action re-checks on the server |
 
@@ -121,7 +121,7 @@ rule-based and uses no model.
 | E6 | Internal service exposure | PASS | live: internal routes need secrets (cron 401, partner API 401, webhook 503 until configured) |
 | E7 | Unnecessary open ports | N/A | Vercel exposes only 443/80 |
 | E8 | TLS and HTTPS configuration | PASS | live: HSTS max-age 2 years + includeSubDomains; the app refuses to start with an http public URL (seen locally) |
-| E9 | Security headers | PARTIAL | as A22 |
+| E9 | Security headers | PARTIAL | as A22 (code ready; production switch is an owner decision after the preview) |
 | E10 | Reverse-proxy trust configuration | PASS | test: `remediation.test.ts` "production without trusted-proxy config never trusts client headers" |
 | E11 | `X-Forwarded-For` spoofing resistance | PASS | test: `remediation.test.ts` "a spoofed left-most entry is ignored" |
 | E12 | DNS and host validation | PASS | test: canonical-host redirect (`remediation.test.ts`); SSRF DNS pinning (`ingestion.test.ts`) |
@@ -150,7 +150,7 @@ rule-based and uses no model.
 | # | Attack | Status | Evidence |
 |---|---|---|---|
 | G1 | Rate limits | PASS | `rate-limit.ts` (14 limits); test: `production.test.ts`, `remediation.test.ts` |
-| G2 | Login and search throttling | PARTIAL | login is throttled; public search/listing pages have no app-level limit (they rely on Vercel's platform protection) |
+| G2 | Login and search throttling | FIXED | `search` 60/min on `/opportunities` and `/app/discover`: per identity when signed in, per client IP when the IP source is trusted. When production has no trusted IP header, anonymous visitors are NOT limited (one shared bucket would throttle everyone) and `/api/health` reports it: set `AVSAR_CLIENT_IP_HEADER` to close that (`production.test.ts` "search rate limit") |
 | G3 | API quotas | PASS | partner API 120/min, fails closed (`partner-opportunities.test.ts`) |
 | G4 | Queue limits | PASS | job retries with backoff and dead-letter (`services.test.ts`) |
 | G5 | Request body limits | FIXED | the webhook body is now capped at 512 KB before signature work (`ait-webhooks.test.ts`); server actions at 4.5 MB |
@@ -160,12 +160,20 @@ rule-based and uses no model.
 | G9 | Cache behavior | PASS | as A19 |
 | G10 | Expensive endpoint protection | PASS | Run now 6/hour per source; resume extraction 20/hour; ranking is capped at 5,000 listings |
 | G11 | Graceful degradation | PASS | the webhook answers 503 retryable when unconfigured; storage outage shows a clear message (`storage.test.ts`) |
-| G12 | Recovery after a bounded test | NOT TESTED | needs an isolated staging environment; no load test was run |
-| G13 | Resource usage under a small, controlled load | NOT TESTED | as G12 |
+| G12 | Recovery after a bounded test | NOT TESTED | No load test has been run. Needs an isolated target (a Vercel preview with its own database, never production). Plan: a bounded run (for example 20 concurrent users for 2 minutes on `/opportunities`, `/opportunities/<slug>` and `/api/health/live`), then confirm error rate returns to 0 and p95 latency returns to baseline within 1 minute after the run stops. Stop at once if the error rate exceeds 5% |
+| G13 | Resource usage under a small, controlled load | NOT TESTED | No load test has been run. Same isolated target and run as G12; record p50/p95 latency, function duration and database connections. Not run because no isolated environment with its own database exists yet |
 
 ## Summary
 
-110 items: 77 PASS, 1 FIXED, 8 PARTIAL, 2 NOT TESTED, 22 N/A. Two more fixes sit inside rows still marked PASS or PARTIAL: the non-Latin download crash (F6) and the report-only nonce CSP (A22). No critical or high vulnerability was found in the
-code. The open items are mostly configuration: the webhook secret (C9, C10), the enforced CSP (A22, E9), production
-storage and email (A17), and token rotation (E13). Throttling public search (G2), deployment protections (E17) and
-load testing (G12, G13) remain.
+110 items: 77 PASS, 2 FIXED, 7 PARTIAL, 2 NOT TESTED, 22 N/A. Further fixes sit inside rows still marked PASS or
+PARTIAL: the non-Latin download crash (F6), account-deletion leftovers (C10) and the strict CSP (A22, E9).
+No critical or high vulnerability was found in the code.
+
+The 7 PARTIAL items and what closes each:
+- A17 production storage and email: provider accounts (owner).
+- A22, E9 enforced CSP in production: set `AVSAR_CSP_MODE=enforce` after checking the preview (owner).
+- C9, C10 consent withdrawal and deletion delivery: `AVSAR_AIT_WEBHOOK_SECRET` in both apps (owner).
+- E13 tokens pasted in chat: rotate them (owner).
+- E17 deployment protections: GitHub branch protection and required review on `main` (owner; not verified).
+
+The 2 NOT TESTED items (G12, G13) are load tests. They have not been run and must not be read as passed.

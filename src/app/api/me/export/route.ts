@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSession } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
-import { learningEvidence, notifications, savedOpportunities, savedSearches } from "@/server/db/schema";
+import { dismissedOpportunities, learningEvidence, notifications, savedOpportunities, savedSearches } from "@/server/db/schema";
 import { apiError } from "@/server/http";
 import { listApplicationsForProfile } from "@/server/services/applications";
 import { loadProfile } from "@/server/services/profiles";
@@ -14,12 +14,13 @@ export async function GET() {
   if (!session) return apiError(401, "UNAUTHENTICATED", "Sign in to export your data");
   const db = await getDb();
   const profile = session.profileId ? await loadProfile(db, session.profileId) : null;
-  const [apps, saved, searches, notes, learning] = await Promise.all([
+  const [apps, saved, searches, notes, learning, dismissed] = await Promise.all([
     session.profileId ? listApplicationsForProfile(db, session.profileId) : [],
     db.select().from(savedOpportunities).where(eq(savedOpportunities.identityId, session.identity.id)),
     db.select().from(savedSearches).where(eq(savedSearches.identityId, session.identity.id)),
     db.select().from(notifications).where(eq(notifications.identityId, session.identity.id)),
     session.profileId ? db.select().from(learningEvidence).where(eq(learningEvidence.profileId, session.profileId)) : [],
+    db.select().from(dismissedOpportunities).where(eq(dismissedOpportunities.identityId, session.identity.id)),
   ]);
   const body = {
     exportedAt: new Date().toISOString(),
@@ -35,6 +36,7 @@ export async function GET() {
     },
     applications: apps.map(({ application, opportunity }) => ({ opportunity: opportunity.title, organization: opportunity.organizationName, status: application.status, submittedAt: application.submittedAt, snapshot: application.profileSnapshot })),
     savedOpportunities: saved.map((s) => ({ opportunityId: s.opportunityId, savedAt: s.createdAt })),
+    hiddenRecommendations: dismissed.map((d) => ({ opportunityId: d.opportunityId, hiddenAt: d.createdAt })),
     savedSearches: searches.map(({ name, query, createdAt }) => ({ name, query, createdAt })),
     learningEvidence: learning.map(({ kind, skillName, title, score, maxScore, verified, occurredAt, includedInProfile }) => ({ kind, skill: skillName, title, score, maxScore, verified, occurredAt, includedInProfile })),
     notifications: notes.map(({ title, body, createdAt, readAt }) => ({ title, body, createdAt, readAt })),

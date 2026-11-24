@@ -11,7 +11,8 @@ import { upcomingDeadlines } from "@/server/domain/dashboard";
 import { APPLICATION_STATUS_LABEL } from "@/server/domain/workflows";
 import { listApplicationsForProfile } from "@/server/services/applications";
 import { matchAll } from "@/server/services/candidate-context";
-import { listSaved } from "@/server/services/engagement";
+import { DismissButton } from "@/components/forms/buttons";
+import { dismissedIds, listSaved } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
 import { listOpenOpportunities, toFacts } from "@/server/services/opportunities";
 import { recommend } from "@/server/domain/recommend";
@@ -24,19 +25,20 @@ export const metadata = { title: "Home" };
 export default async function CandidateHome() {
   const session = await requireCandidate("/app");
   const db = await getDb();
-  const [profile, apps, saved, notes, open] = await Promise.all([
+  const [profile, apps, saved, notes, open, dismissed] = await Promise.all([
     loadProfile(db, session.profileId),
     listApplicationsForProfile(db, session.profileId),
     listSaved(db, session.identity.id),
     listNotifications(db, session.identity.id, 5),
     listOpenOpportunities(db),
+    dismissedIds(db, session.identity.id),
   ]);
   if (!profile) notFound();
   // Derived from the profile already loaded above (it used to be loaded a second time, after everything else).
   const facts = await matcherForProfile(db, profile);
   const matches = matchAll(facts, open);
   const applied = new Set(apps.map((a) => a.opportunity.id));
-  const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: applied }) : { picks: [], limited: true };
+  const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: new Set([...applied, ...dismissed]) }) : { picks: [], limited: true };
   const recommended = rec.picks.map((r) => r.item);
   // Thin profile: recommendations rest on little data, so say so instead of implying precision.
   const limited = rec.limited;
@@ -75,7 +77,12 @@ export default async function CandidateHome() {
           <ul className="grid gap-4 md:grid-cols-3">
             {recommended.map((o) => {
               const m = matches.get(o.id)!;
-              return <li key={o.id}><OpportunityCard o={o} match={{ score: m.score, eligibility: m.eligibility.status }} /></li>;
+              return (
+                <li key={o.id} className="flex flex-col gap-2">
+                  <OpportunityCard o={o} match={{ score: m.score, eligibility: m.eligibility.status }} />
+                  <div><DismissButton opportunityId={o.id} title={o.title} /></div>
+                </li>
+              );
             })}
           </ul>
         ) : (

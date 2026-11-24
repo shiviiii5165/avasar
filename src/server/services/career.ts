@@ -84,7 +84,7 @@ export async function matcherForProfile(db: Db, p: LoadedProfile | null, now = n
 }
 
 /** Everything the career dashboard shows, for the signed-in student's OWN profile only (profileId comes from the session). */
-export async function careerIntelligence(db: Db, profileId: string, now = new Date()): Promise<CareerIntelligence | null> {
+export async function careerIntelligence(db: Db, profileId: string, now = new Date(), opts: { exclude?: ReadonlySet<string> } = {}): Promise<CareerIntelligence | null> {
   const [p, open] = await Promise.all([loadProfile(db, profileId), listOpenOpportunities(db, undefined, now)]);
   if (!p) return null;
   const reg = registry();
@@ -93,7 +93,7 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
   const { facts, profile: skills, targetRoles } = input;
 
   const scored = open.map((o) => ({ id: o.id, deadline: o.deadline, o, match: careerMatch(reg, facts, skills, { ...toFacts(o), skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin })) }, { targetRoles, now }) }));
-  const recommendations = rankCareerMatches(scored, 8).map(({ o, match }) => ({ o, match }));
+  const recommendations = rankCareerMatches(scored.filter((x) => !opts.exclude?.has(x.id)), 8).map(({ o, match }) => ({ o, match }));
 
   const roleIds = [...new Set(targetRoles.map((t) => reg.roleFor(t)?.id).filter((x): x is string => Boolean(x)))].slice(0, 3);
   const readiness = roleIds.map((id) => roleReadiness(reg, id, skills)).filter((r): r is NonNullable<typeof r> => r !== null);

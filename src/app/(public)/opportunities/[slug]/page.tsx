@@ -113,9 +113,12 @@ export default async function OpportunityPage({ params, searchParams }: { params
           {o.skills.length > 0 && (
             <section className="mt-6">
               <h2 className="text-xl font-semibold text-navy">Skills</h2>
+              {o.skills.some((s) => s.origin === "text_mentioned") && (
+                <p className="mt-1 text-xs text-muted">Skills marked &quot;mentioned in description&quot; were found in the listing text by Avsar. The employer did not list them as requirements.</p>
+              )}
               <ul className="mt-2 flex flex-wrap gap-2">
                 {o.skills.map((s) => (
-                  <li key={s.normalized}><Badge tone={s.required ? "purple" : "neutral"}>{s.name}{s.required ? "" : " · nice to have"}</Badge></li>
+                  <li key={s.normalized}><Badge tone={s.required ? "purple" : "neutral"}>{s.name}{s.origin === "text_mentioned" ? " · mentioned in description" : s.required ? "" : " · nice to have"}</Badge></li>
                 ))}
               </ul>
             </section>

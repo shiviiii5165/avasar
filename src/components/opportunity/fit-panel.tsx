@@ -4,6 +4,43 @@ import { CheckCircle2, CircleHelp, Lightbulb, XCircle } from "lucide-react";
 import { Badge, buttonClass } from "@/components/ui";
 import { ELIGIBILITY_LABEL, type EligibilityResult } from "@/server/domain/eligibility";
 import type { MatchResult } from "@/server/domain/matching";
+import { STATE_LABEL, type SkillState } from "@/server/intelligence/evidence";
+
+const IMPORTANCE_LABEL = { required: "Required by the employer", preferred: "Nice to have (employer)", mentioned: "Mentioned in the description (inferred by Avsar)" } as const;
+const KIND_LABEL = { observed: "From your profile", inferred: "Inferred", unknown: "Not known yet" } as const;
+const STRONG: ReadonlySet<string> = new Set(["verified", "demonstrated"]);
+const STATE_TONE: Record<string, "success" | "purple" | "orange" | "warning" | "neutral"> = { verified: "success", demonstrated: "purple", practiced: "orange", learning: "warning", declared: "neutral" };
+
+/** Per-requirement breakdown: who stated the requirement, which of the student's skills covers it, and how well evidenced. */
+function SkillBreakdown({ verdicts }: { verdicts: NonNullable<MatchResult["skillVerdicts"]> }) {
+  return (
+    <div className="mt-3">
+      <h3 className="text-sm font-semibold text-navy">Skills, one by one</h3>
+      <ul className="mt-2 space-y-2 text-sm">
+        {verdicts.map((v) => {
+          const s = v.supportedBy;
+          return (
+            <li key={`${v.importance}:${v.requirement}`} className="rounded-lg border border-line p-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-navy">{v.requirement}</span>
+                {s ? <Badge tone={STATE_TONE[s.state] ?? "neutral"}>{STATE_LABEL[s.state as SkillState] ?? s.state}</Badge> : <Badge tone="neutral">Not on your profile yet</Badge>}
+              </div>
+              <p className="mt-0.5 text-xs text-muted">
+                {IMPORTANCE_LABEL[v.importance]}
+                {s && (s.relation === "related"
+                  ? ` · your ${s.name} is a related skill, so it counts only partly`
+                  : s.relation === "specialization"
+                    ? ` · covered by your ${s.name} (a specialization)`
+                    : "")}
+                {s && !STRONG.has(s.state) && " · self-reported or not yet shown in a project, role or assessment"}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 const STATUS_TONE = { eligible: "success", ineligible: "danger", potentially_eligible: "warning", insufficient_information: "neutral", unavailable: "neutral" } as const;
 const FACTOR_LABEL = { skills: "Skills", education: "Education", experience: "Experience", location: "Location", workMode: "Work mode", preferences: "Preferences", skillFit: "Skill fit", roleAlignment: "Target role", personalFit: "Your preferences" } as const;
@@ -45,7 +82,16 @@ export function MatchPanel({ match }: { match: MatchResult }) {
       <p className="mt-1 text-xs text-muted">
         A relative guide from your profile, not a prediction. Based on {Math.round(match.completeness * 100)}% of the factors · evidence {match.evidence === "none" ? "not available" : match.evidence}.
       </p>
-      {match.reasons.length > 0 && (
+      {match.explanations && match.explanations.length > 0 ? (
+        <ul className="mt-3 space-y-1.5 text-sm">
+          {match.explanations.slice(0, 6).map((e) => (
+            <li key={e.text} className="flex gap-2">
+              {e.kind === "observed" ? <CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-success" /> : <CircleHelp aria-hidden className="mt-0.5 size-4 shrink-0 text-muted" />}
+              <span><span className="text-xs font-semibold text-muted">{KIND_LABEL[e.kind]}:</span> {e.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : match.reasons.length > 0 && (
         <ul className="mt-3 space-y-1.5 text-sm">
           {match.reasons.map((r) => (
             <li key={r} className="flex gap-2"><CheckCircle2 aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />{r}</li>
@@ -58,8 +104,10 @@ export function MatchPanel({ match }: { match: MatchResult }) {
           {match.missingPreferredSkills.length > 0 && <p className="mt-1"><span className="font-medium text-navy">Nice to have:</span> <span className="text-muted">{match.missingPreferredSkills.join(", ")}</span></p>}
         </div>
       )}
+      {match.skillVerdicts && match.skillVerdicts.length > 0 && <SkillBreakdown verdicts={match.skillVerdicts} />}
       <details className="mt-3 text-sm">
-        <summary className="cursor-pointer font-semibold text-navy">How each factor scored</summary>
+        <summary className="cursor-pointer font-semibold text-navy">How the score is calculated{match.version ? ` (${match.version})` : ""}</summary>
+        <p className="mt-1 text-xs text-muted">Skill fit 60%, target role 10%, your preferences 30%. Parts that can&apos;t be assessed are left out, not counted as zero. It is not a chance of being hired.</p>
         <ul className="mt-2 space-y-1 text-muted">
           {match.factors.map((f) => (
             <li key={f.factor} className="flex justify-between gap-2">

@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { audit } from "../audit";
 import type { Db } from "../db/client";
-import { sessions, userIdentities } from "../db/schema";
+import { adminRoles, analyticsEvents, dismissedOpportunities, notificationPreferences, notifications, recentlyViewed, savedOpportunities, savedSearches, sessions, userIdentities } from "../db/schema";
 import { eraseCandidateData } from "./profiles";
 
 /**
@@ -23,6 +23,12 @@ export async function deleteCandidateAccount(
   await db.transaction(async (tx) => {
     await tx.update(userIdentities).set({ deletedAt: new Date(), email: null, name: null }).where(eq(userIdentities.id, input.identityId));
     await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.identityId, input.identityId));
+    // Personal activity tied to the account (searches can hold what the student typed). Removed, not kept on the
+    // minimized row. Admin roles go too. Organization memberships stay so an organization is never left ownerless.
+    for (const t of [savedOpportunities, dismissedOpportunities, savedSearches, recentlyViewed, notifications, notificationPreferences, adminRoles]) {
+      await tx.delete(t).where(eq(t.identityId, input.identityId));
+    }
+    await tx.update(analyticsEvents).set({ identityId: null }).where(eq(analyticsEvents.identityId, input.identityId));
     await audit(tx, {
       actorId: input.actor.id,
       actorRole: input.actor.role,

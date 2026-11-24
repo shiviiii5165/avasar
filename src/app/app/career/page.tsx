@@ -11,7 +11,9 @@ import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { ELIGIBILITY_LABEL } from "@/server/domain/eligibility";
 import { EVIDENCE_LABEL, STATE_LABEL, type SkillState } from "@/server/intelligence/evidence";
+import { DismissButton, SaveButton } from "@/components/forms/buttons";
 import { careerIntelligence, CONTROLLABLE_EVIDENCE } from "@/server/services/career";
+import { dismissedIds, savedIds } from "@/server/services/engagement";
 
 export const metadata = { title: "Career intelligence" };
 
@@ -25,7 +27,9 @@ const fmt = (d: Date | null) => (d ? d.toLocaleDateString("en-IN", { day: "numer
  */
 export default async function CareerPage() {
   const session = await requireCandidate("/app/career");
-  const data = await careerIntelligence(await getDb(), session.profileId);
+  const db = await getDb();
+  const [dismissed, saved] = await Promise.all([dismissedIds(db, session.identity.id), savedIds(db, session.identity.id)]);
+  const data = await careerIntelligence(db, session.profileId, new Date(), { exclude: dismissed });
   if (!data) return <StateMessage kind="error" title="Profile not found" />;
   const { skills, readiness, recommendations, roadmap, learning, excluded } = data;
   const families = await discoveryFamilies(await getDb()).catch(() => new Set<string>());
@@ -135,6 +139,10 @@ export default async function CareerPage() {
                   {o.sourceUrl && <> · <a href={o.sourceUrl} rel="noopener noreferrer nofollow" target="_blank" className="hover:underline">original listing</a></>}
                   {" · "}Last checked: {fmt(o.lastCheckedAt ?? o.lastVerifiedAt ?? o.updatedAt)}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <SaveButton opportunityId={o.id} saved={saved.has(o.id)} path="/app/career" />
+                  <DismissButton opportunityId={o.id} title={o.title} />
+                </div>
               </li>
             ))}
           </ul>

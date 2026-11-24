@@ -12,7 +12,7 @@ import { deleteCandidateAccount } from "@/server/services/account";
 import { ApplyError, changeApplicationStatus, submitApplication } from "@/server/services/applications";
 import { deleteResume, MAX_UPLOAD_BYTES, setDefaultResume, storage, uploadResume, UploadError } from "@/server/services/documents";
 import { StorageUnavailableError } from "@/server/storage";
-import { deleteSavedSearch, saveSearch, toggleSaved } from "@/server/services/engagement";
+import { deleteSavedSearch, saveSearch, setDismissed, toggleSaved } from "@/server/services/engagement";
 import { markAllRead, NOTIFICATION_KINDS, setPreference, type NotificationKind } from "@/server/services/notifications";
 import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
 import { evaluateEligibility } from "@/server/domain/eligibility";
@@ -55,6 +55,20 @@ export async function toggleSaveAction(opportunityId: string, path: string) {
   }
   revalidatePath(path);
   revalidatePath("/app/saved");
+  return { ok: true };
+}
+
+/** Recommendation "Not for me" / undo. The identity comes from the session; the id is validated; only visible listings. */
+export async function dismissAction(opportunityId: string, dismissed: boolean) {
+  const s = await requireCandidate();
+  const id = z.string().uuid().safeParse(opportunityId);
+  if (!id.success) return { ok: false, message: "This opportunity is no longer available." };
+  try {
+    await setDismissed(await getDb(), s.identity.id, id.data, dismissed === true);
+  } catch {
+    return { ok: false, message: "This opportunity is no longer available." };
+  }
+  revalidatePath("/app", "layout");
   return { ok: true };
 }
 

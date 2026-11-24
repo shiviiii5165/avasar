@@ -8,7 +8,10 @@ import { discoveryLinks } from "@/server/ingestion/discovery";
 import { discoveryFamilies } from "@/server/services/ingestion";
 import { buttonClass, StateMessage } from "@/components/ui";
 import { getSession } from "@/server/auth/session";
+import { headers } from "next/headers";
+
 import { getDb } from "@/server/db/client";
+import { searchAllowed } from "@/server/rate-limit";
 import { matchAll, matcherFor } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
 import { liveCategories, searchOpportunities, searchSchema } from "@/server/services/opportunities";
@@ -23,6 +26,14 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
   const input = parsed.success ? parsed.data : searchSchema.parse({});
   const db = await getDb();
   const session = await getSession();
+  const rl = await searchAllowed(db, await headers(), session?.identity.id ?? null);
+  if (!rl.ok) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16">
+        <StateMessage kind="unavailable" title="Too many searches in a short time" body={`Please wait about ${rl.retryAfterSec} seconds and try again.`} />
+      </div>
+    );
+  }
 
   let result: Awaited<ReturnType<typeof searchOpportunities>>;
   try {

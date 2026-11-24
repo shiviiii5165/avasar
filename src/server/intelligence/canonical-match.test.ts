@@ -70,3 +70,18 @@ describe("one canonical matcher", () => {
     expect(empty.evidence).toBe("none");
   });
 });
+
+describe("skills inferred from descriptions", () => {
+  it("can't be used to inflate a match by stuffing skill names into a description", () => {
+    const honest = canonicalMatch(reg, input, listing("h", [{ name: "SQL", required: false, origin: "text_mentioned" }, { name: "Power BI", required: false, origin: "text_mentioned" }]).facts, NOW);
+    const stuffedSkills = ["SQL", "Power BI", "Docker", "Kubernetes", "Java", "Go", "Rust", "React", "Angular", "AWS", "Azure", "Tableau"].map((name) => ({ name, required: false, origin: "text_mentioned" as const }));
+    const stuffed = canonicalMatch(reg, input, listing("s", stuffedSkills).facts, NOW);
+    expect(stuffed.score!).toBeLessThan(honest.score!);
+  });
+
+  it("are labelled as inferred and never reported as a missing required skill", () => {
+    const m = canonicalMatch(reg, input, listing("m", [{ name: "Kubernetes", required: true, origin: "text_mentioned" }]).facts, NOW);
+    expect(m.skillVerdicts![0]!.importance).toBe("mentioned");
+    expect(m.missingRequiredSkills).toEqual([]);
+  });
+});

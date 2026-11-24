@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { RETURN_PATH_HEADER, requestPathOf } from "./server/auth/return-path";
-import { CSP_NONCE_HEADER, newNonce, strictCsp } from "./server/csp";
+import { CSP_NONCE_HEADER, cspMode, newNonce, strictCsp } from "./server/csp";
 
 /**
  * Edge-level guard (Next 16 "proxy", formerly middleware). Authorization itself is enforced in every
@@ -32,21 +32,25 @@ export function proxy(request: NextRequest) {
   if (production && request.nextUrl.pathname.startsWith("/api/auth/dev")) {
     return new NextResponse(null, { status: 404 });
   }
-  if (production) {
+  // Vercel preview deployments stay on their own URL so they can be reviewed (they never share sessions with production).
+  if (production && process.env.VERCEL_ENV !== "preview") {
     const target = canonicalRedirect(request.url, request.headers.get("host"), process.env.AVSAR_PUBLIC_URL);
     if (target) return NextResponse.redirect(target, 308);
   }
   // Record the requested path for sign-in return (overwrites any client-supplied value).
   const headers = new Headers(request.headers);
   headers.set(RETURN_PATH_HEADER, requestPathOf(request.nextUrl));
-  // Strict nonce CSP in report-only mode (see server/csp.ts). Client-supplied values are overwritten.
+  // Strict nonce CSP (see server/csp.ts). Client-supplied values are overwritten. Enforced on preview deployments
+  // and wherever AVSAR_CSP_MODE=enforce; report-only otherwise (production until the owner switches it).
   const nonce = newNonce();
   const csp = strictCsp(nonce, { dev: !production, formAction: process.env.AVSAR_AIT_BASE_URL?.trim() });
+  const mode = cspMode(process.env);
   headers.set(CSP_NONCE_HEADER, nonce);
   headers.delete("content-security-policy");
-  headers.set("content-security-policy-report-only", csp);
+  headers.delete("content-security-policy-report-only");
+  headers.set(mode === "enforce" ? "content-security-policy" : "content-security-policy-report-only", csp);
   const res = NextResponse.next({ request: { headers } });
-  res.headers.set("Content-Security-Policy-Report-Only", csp);
+  res.headers.set(mode === "enforce" ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only", csp);
   return res;
 }
 

@@ -18,3 +18,15 @@ describe("strict CSP", () => {
     expect(strictCsp(newNonce(), { dev: false, formAction: "https://x.test; script-src *" })).toContain("form-action 'self';");
   });
 });
+
+describe("CSP rollout mode", () => {
+  it("enforces on previews, stays report-only in production by default, and an explicit setting wins", async () => {
+    const { cspMode } = await import("./csp");
+    expect(cspMode({ VERCEL_ENV: "preview" })).toBe("enforce");
+    expect(cspMode({ VERCEL_ENV: "production" })).toBe("report-only");
+    expect(cspMode({})).toBe("report-only");
+    expect(cspMode({ VERCEL_ENV: "production", AVSAR_CSP_MODE: "enforce" })).toBe("enforce");
+    expect(cspMode({ VERCEL_ENV: "preview", AVSAR_CSP_MODE: "report-only" })).toBe("report-only");
+    expect(cspMode({ AVSAR_CSP_MODE: "bogus" })).toBe("report-only");
+  });
+});

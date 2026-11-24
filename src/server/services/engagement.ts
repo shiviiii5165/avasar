@@ -3,7 +3,7 @@ import "server-only";
 import { and, desc, eq, sql } from "drizzle-orm";
 
 import type { Db } from "../db/client";
-import { opportunities, recentlyViewed, savedOpportunities, savedSearches } from "../db/schema";
+import { dismissedOpportunities, opportunities, recentlyViewed, savedOpportunities, savedSearches } from "../db/schema";
 import { detailColumns, fromDetailRow, publicVisibility } from "./opportunities";
 
 export async function toggleSaved(db: Db, identityId: string, opportunityId: string): Promise<boolean> {
@@ -59,4 +59,23 @@ export async function listSavedSearches(db: Db, identityId: string) {
 
 export async function deleteSavedSearch(db: Db, identityId: string, id: string) {
   await db.delete(savedSearches).where(and(eq(savedSearches.id, id), eq(savedSearches.identityId, identityId)));
+}
+
+/**
+ * "Not for me": hides a listing from this student's recommendations only (the listing stays visible in search
+ * and to everyone else). Undo removes the row. Only visible listings can be dismissed.
+ */
+export async function setDismissed(db: Db, identityId: string, opportunityId: string, dismissed: boolean): Promise<void> {
+  if (!dismissed) {
+    await db.delete(dismissedOpportunities).where(and(eq(dismissedOpportunities.identityId, identityId), eq(dismissedOpportunities.opportunityId, opportunityId)));
+    return;
+  }
+  const [opp] = await db.select({ id: opportunities.id }).from(opportunities).where(and(eq(opportunities.id, opportunityId), publicVisibility()));
+  if (!opp) throw new Error("NOT_FOUND");
+  await db.insert(dismissedOpportunities).values({ identityId, opportunityId }).onConflictDoNothing();
+}
+
+export async function dismissedIds(db: Db, identityId: string): Promise<Set<string>> {
+  const rows = await db.select({ id: dismissedOpportunities.opportunityId }).from(dismissedOpportunities).where(eq(dismissedOpportunities.identityId, identityId));
+  return new Set(rows.map((r) => r.id));
 }

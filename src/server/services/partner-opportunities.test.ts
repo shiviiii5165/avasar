@@ -197,9 +197,17 @@ describe("route: authentication and authorisation", () => {
   });
 
   it("rate limits per partner", async () => {
-    let last = 200;
-    for (let i = 0; i < 125 && last !== 429; i++) last = (await call(await assertion())).status;
-    expect(last).toBe(429);
+    // Fixed 60 s windows follow the clock: pin Date to the start of a minute so a slow run can't cross a window
+    // boundary mid-loop and reset the count (that made this test flaky under load).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Math.ceil(Date.now() / 60_000) * 60_000 + 60_000));
+    try {
+      let last = 200;
+      for (let i = 0; i < 125 && last !== 429; i++) last = (await call(await assertion())).status;
+      expect(last).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("listing internships never creates an application", async () => {

@@ -6,7 +6,7 @@ import { createMemoryDb, type Db } from "./db/client";
 import { emailMode, OUTBOX, sendEmail } from "./email";
 import { productionEnvProblems } from "./env-check";
 import { log, reportError } from "./log";
-import { clientIp, LIMITS, rateLimit } from "./rate-limit";
+import { clientIp, LIMITS, rateLimit, searchAllowed } from "./rate-limit";
 import { s3Storage } from "./storage";
 
 describe("rate limiting (database-backed, shared across instances)", () => {
@@ -119,5 +119,31 @@ describe("rate limiter fails open", () => {
     expect((await rateLimit(broken, "login", "ip:x")).ok).toBe(true);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("search rate limit", () => {
+  let sdb: Db;
+  beforeAll(async () => { sdb = await createMemoryDb(); });
+  const at = new Date("2026-11-24T10:00:00Z");
+  const run = async (n: number, f: () => Promise<{ ok: boolean }>) => { let last = { ok: true }; for (let i = 0; i < n; i++) last = await f(); return last; };
+
+  it("limits a signed-in person by identity, independent of IP", async () => {
+    const h = new Headers({ "x-forwarded-for": "203.0.113.9" });
+    expect((await run(LIMITS.search.limit, () => searchAllowed(sdb, h, "11111111-1111-4111-8111-111111111111", {}, at))).ok).toBe(true);
+    expect((await searchAllowed(sdb, h, "11111111-1111-4111-8111-111111111111", {}, at)).ok).toBe(false);
+    expect((await searchAllowed(sdb, h, "22222222-2222-4222-8222-222222222222", {}, at)).ok).toBe(true);
+  });
+
+  it("limits anonymous visitors per trusted client IP", async () => {
+    const env = { NODE_ENV: "production", AVSAR_CLIENT_IP_HEADER: "x-real-ip" };
+    const a = new Headers({ "x-real-ip": "198.51.100.1" });
+    expect((await run(LIMITS.search.limit + 1, () => searchAllowed(sdb, a, null, env, at))).ok).toBe(false);
+    expect((await searchAllowed(sdb, new Headers({ "x-real-ip": "198.51.100.2" }), null, env, at)).ok).toBe(true);
+  });
+
+  it("never throttles every anonymous visitor together when the IP can't be trusted", async () => {
+    const env = { NODE_ENV: "production" };
+    expect((await run(LIMITS.search.limit * 2, () => searchAllowed(sdb, new Headers(), null, env, at))).ok).toBe(true);
   });
 });

@@ -1,12 +1,19 @@
 /**
  * Strict, nonce-based Content-Security-Policy (stage 1 of the rollout: REPORT-ONLY).
  *
- * The enforced policy in next.config.ts still allows 'unsafe-inline' scripts. This stricter policy is sent as
- * Content-Security-Policy-Report-Only with a fresh nonce per request; Next.js reads the nonce from that request
- * header and adds it to its own scripts. Browsers only log violations, so nothing can break. Stage 2 (after
- * checking the browser console on every page type) is to send this same policy as the enforced header.
+ * A fresh nonce per request; Next.js reads it from the request CSP header and adds it to its own scripts.
+ * Rollout (cspMode): ENFORCED on Vercel preview deployments, REPORT-ONLY in production until the owner sets
+ * AVSAR_CSP_MODE=enforce after checking the preview. When enforced, the proxy's header replaces the older
+ * next.config.ts policy (which allows 'unsafe-inline'); checked locally: one Content-Security-Policy header.
  */
 export const CSP_NONCE_HEADER = "x-nonce";
+
+/** "enforce" on Vercel previews or when AVSAR_CSP_MODE=enforce; "report-only" otherwise. An explicit setting always wins. */
+export function cspMode(env: Record<string, string | undefined>): "enforce" | "report-only" {
+  const v = env.AVSAR_CSP_MODE?.trim().toLowerCase();
+  if (v === "enforce" || v === "report-only") return v;
+  return env.VERCEL_ENV === "preview" ? "enforce" : "report-only";
+}
 
 export function newNonce(): string {
   const bytes = new Uint8Array(16);

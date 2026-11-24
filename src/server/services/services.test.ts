@@ -2,12 +2,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { createMemoryDb, type Db } from "../db/client";
-import { applicationEvents, applications, auditLogs, jobs, notifications, opportunities, opportunitySources, userIdentities } from "../db/schema";
+import { adminRoles, applicationEvents, applications, auditLogs, dismissedOpportunities, jobs, notifications, opportunities, opportunitySources, savedOpportunities, savedSearches, userIdentities } from "../db/schema";
 import { createSession, resolveSession, revokeSession, upsertIdentity } from "../auth/identity";
 import { seedSamples } from "../seed";
 import { ApplyError, changeApplicationStatus, submitApplication } from "./applications";
 import { deleteResume, detectType, signedDocumentUrl, uploadResume, UploadError, verifyDocumentSignature } from "./documents";
-import { listSaved, toggleSaved } from "./engagement";
+import { deleteCandidateAccount } from "./account";
+import { dismissedIds, listSaved, setDismissed, toggleSaved } from "./engagement";
 import { claimJobs, defaultHandlers, runJob } from "./jobs";
 import { createOpportunity, importBatch, searchOpportunities, searchSchema, transitionOpportunity, TransitionError } from "./opportunities";
 import { addSectionItem, ensureProfile, loadProfile, replaceSkills, toCandidateFacts } from "./profiles";
@@ -185,6 +186,32 @@ describe("saved and jobs", () => {
     expect(await toggleSaved(db, candidateId, opp.id)).toBe(true);
     expect((await listSaved(db, candidateId)).map((o) => o.id)).toContain(opp.id);
     expect(await toggleSaved(db, candidateId, opp.id)).toBe(false);
+  });
+  it("dismisses only visible listings, per person, and undo restores them", async () => {
+    const opp = await internal();
+    const other = await upsertIdentity(db, { provider: "ai_tathastu", subject: "dismiss-other", email: null, emailVerified: false, name: null });
+    await setDismissed(db, candidateId, opp.id, true);
+    await setDismissed(db, candidateId, opp.id, true); // idempotent
+    expect((await dismissedIds(db, candidateId)).has(opp.id)).toBe(true);
+    expect((await dismissedIds(db, other.id)).size).toBe(0); // never affects anyone else
+    await setDismissed(db, candidateId, opp.id, false);
+    expect((await dismissedIds(db, candidateId)).has(opp.id)).toBe(false);
+    const [draft] = await db.select().from(opportunities).where(eq(opportunities.status, "draft")).limit(1);
+    if (draft) await expect(setDismissed(db, candidateId, draft.id, true)).rejects.toThrow("NOT_FOUND");
+  });
+
+  it("account deletion erases saved, dismissed, searches, notifications and roles tied to the account", async () => {
+    const opp = await internal();
+    const gone = await upsertIdentity(db, { provider: "ai_tathastu", subject: "erase-me", email: "erase@example.invalid", emailVerified: true, name: "Erase Me" });
+    const gp = await ensureProfile(db, gone.id, "Erase Me");
+    await toggleSaved(db, gone.id, opp.id);
+    await setDismissed(db, gone.id, opp.id, true);
+    await db.insert(savedSearches).values({ identityId: gone.id, name: "private search", query: { q: "my private query" } });
+    await db.insert(adminRoles).values({ identityId: gone.id, role: "moderator" });
+    await deleteCandidateAccount(db, { identityId: gone.id, profileId: gp!.id, actor: { id: gone.id, role: "candidate" }, reason: "test" });
+    for (const t of [savedOpportunities, dismissedOpportunities, savedSearches, notifications, adminRoles]) {
+      expect(await db.select().from(t).where(eq(t.identityId, gone.id))).toHaveLength(0);
+    }
   });
   it("retries failed jobs with backoff and dead-letters after max attempts", async () => {
     const failing = { "email.notification": async () => { throw new Error("provider down"); } };
