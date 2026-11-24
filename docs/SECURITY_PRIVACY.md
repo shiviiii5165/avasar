@@ -61,3 +61,14 @@
 - Error monitoring with PII scrubbing.
 - S3 private storage with encryption.
 - Malware scanning of uploads.
+
+## Opportunity ingestion and career intelligence (0011)
+* Source collection gated by recorded human permission, switch and configuration on every run; Naukri link-only.
+* SSRF-safe outbound fetch (allow-list, DNS pinning, private-range block, redirect re-validation, size/time caps).
+* Source text treated as untrusted data: HTML stripped, hidden characters removed, instruction-like text flagged
+  and blocked from publication until edited; `fenceUntrusted()` for any future AI prompt that includes it.
+* Verification states only from evidence; system can't mark anything verified; full history in `verification_events`.
+* Learning evidence only under the `learning` consent; removed on consent loss, revocation and account deletion;
+  included in `/api/me/export`; student can exclude any type or event.
+* Ranking never sees institution or protected attributes; tests assert institution twins rank identically.
+* Manual "run now" rate-limited per source; admin actions permission-checked on the server and audited.

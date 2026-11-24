@@ -26,3 +26,17 @@ The authoritative definition is `src/server/db/schema.ts`. Migrations live in `s
 - Account deletion removes sections, skills, resumes and saved items, scrubs personal fields, clears identity name and email, and revokes sessions.
 - Submitted applications keep their snapshot, as the consent discloses.
 - Retention periods for audit logs and events still need legal sign-off.
+
+## 0011 intelligence layer (additive)
+* `opportunity_sources` + adapter key, permission status/evidence/reviewer, authority, run times, failures.
+* `ingestion_runs` (per run: collected, created, updated, unchanged, duplicates, rejected, marked stale, error).
+* `opportunities` + `verification_state`, source record id, content fingerprint, posted / first collected / last
+  checked / source updated / stale since, education and eligibility text as stated, `content_flags`.
+  `opportunity_category` gains `apprenticeship`.
+* `opportunity_skills` + `origin` (`listed` | `text_mentioned`, the latter never required) and `concept_id`.
+* `opportunity_source_refs`: every source listing an opportunity (dedupe keeps all references).
+* `verification_events`: append-only evidence history for opportunities, organizations and sources.
+* `skill_concepts`, `skill_aliases`, `skill_relations`, `role_profiles`, `role_skills`: skill registry.
+* `learning_evidence`: structured AI Tathastu learning events (consent-gated, student-excludable).
+* `candidate_profiles.excluded_evidence_types`.
+See docs/INGESTION_AND_INTELLIGENCE.md.

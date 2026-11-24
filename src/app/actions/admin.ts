@@ -15,6 +15,10 @@ import { changeApplicationStatus } from "@/server/services/applications";
 import { notify } from "@/server/services/notifications";
 import { createOpportunity, importBatch, transitionOpportunity, TransitionError, updateOpportunity } from "@/server/services/opportunities";
 import { MODERATION_ACTIONS, resolveCase } from "@/server/services/trust";
+import { validateUrl } from "@/server/ingestion/safe-fetch";
+import { rateLimit } from "@/server/rate-limit";
+import { enqueueJob } from "@/server/services/jobs";
+import { setOpportunityVerification, setSourcePermission, VerificationError } from "@/server/services/verification";
 
 import type { ActionState } from "./candidate";
 import { validateOpportunityForm } from "./opportunity-form";
@@ -110,6 +114,76 @@ export async function toggleSourceAction(id: string, active: boolean) {
   await db.update(opportunitySources).set({ active }).where(eq(opportunitySources.id, z.string().uuid().parse(id)));
   await audit(db, { actorId: s.identity.id, actorRole: "admin", action: active ? "source.activate" : "source.deactivate", targetType: "source", targetId: id });
   revalidatePath("/admin/sources");
+}
+
+// ─── Source registry & verification (0011) ────────────────────────────────
+export async function sourcePermissionAction(id: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await guard("source.manage");
+  if (!s) return denied;
+  const parsed = z.object({ id: z.string().uuid(), to: z.enum(["unreviewed", "approved_collection", "approved_display", "disabled"]), evidence: z.string().trim().max(2000).optional(), reason: z.string().trim().max(500).optional() }).safeParse({ id, ...Object.fromEntries(fd) });
+  if (!parsed.success) return { ok: false, message: "Choose a permission status." };
+  try {
+    await setSourcePermission(await getDb(), parsed.data.id, parsed.data.to, { reviewerId: s.identity.id, evidence: parsed.data.evidence ?? null, reason: parsed.data.reason ?? null });
+  } catch (err) {
+    if (err instanceof VerificationError) return { ok: false, message: err.message };
+    throw err;
+  }
+  revalidatePath("/admin/sources");
+  return { ok: true, message: "Permission recorded in the source's history and the audit log." };
+}
+
+export async function runSourceNowAction(id: string) {
+  const s = await guard("source.manage");
+  if (!s) return;
+  const sourceId = z.string().uuid().parse(id);
+  const db = await getDb();
+  if (!(await rateLimit(db, "sourceRun", sourceId)).ok) return;
+  // Queued, not run inline: the worker applies the same permission gate, request budget and backoff.
+  await enqueueJob(db, "source.ingest", { sourceId, trigger: "manual", actorId: s.identity.id }, `ingest-manual:${sourceId}:${new Date().toISOString().slice(0, 16)}`);
+  await audit(db, { actorId: s.identity.id, actorRole: "admin", action: "source.run_requested", targetType: "source", targetId: sourceId });
+  revalidatePath("/admin/sources");
+}
+
+export async function addEmployerCareersSourceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await guard("source.manage");
+  if (!s) return denied;
+  const parsed = z.object({ name: z.string().trim().min(2).max(100), url: z.string().trim().url().max(300).refine((u) => u.startsWith("https://"), "Use the https:// careers page URL"), termsNote: z.string().trim().min(10).max(1000) }).safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { ok: false, errors: Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])) };
+  let host: string;
+  try {
+    validateUrl(parsed.data.url, [new URL(parsed.data.url).hostname.toLowerCase()]);
+    host = new URL(parsed.data.url).hostname.toLowerCase();
+  } catch (err) {
+    return { ok: false, errors: { url: err instanceof Error ? err.message : "Invalid URL" } };
+  }
+  const db = await getDb();
+  const [src] = await db.insert(opportunitySources).values({ name: parsed.data.name, kind: "feed", url: parsed.data.url, termsNote: parsed.data.termsNote, active: false, adapterKey: `employer_careers:${host}`, authority: "employer", permissionStatus: "unreviewed" }).onConflictDoNothing().returning();
+  if (!src) return { ok: false, errors: { url: "A careers source for this site already exists." } };
+  await audit(db, { actorId: s.identity.id, actorRole: "admin", action: "source.create", targetType: "source", targetId: src.id, metadata: { adapter: "employer_careers" } });
+  revalidatePath("/admin/sources");
+  return { ok: true, message: "Added as unreviewed and switched off. Record the employer's permission before enabling it." };
+}
+
+export async function opportunityVerificationAction(id: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await guard("opportunity.publish");
+  if (!s) return denied;
+  const parsed = z.object({
+    id: z.string().uuid(),
+    to: z.enum(["unverified", "source_confirmed", "employer_confirmed", "verified", "expired", "rejected"]),
+    evidenceKind: z.enum(["official_domain", "employer_account", "authorized_source", "employer_confirmation", "manual_review", "source_listing"]),
+    evidence: z.string().trim().max(2000).optional(),
+    reason: z.string().trim().max(500).optional(),
+  }).safeParse({ id, ...Object.fromEntries(fd) });
+  if (!parsed.success) return { ok: false, message: "Choose a state and the kind of evidence." };
+  try {
+    await setOpportunityVerification(await getDb(), parsed.data.id, parsed.data.to, { actor: { kind: "person", identityId: s.identity.id }, evidenceKind: parsed.data.evidenceKind, evidence: parsed.data.evidence ?? null, reason: parsed.data.reason ?? null });
+  } catch (err) {
+    if (err instanceof VerificationError) return { ok: false, message: err.message };
+    throw err;
+  }
+  revalidatePath(`/admin/opportunities/${parsed.data.id}`);
+  revalidatePath("/opportunities");
+  return { ok: true, message: "Verification state changed; evidence and reviewer recorded." };
 }
 
 export async function resolveCaseAction(caseId: string, _: ActionState, fd: FormData): Promise<ActionState> {

@@ -6,7 +6,7 @@
 import { z } from "zod";
 
 export type CategoryKey =
-  | "job" | "internship" | "gig" | "scholarship" | "fellowship" | "hackathon" | "competition"
+  | "job" | "internship" | "apprenticeship" | "gig" | "scholarship" | "fellowship" | "hackathon" | "competition"
   | "research" | "startup_program" | "academic_project" | "professional_project";
 
 export type FieldType = "text" | "longtext" | "number" | "date" | "checkbox" | "select";
@@ -32,6 +32,11 @@ export const CATEGORIES: CategoryDef[] = [
   {
     key: "internship", label: "Internship", plural: "Internships", compensation: true, employment: false,
     fields: [{ key: "stipendNote", label: "Stipend note", type: "text" }, { key: "conversionPossible", label: "Conversion to full-time possible", type: "checkbox" }, { key: "certificate", label: "Completion certificate", type: "checkbox" }],
+    questions: [],
+  },
+  {
+    key: "apprenticeship", label: "Apprenticeship", plural: "Apprenticeships", compensation: true, employment: false,
+    fields: [{ key: "trade", label: "Trade / designation", type: "text", hint: "e.g. Fitter, Electrician, Graduate apprentice" }, { key: "scheme", label: "Scheme", type: "text", hint: "e.g. NATS, NAPS (as stated by the source)" }],
     questions: [],
   },
   { key: "gig", label: "Freelance / gig", plural: "Freelance & Gigs", compensation: true, employment: false, fields: [{ key: "deliverables", label: "Deliverables", type: "longtext", required: true }], questions: [] },

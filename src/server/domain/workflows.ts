@@ -38,6 +38,8 @@ export function publishProblems(o: {
   externalUrl: string | null;
   sourceUrl: string | null;
   isImported: boolean;
+  /** Heuristic flags on untrusted source text (ingestion/sanitize.ts). Edit the text to clear them. */
+  contentFlags?: string[];
 }, now = new Date()): string[] {
   const problems: string[] = [];
   if (o.title.trim().length < 4) problems.push("Title is too short");
@@ -49,6 +51,7 @@ export function publishProblems(o: {
     else if (!isSafeHttpsUrl(o.externalUrl)) problems.push("External application URL must be a valid https:// link");
   }
   if (o.isImported && !o.sourceUrl) problems.push("Imported listings must keep their source URL");
+  if (o.contentFlags?.length) problems.push(`Source text contains instruction-like content (${o.contentFlags.join(", ")}); edit the text before publishing`);
   return problems;
 }
 

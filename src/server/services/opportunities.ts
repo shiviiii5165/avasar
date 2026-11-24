@@ -12,11 +12,12 @@ import { importRecords, opportunities, opportunityEligibility, opportunitySkills
 import { normalizeSkill, parseSkillList } from "../domain/skills";
 import type { EducationLevel, OpportunityFacts } from "../domain/types";
 import { canTransitionOpportunity, publishProblems, type OpportunityStatus } from "../domain/workflows";
+import { injectionFlags } from "../ingestion/sanitize";
 
 export type OpportunityRow = typeof opportunities.$inferSelect;
 export type EligibilityRow = typeof opportunityEligibility.$inferSelect;
 export interface OpportunityFull extends OpportunityRow {
-  skills: { name: string; normalized: string; required: boolean }[];
+  skills: { name: string; normalized: string; required: boolean; origin?: "listed" | "text_mentioned" }[];
   eligibility: EligibilityRow | null;
 }
 
@@ -125,7 +126,7 @@ export async function listOpenOpportunities(db: Db, limit = 300, now = new Date(
  * busiest dashboard pages. Both lookups use primary keys that start with opportunity_id.
  */
 export const detailColumns = {
-  skills: sql<OpportunityFull["skills"]>`coalesce((select json_agg(json_build_object('name', s.name, 'normalized', s.normalized, 'required', s.required)) from ${opportunitySkills} s where s.opportunity_id = ${opportunities.id}), '[]'::json)`,
+  skills: sql<OpportunityFull["skills"]>`coalesce((select json_agg(json_build_object('name', s.name, 'normalized', s.normalized, 'required', s.required, 'origin', s.origin)) from ${opportunitySkills} s where s.opportunity_id = ${opportunities.id}), '[]'::json)`,
   eligibility: sql<EligibilityRow | null>`(select json_build_object(
     'opportunityId', e.opportunity_id, 'educationLevels', e.education_levels, 'graduationYearMin', e.graduation_year_min,
     'graduationYearMax', e.graduation_year_max, 'minExperienceYears', e.min_experience_years, 'requiredCertifications', e.required_certifications,
@@ -145,7 +146,7 @@ export async function withDetails(db: Db, rows: OpportunityRow[]): Promise<Oppor
   ]);
   return rows.map((r) => ({
     ...r,
-    skills: skills.filter((s) => s.opportunityId === r.id).map(({ name, normalized, required }) => ({ name, normalized, required })),
+    skills: skills.filter((s) => s.opportunityId === r.id).map(({ name, normalized, required, origin }) => ({ name, normalized, required, origin })),
     eligibility: elig.find((e) => e.opportunityId === r.id) ?? null,
   }));
 }
@@ -294,6 +295,8 @@ function columnsFor(input: OpportunityInput) {
     externalUrl: input.applicationMethod === "external" ? (input.externalUrl ?? null) : null,
     sourceUrl: input.sourceUrl ?? null,
     details: detailsFor(input),
+    // Recomputed on every save: a reviewer clears a flag by removing the flagged text, never by a switch.
+    contentFlags: injectionFlags(input.title, input.organizationName, input.summary ?? "", input.description, input.responsibilities ?? ""),
   };
 }
 

@@ -10,6 +10,7 @@ import { aitWebhookDeliveries, candidateProfiles, userIdentities } from "../db/s
 import { projectionSchema } from "../integrations/tathastu-profile";
 import { log } from "../log";
 import { deleteCandidateAccount } from "./account";
+import { learningBatchSchema, storeLearningEvidence } from "./career";
 import { storage } from "./documents";
 import { applyTathastuProfile, clearTathastuImport, ProfileSyncError } from "./profile-sync";
 import { ensureProfile } from "./profiles";
@@ -134,6 +135,18 @@ async function handle(db: Db, type: string, event: Event, subject: string | null
     }
     if (profile) await clearTathastuImport(db, profile.id, null);
     return { status: 200, outcome: "unlinked", action: "IMPORT_REMOVED" };
+  }
+
+  if (type === "learning.evidence") {
+    // Structured learning activity only (see docs/AI_TATHASTU_INTEGRATION.md §Learning evidence). Never creates an account.
+    if (!identity || identity.deletedAt || identity.disabledAt) return { status: 200, outcome: "ignored", action: "UNKNOWN_USER" };
+    const [profile] = await db.select({ id: candidateProfiles.id }).from(candidateProfiles).where(eq(candidateProfiles.identityId, identity.id));
+    if (!profile) return { status: 200, outcome: "ignored", action: "NO_PROFILE" };
+    const parsed = learningBatchSchema.safeParse((event.data as { events?: unknown } | undefined)?.events);
+    if (!parsed.success) return { status: 200, outcome: "rejected", action: "INVALID_LEARNING_EVENTS" };
+    const r = await storeLearningEvidence(db, profile.id, parsed.data);
+    if (!r.consent) return { status: 200, outcome: "ignored_consent", action: "NO_LEARNING_CONSENT" };
+    return { status: 200, outcome: r.stored ? "updated" : "up_to_date", action: `LEARNING_STORED_${r.stored}` };
   }
 
   if (type !== "profile.updated") return { status: 200, outcome: "ignored", action: `IGNORED_EVENT_${type}` };

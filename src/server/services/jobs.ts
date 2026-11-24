@@ -61,9 +61,25 @@ export const defaultHandlers: Record<string, Handler> = {
     await sendEmail({ to: String(job.payload.to), subject: `You're invited to ${job.payload.orgName} on Avsar Employer Studio`, text: `Accept the invitation (expires in 7 days):\n${process.env.AVSAR_PUBLIC_URL ?? ""}${job.payload.link}` });
   },
   "opportunity.expire": async (db) => {
-    // Published listings whose deadline passed become "expired" (never deleted).
+    // Published listings whose deadline passed, or that no source lists any more (stale policy), become "expired" (never deleted).
     await db.update(opportunities).set({ status: "expired", updatedAt: new Date() }).where(and(eq(opportunities.status, "published"), lte(opportunities.deadline, new Date())));
+    const { expireStale } = await import("./ingestion");
+    await expireStale(db);
+  },
+  /** One authorized source run. The pipeline re-checks permission, switch and configuration itself. */
+  "source.ingest": async (db, job) => {
+    const { runIngestion } = await import("./ingestion");
+    const run = await runIngestion(db, String(job.payload.sourceId), { trigger: job.payload.trigger === "manual" ? "manual" : "schedule", actorId: typeof job.payload.actorId === "string" ? job.payload.actorId : null });
+    // A failed run is recorded on the source (health, backoff); retrying the job immediately would only hammer it.
+    if (run.status === "failed") return;
   },
 };
+
+/** Enqueues one ingestion job per due source (idempotent per source and hour). */
+export async function scheduleIngestion(db: Db, now = new Date()) {
+  const { dueSources } = await import("./ingestion");
+  const slot = now.toISOString().slice(0, 13);
+  for (const id of await dueSources(db, now)) await enqueueJob(db, "source.ingest", { sourceId: id, trigger: "schedule" }, `ingest:${id}:${slot}`);
+}
 
 

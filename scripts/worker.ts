@@ -14,7 +14,9 @@ import pg from "pg";
 import * as schema from "../src/server/db/schema";
 import type { Db } from "../src/server/db/client";
 import { pgPoolOptions } from "../src/server/db/pg-options";
-import { claimJobs, defaultHandlers, enqueueJob, runJob } from "../src/server/services/jobs";
+import { claimJobs, defaultHandlers, enqueueJob, runJob, scheduleIngestion } from "../src/server/services/jobs";
+import { ensureSourceRegistry } from "../src/server/services/ingestion";
+import { syncSkillRegistry } from "../src/server/services/skill-registry";
 
 let stopping = false;
 process.on("SIGINT", () => (stopping = true));
@@ -35,9 +37,13 @@ async function main() {
     ? (drizzlePg(pool, { schema }) as unknown as Db)
     : (mkdirSync(path.join(process.cwd(), ".data"), { recursive: true }), drizzlePglite(new PGlite(path.join(process.cwd(), ".data/pglite")), { schema }));
   console.log(`[worker] started (${pool ? "PostgreSQL" : "embedded development database"})`);
+  // Built-in sources appear as unreviewed and switched off; only an admin can approve and enable one.
+  await ensureSourceRegistry(db);
+  await syncSkillRegistry(db);
   while (!stopping) {
     const day = new Date().toISOString().slice(0, 10);
     await enqueueJob(db, "opportunity.expire", {}, `expire:${day}`);
+    await scheduleIngestion(db);
     const batch = await claimJobs(db, 10);
     for (const job of batch) await runJob(db, job, defaultHandlers);
     if (!batch.length) await new Promise((r) => setTimeout(r, 5_000));
