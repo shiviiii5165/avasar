@@ -21,6 +21,8 @@ export function canonicalRedirect(requestUrl: string, host: string | null, publi
   if (host.toLowerCase() === canonical.host.toLowerCase()) return null;
   const url = new URL(requestUrl);
   if (url.pathname.startsWith("/api/health")) return null;
+  // Vercel Cron calls the deployment host; the route authenticates every call with CRON_SECRET itself.
+  if (url.pathname.startsWith("/api/cron/")) return null;
   return `${canonical.origin}${url.pathname}${url.search}`;
 }
 

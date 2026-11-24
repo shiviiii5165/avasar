@@ -8,15 +8,20 @@
  * is link-only: Avsar may point students to it, or carry listings employers submit themselves.
  */
 import type { OpportunityType, RawListing } from "./normalize";
+import { ATS_ADAPTERS } from "./ats";
 import { robotsAllows, safeFetch, type SafeFetchOptions, type SafeResponse } from "./safe-fetch";
 
-export type AccessMethod = "authorized_feed" | "employer_structured_data" | "link_only";
+export type AccessMethod = "authorized_feed" | "employer_structured_data" | "employer_job_board_api" | "link_only";
 
 export interface ConfigVar { env: string; required: boolean; secret: boolean; description: string }
 
 export interface CollectContext {
   /** The source row's URL (employer careers page). */
   sourceUrl: string | null;
+  /** The source row's name (used as the employer for single-employer job boards). */
+  sourceName?: string;
+  /** The source row's adapter key, e.g. "greenhouse:groww" (board id after the colon). */
+  adapterKey?: string | null;
   env: Record<string, string | undefined>;
   /** SSRF-safe GET, already bound to this adapter's allow-list and request budget. */
   get: (url: string, headers?: Record<string, string>) => Promise<SafeResponse>;
@@ -37,6 +42,8 @@ export interface SourceAdapter {
   supportedTypes: OpportunityType[];
   defaultFrequencyMinutes: number;
   rateLimit: { requestsPerMinute: number; maxRequestsPerRun: number };
+  /** Largest response accepted (default 5 MB). Bounded so one source can't exhaust memory. */
+  maxResponseBytes?: number;
   config: ConfigVar[];
   /** Human-readable mapping and access notes shown in the Source Manager. */
   mapping: string;
@@ -233,7 +240,7 @@ export const employerCareersAdapter: SourceAdapter = {
   },
 };
 
-export const ADAPTERS: SourceAdapter[] = [aicteAdapter, ncsAdapter, natsAdapter, naukriAdapter, employerCareersAdapter];
+export const ADAPTERS: SourceAdapter[] = [aicteAdapter, ncsAdapter, natsAdapter, naukriAdapter, employerCareersAdapter, ...ATS_ADAPTERS];
 
 /** "employer_careers:<host>" rows share the employer_careers adapter; every other key names its adapter exactly. */
 export function adapterFor(adapterKey: string | null): SourceAdapter | null {
@@ -251,6 +258,7 @@ export function missingConfig(a: SourceAdapter, env: Record<string, string | und
     return hasFeed || hasDataset ? [] : [`${prefix}_FEED_URL or ${prefix}_APIFY_DATASET + AVSAR_APIFY_TOKEN`];
   }
   if (a.accessMethod === "employer_structured_data") return sourceUrl ? [] : ["careers page URL on the source"];
+  if (a.accessMethod === "employer_job_board_api") return [];
   return a.config.filter((c) => c.required && !env[c.env]).map((c) => c.env);
 }
 
@@ -265,7 +273,7 @@ export function boundGetter(a: SourceAdapter, allowedHosts: string[], deps: Para
     if (wait > 0 && Number.isFinite(wait)) await sleep(wait);
     used++;
     last = Date.now();
-    const opts: SafeFetchOptions = { allowedHosts, headers };
+    const opts: SafeFetchOptions = { allowedHosts, headers, maxBytes: a.maxResponseBytes, timeoutMs: 25_000 };
     return safeFetch(url, opts, deps);
   };
 }

@@ -3,6 +3,9 @@ import Link from "next/link";
 
 import { OpportunityFilters } from "@/components/opportunity/filters";
 import { OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { OfficialPortalLinks } from "@/components/opportunity/portal-links";
+import { discoveryLinks } from "@/server/ingestion/discovery";
+import { discoveryFamilies } from "@/server/services/ingestion";
 import { buttonClass, StateMessage } from "@/components/ui";
 import { getSession } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
@@ -36,6 +39,9 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
   const facts = await candidateFactsFor(db, session?.profileId ?? null);
   const matches = matchAll(facts, result.items);
   const saved = session ? await savedIds(db, session.identity.id) : new Set<string>();
+  const families = await discoveryFamilies(db).catch(() => new Set<string>());
+  const portalType = input.category === "internship" || input.category === "job" || input.category === "apprenticeship" ? input.category : null;
+  const portalLinks = discoveryLinks({ query: input.q, type: portalType, families });
   const items = input.sort === "relevance" && facts ? [...result.items].sort((a, b) => (matches.get(b.id)?.score ?? -1) - (matches.get(a.id)?.score ?? -1)) : result.items;
 
   const pageHref = (p: number) => {
@@ -77,6 +83,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
               {result.page < result.pageCount && <Link href={pageHref(result.page + 1)} className={buttonClass("secondary", "sm")}>Next</Link>}
             </nav>
           )}
+          <OfficialPortalLinks links={portalLinks} title={items.length ? "Also search official portals" : "Search official portals"} />
         </section>
       </div>
     </div>

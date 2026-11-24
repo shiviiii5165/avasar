@@ -1,12 +1,14 @@
-import { addEmployerCareersSourceAction, addSourceAction, runSourceNowAction, sourcePermissionAction, toggleSourceAction } from "@/app/actions/admin";
+import { addEmployerCareersSourceAction, addJobBoardSourceAction, addSourceAction, publishReadyFromSourceAction, runSourceNowAction, sourcePermissionAction, toggleSourceAction } from "@/app/actions/admin";
 import { Denied } from "@/components/admin/denied";
 import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
 import { Badge, buttonClass, Card, PageHeader } from "@/components/ui";
 import { adminGate } from "@/server/auth/admin-gate";
 import { getDb } from "@/server/db/client";
-import { ensureSourceRegistry, listSourcesForAdmin, type SourceHealth } from "@/server/services/ingestion";
+import { ensureSourceRegistry, listSourcesForAdmin, type CoverageMode, type SourceHealth } from "@/server/services/ingestion";
 
 export const metadata = { title: "Source Manager" };
+/** "Run now" executes a bounded ingestion pass inside this route's server action. */
+export const maxDuration = 60;
 
 const HEALTH: Record<SourceHealth, { label: string; tone: "success" | "warning" | "danger" | "neutral" | "purple" }> = {
   healthy: { label: "Healthy", tone: "success" },
@@ -17,6 +19,11 @@ const HEALTH: Record<SourceHealth, { label: string; tone: "success" | "warning" 
   awaiting_permission: { label: "Awaiting permission review", tone: "neutral" },
   display_only: { label: "Display/linking only", tone: "purple" },
   disabled: { label: "Disabled", tone: "neutral" },
+};
+const MODE: Record<CoverageMode, { label: string; tone: "success" | "purple" | "neutral" }> = {
+  automated: { label: "Automated collection", tone: "success" },
+  links_only: { label: "Links only (students get official search links)", tone: "purple" },
+  import_only: { label: "Import only", tone: "neutral" },
 };
 const PERMISSION_LABEL: Record<string, string> = { unreviewed: "Unreviewed", approved_collection: "Approved for collection", approved_display: "Approved for display/linking only", disabled: "Disabled" };
 const when = (d: Date | null | undefined) => (d ? d.toLocaleString("en-IN") : "—");
@@ -38,14 +45,17 @@ export default async function SourcesPage() {
               <Badge>{PERMISSION_LABEL[s.permissionStatus] ?? s.permissionStatus}</Badge>
               <Badge>{s.authority.replace("_", "-")}</Badge>
               {s.adapter && <Badge tone="purple">{s.adapter.accessMethod.replace(/_/g, " ")}</Badge>}
+              <Badge tone={MODE[s.coverage.mode].tone}>{MODE[s.coverage.mode].label}</Badge>
             </div>
+            {s.coverage.action && <p className="mt-2 rounded-md bg-purple-soft px-3 py-2 text-sm text-navy"><span className="font-semibold">Action needed:</span> {s.coverage.action}</p>}
             {s.url && <p className="mt-1 text-xs text-muted">{s.url}</p>}
             <p className="mt-2 text-sm text-ink/80">{s.termsNote}</p>
             <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
               <div><dt className="text-muted">Last run</dt><dd>{when(s.lastRunAt)}{s.lastRun ? ` (${s.lastRun.status})` : ""}</dd></div>
               <div><dt className="text-muted">Next run</dt><dd>{s.permissionStatus === "approved_collection" && s.active ? when(s.nextRunAt) : "Not scheduled"}</dd></div>
               <div><dt className="text-muted">Last success / failure</dt><dd>{when(s.lastSuccessAt)} / {when(s.lastFailureAt)}</dd></div>
-              <div><dt className="text-muted">Last 20 runs</dt><dd>{s.totals.collected} collected · {s.totals.rejected} rejected · {s.totals.duplicates} duplicates · {s.totals.failures} failed</dd></div>
+              <div><dt className="text-muted">Last 20 runs</dt><dd>{s.totals.collected} discovered · {s.totals.created} imported · {s.totals.rejected} rejected · {s.totals.duplicates} duplicates · {s.totals.failures} failed</dd></div>
+              <div className="sm:col-span-4"><dt className="text-muted">Listings from this source</dt><dd>{Object.entries(s.listings).map(([k, v]) => `${v} ${k.replace("_", " ")}`).join(" · ") || "none yet"}</dd></div>
             </dl>
             {s.lastError && <p className="mt-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">Last error: {s.lastError}</p>}
             {s.adapter && (
@@ -74,9 +84,15 @@ export default async function SourcesPage() {
                 <form action={toggleSourceAction.bind(null, s.id, !s.active)}>
                   <button className={buttonClass("ghost", "sm")}>{s.active ? "Switch off" : "Switch on"}</button>
                 </form>
-                {s.permissionStatus === "approved_collection" && s.active && s.missingConfig.length === 0 && (
+                {s.permissionStatus === "approved_collection" && s.active && s.missingConfig.length === 0 && s.coverage.mode === "automated" && (
                   <form action={runSourceNowAction.bind(null, s.id)}>
                     <button className={buttonClass("secondary", "sm")}>Run now</button>
+                  </form>
+                )}
+                {(s.listings.in_review ?? 0) > 0 && (
+                  <form action={publishReadyFromSourceAction.bind(null, s.id)}>
+                    <button className={buttonClass("primary", "sm")}>Approve & publish {s.listings.in_review} in review</button>
+                    <p className="mt-1 max-w-xs text-xs text-muted">Only listings that pass every publish check are published; flagged or incomplete ones stay in review.</p>
                   </form>
                 )}
               </div>
@@ -84,7 +100,15 @@ export default async function SourcesPage() {
           </Card>
         ))}
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card>
+          <h2 className="mb-4 font-semibold text-navy">Add an employer job board</h2>
+          <ActionForm action={addJobBoardSourceAction} submitLabel="Add job board" resetOnSuccess>
+            <Input name="employer" label="Employer" required />
+            <Select name="platform" label="Platform" defaultValue="greenhouse"><option value="greenhouse">Greenhouse (boards.greenhouse.io/…)</option><option value="lever">Lever (jobs.lever.co/…)</option><option value="ashby">Ashby (jobs.ashbyhq.com/…)</option></Select>
+            <Input name="board" label="Board id" required hint="The last part of the job-board URL, e.g. groww" />
+          </ActionForm>
+        </Card>
         <Card>
           <h2 className="mb-4 font-semibold text-navy">Add an employer careers site</h2>
           <ActionForm action={addEmployerCareersSourceAction} submitLabel="Add careers source" resetOnSuccess>

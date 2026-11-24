@@ -3,6 +3,9 @@ import Link from "next/link";
 import { evidencePreferencesAction, toggleLearningEvidenceAction } from "@/app/actions/career";
 import { CATEGORY_LABEL } from "@/components/opportunity/format";
 import { VerificationBadge } from "@/components/opportunity/opportunity-card";
+import { OfficialPortalLinks } from "@/components/opportunity/portal-links";
+import { discoveryLinks } from "@/server/ingestion/discovery";
+import { discoveryFamilies } from "@/server/services/ingestion";
 import { Badge, buttonClass, Card, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
@@ -25,6 +28,8 @@ export default async function CareerPage() {
   const data = await careerIntelligence(await getDb(), session.profileId);
   if (!data) return <StateMessage kind="error" title="Profile not found" />;
   const { skills, readiness, recommendations, roadmap, learning, excluded } = data;
+  const families = await discoveryFamilies(await getDb()).catch(() => new Set<string>());
+  const portalLinks = discoveryLinks({ query: data.targetRoles[0] ?? skills.find((s) => s.state === "demonstrated" || s.state === "verified")?.name, families });
   const groups: { title: string; states: SkillState[] }[] = [
     { title: "Verified", states: ["verified"] },
     { title: "Demonstrated", states: ["demonstrated"] },
@@ -134,6 +139,7 @@ export default async function CareerPage() {
             ))}
           </ul>
         )}
+        <OfficialPortalLinks links={portalLinks} title={data.targetRoles[0] ? `Search official portals for ${data.targetRoles[0]}` : "Search official portals"} />
       </Card>
 
       {roadmap.length > 0 && (

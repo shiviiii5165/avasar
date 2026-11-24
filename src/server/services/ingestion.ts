@@ -8,6 +8,7 @@ import { audit } from "../audit";
 import type { Db } from "../db/client";
 import { ingestionRuns, opportunities, opportunitySkills, opportunitySourceRefs, opportunitySources, opportunityVersions } from "../db/schema";
 import { ADAPTERS, adapterFor, boundGetter, missingConfig, type CollectResult, type SourceAdapter } from "../ingestion/adapters";
+import { boardPageUrl, KNOWN_BOARDS } from "../ingestion/ats";
 import { compareListings } from "../ingestion/dedupe";
 import { normalizeListing, normalizeTitle, type NormalizedListing } from "../ingestion/normalize";
 import type { Resolver, Transport } from "../ingestion/safe-fetch";
@@ -32,10 +33,18 @@ export interface RunDeps { transport?: Transport; resolver?: Resolver; sleep?: (
 
 /** Adds a source row for each built-in adapter (unreviewed, inactive). Idempotent; never changes an existing row. */
 export async function ensureSourceRegistry(db: Db) {
-  for (const a of ADAPTERS.filter((x) => x.family !== "employer_careers")) {
+  for (const a of ADAPTERS.filter((x) => x.family !== "employer_careers" && x.accessMethod !== "employer_job_board_api")) {
     await db
       .insert(opportunitySources)
       .values({ name: a.name, kind: a.accessMethod === "link_only" ? "manual" : "feed", url: a.homepage, termsNote: a.termsNote, active: false, adapterKey: a.family, authority: a.authority, permissionStatus: "unreviewed" })
+      .onConflictDoNothing();
+  }
+  // Employer job boards verified to carry openings in India: unreviewed and off until an admin approves each.
+  for (const b of KNOWN_BOARDS) {
+    const a = adapterFor(b.family)!;
+    await db
+      .insert(opportunitySources)
+      .values({ name: b.employer, kind: "api", url: boardPageUrl(b.family, b.id), termsNote: a.termsNote, active: false, adapterKey: `${b.family}:${b.id}`, authority: "employer", permissionStatus: "unreviewed" })
       .onConflictDoNothing();
   }
 }
@@ -61,7 +70,7 @@ const safeError = (err: unknown) => (err instanceof Error ? err.message : String
 type Counts = { collected: number; created: number; updated: number; unchanged: number; duplicates: number; rejected: number; markedStale: number };
 
 /** Runs one source. Returns the run row. Never throws for source problems (they are recorded on the run). */
-export async function runIngestion(db: Db, sourceId: string, opts: { trigger: "schedule" | "manual"; actorId?: string | null; env?: Record<string, string | undefined>; now?: Date; deps?: RunDeps } = { trigger: "schedule" }) {
+export async function runIngestion(db: Db, sourceId: string, opts: { trigger: "schedule" | "manual"; actorId?: string | null; env?: Record<string, string | undefined>; now?: Date; deps?: RunDeps; /** Wall-clock ms after which record processing stops cleanly (serverless time limits). */ deadlineAt?: number } = { trigger: "schedule" }) {
   const env = opts.env ?? process.env;
   const now = opts.now ?? new Date();
   const [source] = await db.select().from(opportunitySources).where(eq(opportunitySources.id, sourceId));
@@ -87,7 +96,7 @@ export async function runIngestion(db: Db, sourceId: string, opts: { trigger: "s
   let result: CollectResult;
   try {
     const hosts = adapter!.allowedHosts({ sourceUrl: source.url, env });
-    result = opts.deps?.collect ? await opts.deps.collect(adapter!) : await adapter!.collect!({ sourceUrl: source.url, env, get: boundGetter(adapter!, hosts, { transport: opts.deps?.transport, resolver: opts.deps?.resolver }, opts.deps?.sleep) });
+    result = opts.deps?.collect ? await opts.deps.collect(adapter!) : await adapter!.collect!({ sourceUrl: source.url, sourceName: source.name, adapterKey: source.adapterKey, env, get: boundGetter(adapter!, hosts, { transport: opts.deps?.transport, resolver: opts.deps?.resolver }, opts.deps?.sleep) });
   } catch (err) {
     const message = safeError(err);
     await db.update(opportunitySources).set({ lastRunAt: now, lastFailureAt: now, lastError: message, consecutiveFailures: sql`${opportunitySources.consecutiveFailures} + 1`, nextRunAt: new Date(now.getTime() + Math.min(24 * 60, adapter!.defaultFrequencyMinutes) * 60_000) }).where(eq(opportunitySources.id, sourceId));
@@ -98,7 +107,12 @@ export async function runIngestion(db: Db, sourceId: string, opts: { trigger: "s
   counts.collected = result.records.length;
   const reg = registry();
   const seenRefIds: string[] = [];
+  let cutShort = false;
   for (const raw of result.records) {
+    if (opts.deadlineAt && Date.now() >= opts.deadlineAt) {
+      cutShort = true;
+      break;
+    }
     const n = normalizeListing(raw, { supportedTypes: adapter!.supportedTypes, registry: reg, now });
     if (!n.ok) {
       counts.rejected++;
@@ -114,12 +128,13 @@ export async function runIngestion(db: Db, sourceId: string, opts: { trigger: "s
     }
   }
 
-  if (result.complete) counts.markedStale = await markMissing(db, sourceId, seenRefIds, now);
+  // Only a run that saw the whole list may mark records missing; a run cut short by time continues next pass.
+  if (result.complete && !cutShort) counts.markedStale = await markMissing(db, sourceId, seenRefIds, now);
   await expireStale(db, now);
 
-  await db.update(opportunitySources).set({ lastRunAt: now, lastSuccessAt: now, lastImportAt: now, lastError: null, consecutiveFailures: 0, nextRunAt: new Date(now.getTime() + adapter!.defaultFrequencyMinutes * 60_000) }).where(eq(opportunitySources.id, sourceId));
+  await db.update(opportunitySources).set({ lastRunAt: now, lastSuccessAt: now, lastImportAt: now, lastError: null, consecutiveFailures: 0, nextRunAt: cutShort ? now : new Date(now.getTime() + adapter!.defaultFrequencyMinutes * 60_000) }).where(eq(opportunitySources.id, sourceId));
   await audit(db, { actorId: opts.actorId ?? null, actorRole: opts.actorId ? "admin" : "system", action: "source.ingest", targetType: "source", targetId: sourceId, metadata: { ...counts, trigger: opts.trigger } });
-  return finish(counts.rejected && counts.rejected === counts.collected ? "partial" : "succeeded", counts, null);
+  return finish(cutShort || (counts.rejected && counts.rejected === counts.collected) ? "partial" : "succeeded", counts, cutShort ? "Time budget reached; continues on the next pass" : null);
 }
 
 type SourceRow = typeof opportunitySources.$inferSelect;
@@ -265,6 +280,49 @@ export async function expireStale(db: Db, now = new Date()) {
   return rows.length;
 }
 
+/**
+ * Atomically leases the next due source (approved, switched on, next run due). The lease moves next_run_at
+ * forward by LEASE_MINUTES first, so two overlapping cron invocations (or the cron and the worker) can never run
+ * the same source; the run itself then sets the real next time (success: frequency; failure: backoff).
+ */
+export const LEASE_MINUTES = 30;
+export async function claimDueSource(db: Db, now = new Date()): Promise<string | null> {
+  const res = await db.execute(sql`
+    update opportunity_sources set next_run_at = ${new Date(now.getTime() + LEASE_MINUTES * 60_000)}
+    where id = (
+      select id from opportunity_sources
+      where permission_status = 'approved_collection' and active = true and (next_run_at is null or next_run_at <= ${now})
+      order by next_run_at asc nulls first, id
+      limit 1 for update skip locked)
+    returning id`);
+  return (res as unknown as { rows: { id: string }[] }).rows[0]?.id ?? null;
+}
+
+export interface ScheduledRunSummary { sources: { sourceId: string; status: string; collected: number; created: number; updated: number; duplicates: number; rejected: number }[]; expired: number; stoppedBy: "done" | "time_budget" | "max_sources"; elapsedMs: number }
+
+/**
+ * One scheduled pass (Vercel Cron or worker): runs due sources one at a time until none are due, the time budget
+ * is spent, or `maxSources` ran; then expires stale and past-deadline listings. Sources left over stay due and are
+ * picked up by the next pass, so a short invocation never loses work.
+ */
+export async function runScheduledIngestion(db: Db, opts: { budgetMs: number; maxSources?: number; env?: Record<string, string | undefined>; deps?: RunDeps; now?: () => Date } = { budgetMs: 45_000 }): Promise<ScheduledRunSummary> {
+  const clock = opts.now ?? (() => new Date());
+  const started = Date.now();
+  const sources: ScheduledRunSummary["sources"] = [];
+  let stoppedBy: ScheduledRunSummary["stoppedBy"] = "done";
+  for (;;) {
+    if (Date.now() - started >= opts.budgetMs) { stoppedBy = "time_budget"; break; }
+    if (sources.length >= (opts.maxSources ?? 25)) { stoppedBy = "max_sources"; break; }
+    const id = await claimDueSource(db, clock());
+    if (!id) break;
+    const run = await runIngestion(db, id, { trigger: "schedule", env: opts.env, deps: opts.deps, now: clock(), deadlineAt: started + opts.budgetMs });
+    sources.push({ sourceId: id, status: run.status, collected: run.collected, created: run.created, updated: run.updated, duplicates: run.duplicates, rejected: run.rejected });
+  }
+  // Past-deadline and long-stale published listings → expired (with a system_expiry verification event).
+  const expired = await expireStale(db, clock());
+  return { sources, expired, stoppedBy, elapsedMs: Date.now() - started };
+}
+
 /** Enqueue-free scheduling: returns the ids of approved, active, configured sources whose next run is due. */
 export async function dueSources(db: Db, now = new Date(), env: Record<string, string | undefined> = process.env) {
   const rows = await db
@@ -274,9 +332,56 @@ export async function dueSources(db: Db, now = new Date(), env: Record<string, s
   return rows.filter((s) => sourceHealth(s, env) !== "not_configured").map((s) => s.id);
 }
 
+export type CoverageMode = "automated" | "links_only" | "import_only";
+
+/** How a source actually contributes today, and the one action that would unblock it (null = nothing needed). */
+export function sourceCoverage(s: { adapterKey: string | null; url: string | null; active: boolean; permissionStatus: string; consecutiveFailures: number; lastError: string | null; kind: string }, env: Record<string, string | undefined> = process.env): { mode: CoverageMode; action: string | null } {
+  const a = adapterFor(s.adapterKey);
+  if (s.permissionStatus === "disabled") return { mode: a ? "links_only" : "import_only", action: "Disabled by an admin." };
+  if (!a) return { mode: "import_only", action: "Add listings from this source in Import Review (JSON or CSV)." };
+  if (!a.collect || a.accessMethod === "link_only") return { mode: "links_only", action: "None. Students get official search links; automated collection is not permitted by this source." };
+  const missing = missingConfig(a, env, s.url);
+  if (missing.length) return { mode: "links_only", action: `Students get official search links meanwhile. To collect automatically: obtain an authorized feed from the portal owner, then set ${missing.join("; ")}.` };
+  if (s.permissionStatus !== "approved_collection") return { mode: "automated", action: "Record permission as “Approved for collection” with the evidence (agreement, or the employer's public job board URL)." };
+  if (!s.active) return { mode: "automated", action: "Switch the source on." };
+  if (s.consecutiveFailures >= 3) return { mode: "automated", action: `Failing: ${s.lastError ?? "see the last run"}.` };
+  return { mode: "automated", action: null };
+}
+
+/** Families whose official search links students may see (every adapter source not disabled by an admin). */
+export async function discoveryFamilies(db: Db): Promise<Set<string>> {
+  const rows = await db.select({ key: opportunitySources.adapterKey, status: opportunitySources.permissionStatus }).from(opportunitySources);
+  return new Set(rows.filter((r) => r.key && r.status !== "disabled").map((r) => r.key!.split(":")[0]));
+}
+
+/**
+ * Human-approved bulk publication of a source's listings that are in review and pass every publish check
+ * (including flagged-text and https checks). Each listing goes through the normal workflow and audit trail.
+ */
+export async function publishReadyFromSource(db: Db, sourceId: string, actorId: string, limit = 200) {
+  const { transitionOpportunity, TransitionError } = await import("./opportunities");
+  const rows = await db.select({ id: opportunities.id }).from(opportunities).where(and(eq(opportunities.sourceId, sourceId), eq(opportunities.status, "in_review"))).limit(limit);
+  let published = 0;
+  let skipped = 0;
+  for (const r of rows) {
+    try {
+      await transitionOpportunity(db, r.id, "approved", actorId, "Bulk approval from Source Manager");
+      await transitionOpportunity(db, r.id, "published", actorId, "Bulk publication from Source Manager");
+      published++;
+    } catch (err) {
+      if (!(err instanceof TransitionError)) throw err;
+      skipped++;
+    }
+  }
+  return { published, skipped };
+}
+
 export async function listSourcesForAdmin(db: Db) {
   const sources = await db.select().from(opportunitySources).orderBy(opportunitySources.name);
-  const runs = await db.select().from(ingestionRuns).orderBy(desc(ingestionRuns.startedAt)).limit(200);
+  const [runs, counts] = await Promise.all([
+    db.select().from(ingestionRuns).orderBy(desc(ingestionRuns.startedAt)).limit(500),
+    db.select({ sourceId: opportunities.sourceId, status: opportunities.status, n: sql<number>`count(*)::int` }).from(opportunities).where(sql`${opportunities.sourceId} is not null`).groupBy(opportunities.sourceId, opportunities.status),
+  ]);
   return sources.map((s) => {
     const adapter = adapterFor(s.adapterKey);
     const mine = runs.filter((r) => r.sourceId === s.id);
@@ -285,8 +390,10 @@ export async function listSourcesForAdmin(db: Db) {
       adapter: adapter ? { family: adapter.family, accessMethod: adapter.accessMethod, supportedTypes: adapter.supportedTypes, rateLimit: adapter.rateLimit, frequencyMinutes: adapter.defaultFrequencyMinutes, config: adapter.config.map((c) => ({ env: c.env, secret: c.secret, set: Boolean(process.env[c.env]), description: c.description })), mapping: adapter.mapping } : null,
       missingConfig: adapter ? missingConfig(adapter, process.env, s.url) : [],
       health: sourceHealth(s),
+      coverage: sourceCoverage(s),
+      listings: Object.fromEntries(counts.filter((x) => x.sourceId === s.id).map((x) => [x.status, x.n])) as Record<string, number>,
       lastRun: mine[0] ?? null,
-      totals: mine.slice(0, 20).reduce((t, r) => ({ collected: t.collected + r.collected, rejected: t.rejected + r.rejected, duplicates: t.duplicates + r.duplicates, failures: t.failures + (r.status === "failed" ? 1 : 0) }), { collected: 0, rejected: 0, duplicates: 0, failures: 0 }),
+      totals: mine.slice(0, 20).reduce((t, r) => ({ collected: t.collected + r.collected, created: t.created + r.created, rejected: t.rejected + r.rejected, duplicates: t.duplicates + r.duplicates, failures: t.failures + (r.status === "failed" ? 1 : 0) }), { collected: 0, created: 0, rejected: 0, duplicates: 0, failures: 0 }),
     };
   });
 }

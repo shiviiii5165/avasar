@@ -100,3 +100,40 @@ duplicate detection 7/7 pairs; ~1 ms per student. These describe behaviour on 14
 listings written for this purpose. They are **not** evidence of placement success, and the recall difference shows
 the new ranking is not better on every measure. No ML ranker is introduced; any future one must beat this baseline
 on held-out, time-split data first.
+
+## 6. Source coverage (2026-11-24)
+
+Verified live on 2026-11-24 (robots.txt, sitemaps, page structure):
+
+| Source | How Avsar uses it | Why |
+|---|---|---|
+| **Employer job boards** (Greenhouse, Lever, Ashby) | **Automated**: one request per board to the platform's public job-board API, India-located (or remote + India) openings only | These APIs exist for employers to syndicate their own jobs. 14 boards pre-registered (unreviewed, off). |
+| Employer careers pages | Automated: schema.org JobPosting JSON-LD, robots.txt checked | For employers not on the platforms above. |
+| AICTE Internship Portal | **Links only** (search links by keyword, remote) + authorized-feed adapter | Listing pages carry no listing data in the HTML; listings load from `/api/`, which AICTE's robots.txt disallows. |
+| National Career Service | Links only + authorized-feed adapter | Single-page app loading listings from internal APIs; no public feed found. |
+| NATS 2.0 | Links only + authorized-feed adapter | Vacancies are visible only after student login. |
+| Naukri | Links only (keyword search) | robots.txt itself answers 403 to bots; no partner access. Never collected. |
+| Manual / partner sources | Import only (JSON or CSV in Import Review) | |
+
+Students see official-portal search links on `/opportunities` and `/app/career`, clearly marked as external and not
+checked by Avsar. A portal becomes automated the moment its owner provides a feed (`AVSAR_SRC_<…>_FEED_URL`).
+
+### Live results (no production database touched)
+* `npm run sources:smoke`: 14 boards, **540 India-relevant records, 539 valid**.
+* `npm run sources:e2e` (throwaway in-memory DB, two passes): pass 1 created **536** listings (520 jobs, 15
+  internships, 1 apprenticeship), merged 3 duplicates, rejected 1 (description under 40 characters); pass 2 created
+  **0** (no duplicates on repeat runs). 3 listings were flagged by the injection heuristics; all 3 were false
+  positives, which led to narrower patterns (now covered by regression tests).
+
+### Scheduling (no paid service)
+`GET /api/cron/ingest`, called by Vercel Cron daily at 02:00 IST (`vercel.json`). Requires `CRON_SECRET` (32+
+characters; 503 without it, 401 for anything else). Sources are leased one at a time (`claimDueSource`, row lock +
+30-minute lease, so overlapping invocations never run the same source); the pass stops at a 40 s budget inside a
+60 s function, and a source cut short is recorded `partial`, marks nothing missing, and continues next pass. Then
+stale and past-deadline listings expire. "Run now" in Source Manager runs the same bounded pass inline. The
+`npm run worker` path still works when a paid always-on host is added later.
+
+### Publication
+Collected listings always enter review. "Approve & publish N in review" (Source Manager, `opportunity.publish`)
+publishes only listings passing every check (https links, no flagged text, deadline not passed); each goes through
+the normal workflow and audit log.

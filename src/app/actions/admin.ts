@@ -17,7 +17,10 @@ import { createOpportunity, importBatch, transitionOpportunity, TransitionError,
 import { MODERATION_ACTIONS, resolveCase } from "@/server/services/trust";
 import { validateUrl } from "@/server/ingestion/safe-fetch";
 import { rateLimit } from "@/server/rate-limit";
-import { enqueueJob } from "@/server/services/jobs";
+import { adapterFor } from "@/server/ingestion/adapters";
+import { boardPageUrl } from "@/server/ingestion/ats";
+import { parseCsv } from "@/server/ingestion/csv";
+import { publishReadyFromSource, runIngestion } from "@/server/services/ingestion";
 import { setOpportunityVerification, setSourcePermission, VerificationError } from "@/server/services/verification";
 
 import type { ActionState } from "./candidate";
@@ -79,10 +82,12 @@ export async function importAction(_: ActionState, fd: FormData): Promise<Action
   const sourceId = z.string().uuid().safeParse(fd.get("sourceId"));
   if (!sourceId.success) return { ok: false, errors: { sourceId: "Choose an approved source." } };
   let items: unknown;
+  const payload = String(fd.get("payload") ?? "").trim();
   try {
-    items = JSON.parse(String(fd.get("payload") ?? ""));
+    // JSON array, or CSV with a header row (title,organization,category,description,location,workMode,applyUrl,sourceUrl,deadline,skills; skills separated by ";").
+    items = payload.startsWith("[") ? JSON.parse(payload) : parseCsv(payload);
   } catch {
-    return { ok: false, errors: { payload: "Paste a JSON array of items." } };
+    return { ok: false, errors: { payload: "Paste a JSON array, or CSV with a header row." } };
   }
   if (!Array.isArray(items) || items.length === 0) return { ok: false, errors: { payload: "Paste a JSON array with at least one item." } };
   if (items.length > 500) return { ok: false, errors: { payload: "Import at most 500 items at a time." } };
@@ -138,9 +143,10 @@ export async function runSourceNowAction(id: string) {
   const sourceId = z.string().uuid().parse(id);
   const db = await getDb();
   if (!(await rateLimit(db, "sourceRun", sourceId)).ok) return;
-  // Queued, not run inline: the worker applies the same permission gate, request budget and backoff.
-  await enqueueJob(db, "source.ingest", { sourceId, trigger: "manual", actorId: s.identity.id }, `ingest-manual:${sourceId}:${new Date().toISOString().slice(0, 16)}`);
+  // Runs here, within this request's time limit (no separate worker is needed on Vercel). The pipeline applies the same
+  // permission gate, request budget and backoff; a run cut short by time is recorded as partial and continues later.
   await audit(db, { actorId: s.identity.id, actorRole: "admin", action: "source.run_requested", targetType: "source", targetId: sourceId });
+  await runIngestion(db, sourceId, { trigger: "manual", actorId: s.identity.id, deadlineAt: Date.now() + 40_000 });
   revalidatePath("/admin/sources");
 }
 
@@ -162,6 +168,33 @@ export async function addEmployerCareersSourceAction(_: ActionState, fd: FormDat
   await audit(db, { actorId: s.identity.id, actorRole: "admin", action: "source.create", targetType: "source", targetId: src.id, metadata: { adapter: "employer_careers" } });
   revalidatePath("/admin/sources");
   return { ok: true, message: "Added as unreviewed and switched off. Record the employer's permission before enabling it." };
+}
+
+/** A person approves and publishes every listing from one source that is in review and passes all publish checks. */
+export async function publishReadyFromSourceAction(id: string) {
+  const s = await guard("opportunity.publish");
+  if (!s) return;
+  const sourceId = z.string().uuid().parse(id);
+  const db = await getDb();
+  const r = await publishReadyFromSource(db, sourceId, s.identity.id);
+  await audit(db, { actorId: s.identity.id, actorRole: "admin", action: "source.bulk_publish", targetType: "source", targetId: sourceId, metadata: r });
+  revalidatePath("/admin/sources");
+  revalidatePath("/opportunities");
+}
+
+/** Adds an employer's public job board (Greenhouse / Lever / Ashby) as an unreviewed, switched-off source. */
+export async function addJobBoardSourceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  const s = await guard("source.manage");
+  if (!s) return denied;
+  const parsed = z.object({ employer: z.string().trim().min(2).max(100), platform: z.enum(["greenhouse", "lever", "ashby"]), board: z.string().trim().regex(/^[A-Za-z0-9_.-]{2,80}$/, "Use the board id from the job-board URL, e.g. groww in boards.greenhouse.io/groww") }).safeParse(Object.fromEntries(fd));
+  if (!parsed.success) return { ok: false, errors: Object.fromEntries(parsed.error.issues.map((i) => [String(i.path[0]), i.message])) };
+  const { employer, platform, board } = parsed.data;
+  const db = await getDb();
+  const [src] = await db.insert(opportunitySources).values({ name: employer, kind: "api", url: boardPageUrl(platform, board), termsNote: adapterFor(platform)!.termsNote, active: false, adapterKey: `${platform}:${board}`, authority: "employer", permissionStatus: "unreviewed" }).onConflictDoNothing().returning();
+  if (!src) return { ok: false, errors: { board: "This job board is already a source." } };
+  await audit(db, { actorId: s.identity.id, actorRole: "admin", action: "source.create", targetType: "source", targetId: src.id, metadata: { adapter: platform } });
+  revalidatePath("/admin/sources");
+  return { ok: true, message: "Added as unreviewed and switched off. Record the permission, switch it on, then Run now." };
 }
 
 export async function opportunityVerificationAction(id: string, _: ActionState, fd: FormData): Promise<ActionState> {

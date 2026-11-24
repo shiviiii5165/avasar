@@ -51,10 +51,11 @@ export function cleanLine(input: unknown, max = 200): string {
 
 const INJECTION_PATTERNS: [RegExp, string][] = [
   [/\b(ignore|disregard|forget|override)\b.{0,40}\b(previous|prior|above|all|earlier|system)\b.{0,30}\b(instructions?|prompts?|rules?|messages?)/i, "instruction_override"],
-  [/\b(system prompt|developer message|you are (now )?(an? )?(ai|assistant|language model|chatbot|gpt|claude))\b/i, "role_hijack"],
+  // Instructions aimed at an AI, not job text that mentions AI ("experience writing system prompts" is a real skill).
+  [/\byou are now (an? )?(ai|assistant|language model|chatbot|gpt|claude)\b|\b(reveal|print|show|output|repeat|ignore)\b.{0,30}\b(your |the )?(system prompt|developer message)\b/i, "role_hijack"],
   [/<\|?(im_start|im_end|system|assistant|endoftext)\|?>|\[\/?(INST|SYS)\]|^\s*(system|assistant)\s*:/im, "chat_markup"],
   [/\b(rank|rate|score|recommend|mark)\b.{0,40}\b(this|the) (job|listing|role|opportunity|candidate)\b.{0,30}\b(first|highest|top|verified|100)\b/i, "ranking_manipulation"],
-  [/\b(call|invoke|use|run|execute)\b.{0,20}\b(tool|function|api|command|curl|fetch)\b/i, "tool_invocation"],
+  [/\b(tool_call|function_call)\b|\b(call|invoke|execute)\s+(the\s+)?(\w+\s+)?(tool|function)\s*[:(]/i, "tool_invocation"],
   [/\b(send|email|post|forward|reveal|print)\b.{0,40}\b(api key|password|secret|token|credentials?|resume|personal data|phone numbers?)\b/i, "exfiltration"],
 ];
 

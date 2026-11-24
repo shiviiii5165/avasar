@@ -17,6 +17,8 @@
     "db:restore": "tsx scripts/db-backup.mts restore",
     "mock:ait": "tsx scripts/mock-ait.mts",
     "eval:matching": "tsx scripts/eval-matching.ts",
+    "sources:smoke": "tsx --conditions=react-server scripts/source-smoke.ts",
+    "sources:e2e": "tsx --conditions=react-server scripts/source-live-e2e.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

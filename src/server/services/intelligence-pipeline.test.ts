@@ -5,6 +5,7 @@ import { upsertIdentity } from "../auth/identity";
 import { createMemoryDb, type Db } from "../db/client";
 import { candidateProfiles, ingestionRuns, learningEvidence, opportunities, opportunitySkills, opportunitySourceRefs, opportunitySources, verificationEvents } from "../db/schema";
 import type { CollectResult } from "../ingestion/adapters";
+import { KNOWN_BOARDS } from "../ingestion/ats";
 import { careerIntelligence, setLearningEvidenceIncluded, storeLearningEvidence } from "./career";
 import { processWebhook } from "./ait-webhooks";
 import { ensureSourceRegistry, expireStale, runIngestion, sourceHealth, STALE_EXPIRE_DAYS } from "./ingestion";
@@ -37,10 +38,11 @@ beforeAll(async () => {
 describe("source permission gate", () => {
   it("registers built-in sources as unreviewed and switched off", async () => {
     const rows = await db.select().from(opportunitySources);
-    expect(rows.map((r) => r.adapterKey).sort()).toEqual(["aicte_internship", "nats", "naukri", "ncs"]);
+    expect(rows.map((r) => r.adapterKey).filter((k) => !k?.includes(":")).sort()).toEqual(["aicte_internship", "nats", "naukri", "ncs"]);
+    expect(rows.filter((r) => r.adapterKey?.includes(":"))).toHaveLength(KNOWN_BOARDS.length);
     expect(rows.every((r) => r.permissionStatus === "unreviewed" && !r.active)).toBe(true);
     await ensureSourceRegistry(db); // idempotent
-    expect(await db.select().from(opportunitySources)).toHaveLength(4);
+    expect(await db.select().from(opportunitySources)).toHaveLength(4 + KNOWN_BOARDS.length);
   });
   it("never collects from an unreviewed, display-only, inactive, unconfigured or link-only source", async () => {
     const ncs = await source("ncs");
