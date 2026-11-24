@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { upsertIdentity } from "../auth/identity";
 import { createMemoryDb, type Db } from "../db/client";
 import { aitWebhookDeliveries, candidateProfiles, candidateSkills, education, sessions, userIdentities } from "../db/schema";
-import { processWebhook, REPLAY_WINDOW_SEC, verifySignature } from "./ait-webhooks";
+import { MAX_WEBHOOK_BYTES, processWebhook, readBoundedBody, REPLAY_WINDOW_SEC, verifySignature, verifyWithSecrets, webhookSecrets } from "./ait-webhooks";
 import { addSectionItem, ensureProfile, loadProfile } from "./profiles";
 
 const AUD = "avasar";
@@ -197,5 +197,27 @@ describe("processWebhook (PGlite, real migrations)", () => {
     const id = await identityOf(db, "ait-new-1");
     const again = await ensureProfile(db, id.id, null);
     expect(again.id).toBe((await profileOf(db, id.id)).id);
+  });
+});
+
+describe("webhook transport hardening", () => {
+  const sign = (body: string, secret: string, t = Math.floor(Date.now() / 1000)) => `t=${t},v1=${createHmac("sha256", secret).update(`${t}.${body}`).digest("hex")}`;
+
+  it("accepts the previous secret only while it is configured (rotation)", () => {
+    const body = JSON.stringify({ id: "x" });
+    const secrets = webhookSecrets({ AVSAR_AIT_WEBHOOK_SECRET: "new-secret", AVSAR_AIT_WEBHOOK_SECRET_PREVIOUS: "old-secret" });
+    expect(verifyWithSecrets(body, sign(body, "old-secret"), secrets).ok).toBe(true);
+    expect(verifyWithSecrets(body, sign(body, "new-secret"), secrets).ok).toBe(true);
+    expect(verifyWithSecrets(body, sign(body, "old-secret"), webhookSecrets({ AVSAR_AIT_WEBHOOK_SECRET: "new-secret" })).ok).toBe(false);
+    expect(verifyWithSecrets(body, sign(body, "attacker"), secrets).ok).toBe(false);
+    expect(webhookSecrets({ AVSAR_AIT_WEBHOOK_SECRET: "  " })).toEqual([]);
+  });
+
+  it("refuses oversized bodies, declared or streamed", async () => {
+    const big = "x".repeat(MAX_WEBHOOK_BYTES + 1);
+    expect(await readBoundedBody(new Request("https://a.test", { method: "POST", body: big }), MAX_WEBHOOK_BYTES)).toBeNull();
+    const undeclared = new Request("https://a.test", { method: "POST", body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(big)); c.close(); } }), duplex: "half" } as RequestInit);
+    expect(await readBoundedBody(undeclared, MAX_WEBHOOK_BYTES)).toBeNull();
+    expect(await readBoundedBody(new Request("https://a.test", { method: "POST", body: "{\"ok\":1}" }), MAX_WEBHOOK_BYTES)).toBe("{\"ok\":1}");
   });
 });

@@ -76,7 +76,8 @@ export async function searchOpportunities(db: Db, input: SearchInput, now = new 
 }
 
 /** Upper bound on listings ranked per request (server memory only; the page sent to the browser is PAGE_SIZE). */
-export const RANK_LIMIT = 500;
+/** Safety ceiling for personalized ranking. Far above today's catalogue (~540), so every open listing is scored; `truncated` reports it if ever reached. */
+export const RANK_LIMIT = 5000;
 
 /**
  * "Best match" search: the same filters as searchOpportunities, but the WHOLE filtered set (up to RANK_LIMIT,
@@ -114,7 +115,7 @@ export async function liveCategories(db: Db, now = new Date()): Promise<Category
   return CATEGORY_KEYS.filter((k) => have.has(k));
 }
 
-export async function listOpenOpportunities(db: Db, limit = 300, now = new Date()) {
+export async function listOpenOpportunities(db: Db, limit = RANK_LIMIT, now = new Date()) {
   // Same order as the search (newest first, id as tie-break), so a ranked list built from these rows is identical.
   const rows = await db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(limit);
   return rows.map(fromDetailRow);

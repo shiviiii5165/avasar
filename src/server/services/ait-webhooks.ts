@@ -55,7 +55,46 @@ export function verifySignature(rawBody: string, header: string | null, secret: 
   return given.length === expected.length && timingSafeEqual(given, expected) ? { ok: true } : { ok: false, error: "bad signature" };
 }
 
-type Claim = "claimed" | "processed" | "in_progress";
+/** A profile projection is a few KB; 512 KB leaves ample room while refusing memory-exhaustion bodies. */
+export const MAX_WEBHOOK_BYTES = 512 * 1024;
+
+/** Current secret first, then the previous one (accepted only while a rotation is in progress). */
+export function webhookSecrets(env: Record<string, string | undefined> = process.env): string[] {
+  return [env.AVSAR_AIT_WEBHOOK_SECRET, env.AVSAR_AIT_WEBHOOK_SECRET_PREVIOUS].map((s) => s?.trim() ?? "").filter((s) => s.length > 0);
+}
+
+export function verifyWithSecrets(rawBody: string, header: string | null, secrets: string[], nowSec?: number): { ok: true } | { ok: false; error: string } {
+  let last: { ok: false; error: string } = { ok: false, error: "missing signature" };
+  for (const secret of secrets) {
+    const r = verifySignature(rawBody, header, secret, nowSec);
+    if (r.ok) return r;
+    last = r;
+  }
+  return last;
+}
+
+/** Reads the body up to `max` bytes; null when it is larger (declared or actual). Never buffers more than `max`. */
+export async function readBoundedBody(request: Request, max: number): Promise<string | null> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+type Claim ="claimed" | "processed" | "in_progress";
 
 /** Exactly-once claim of a delivery id across instances (one atomic statement). */
 async function claim(db: Db, deliveryId: string, eventType: string, subject: string | null): Promise<{ claim: Claim; outcome: string | null }> {

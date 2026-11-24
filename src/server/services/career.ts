@@ -62,7 +62,7 @@ export interface CareerIntelligence {
 
 /** Everything the career dashboard shows, for the signed-in student's OWN profile only (profileId comes from the session). */
 export async function careerIntelligence(db: Db, profileId: string, now = new Date()): Promise<CareerIntelligence | null> {
-  const [p, open] = await Promise.all([loadProfile(db, profileId), listOpenOpportunities(db, 300, now)]);
+  const [p, open] = await Promise.all([loadProfile(db, profileId), listOpenOpportunities(db, undefined, now)]);
   if (!p) return null;
   const reg = registry();
   const { items, learning } = await loadEvidence(db, p);

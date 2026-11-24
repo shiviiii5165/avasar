@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { RETURN_PATH_HEADER, requestPathOf } from "./server/auth/return-path";
+import { CSP_NONCE_HEADER, newNonce, strictCsp } from "./server/csp";
 
 /**
  * Edge-level guard (Next 16 "proxy", formerly middleware). Authorization itself is enforced in every
@@ -38,7 +39,15 @@ export function proxy(request: NextRequest) {
   // Record the requested path for sign-in return (overwrites any client-supplied value).
   const headers = new Headers(request.headers);
   headers.set(RETURN_PATH_HEADER, requestPathOf(request.nextUrl));
-  return NextResponse.next({ request: { headers } });
+  // Strict nonce CSP in report-only mode (see server/csp.ts). Client-supplied values are overwritten.
+  const nonce = newNonce();
+  const csp = strictCsp(nonce, { dev: !production, formAction: process.env.AVSAR_AIT_BASE_URL?.trim() });
+  headers.set(CSP_NONCE_HEADER, nonce);
+  headers.delete("content-security-policy");
+  headers.set("content-security-policy-report-only", csp);
+  const res = NextResponse.next({ request: { headers } });
+  res.headers.set("Content-Security-Policy-Report-Only", csp);
+  return res;
 }
 
 // Everything except static build assets (those are immutable and host-independent).
