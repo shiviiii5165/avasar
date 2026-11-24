@@ -34,3 +34,15 @@ export function sameOrigin(request: Request): boolean {
 export function apiError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
 }
+
+/**
+ * Content-Disposition for a user-supplied file name: an ASCII fallback plus the RFC 6266/5987 UTF-8 form, so
+ * names in Hindi or any other script download correctly (a raw non-Latin-1 name makes the header throw), and
+ * quotes, backslashes and control characters can never break out of the header.
+ */
+export function contentDisposition(type: "inline" | "attachment", name: string): string {
+  const clean = name.replace(/[\u0000-\u001f\u007f"\\/]/g, "").trim().slice(0, 150) || "document";
+  const ascii = clean.replace(/[^\x20-\x7e]/g, "_");
+  const encoded = encodeURIComponent(clean).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}

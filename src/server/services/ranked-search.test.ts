@@ -5,8 +5,8 @@ import { createMemoryDb, type Db } from "../db/client";
 import { opportunities } from "../db/schema";
 import { upsertIdentity } from "../auth/identity";
 import { rankForBrowse } from "../domain/recommend";
-import type { CandidateFacts } from "../domain/types";
-import { candidateFactsFor } from "./candidate-context";
+import type { Matcher } from "../intelligence/canonical-match";
+import { matcherFor } from "./candidate-context";
 import { createOpportunity, listOpenOpportunities, PAGE_SIZE, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "./opportunities";
 import { ensureProfile, replaceSkills } from "./profiles";
 
@@ -15,7 +15,7 @@ import { ensureProfile, replaceSkills } from "./profiles";
  * skill the candidate lacks; the OLDEST asks for one they have, so by date it is alone on page 2.
  */
 let db: Db;
-let facts: CandidateFacts;
+let facts: Matcher;
 const rank = (list: OpportunityFull[]) => rankForBrowse(facts, list.map((o) => ({ id: o.id, item: o, facts: toFacts(o) }))).map((r) => r.item);
 
 async function publish(title: string, opts: { skill: string; daysAgo: number; educationLevels?: ("bachelors" | "masters")[] }, adminId: string) {
@@ -42,7 +42,7 @@ beforeAll(async () => {
   const cand = await upsertIdentity(db, { provider: "dev", subject: "rank-cand", email: null, emailVerified: false, name: "Cand" });
   const profile = await ensureProfile(db, cand.id, "Cand");
   await replaceSkills(db, profile!.id, ["Rust"]);
-  facts = (await candidateFactsFor(db, profile!.id))!;
+  facts = (await matcherFor(db, profile!.id))!;
 });
 
 describe("best-match ranking across pages", () => {

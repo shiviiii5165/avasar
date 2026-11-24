@@ -9,11 +9,11 @@ import { EligibilityPanel } from "@/components/opportunity/fit-panel";
 import { Badge, buttonClass, Card, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
-import { matchOpportunity } from "@/server/domain/matching";
 import { EDUCATION_LEVELS, requirementQuestions } from "@/server/domain/requirements";
 import { CONSENT_TEXT, listApplicationsForProfile } from "@/server/services/applications";
 import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
-import { loadProfile, toCandidateFacts } from "@/server/services/profiles";
+import { matcherForProfile } from "@/server/services/career";
+import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Apply" };
 
@@ -29,7 +29,7 @@ export default async function ApplyPage({ params }: { params: Promise<{ slug: st
   if (existing) {
     return <StateMessage kind="empty" title="You've already applied" body="You can follow its progress from your applications." action={<Link href={`/app/applications/${existing.application.id}`} className={buttonClass("primary")}>View application</Link>} />;
   }
-  const match = matchOpportunity(toCandidateFacts(profile), toFacts(o));
+  const match = (await matcherForProfile(db, profile))!(toFacts(o));
   const p = profile.profile;
   // Ask only for what this opportunity's hard requirements need and the profile doesn't say (unknown, not failed).
   const ask = new Set(requirementQuestions(match.eligibility));

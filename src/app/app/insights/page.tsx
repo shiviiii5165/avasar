@@ -5,7 +5,8 @@ import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { matchAll } from "@/server/services/candidate-context";
 import { listOpenOpportunities } from "@/server/services/opportunities";
-import { loadProfile, toCandidateFacts } from "@/server/services/profiles";
+import { matcherForProfile } from "@/server/services/career";
+import { loadProfile } from "@/server/services/profiles";
 import { duplicateSkills, roadmap, suggestRoles } from "@/server/domain/career";
 
 export const metadata = { title: "Career insights" };
@@ -20,7 +21,7 @@ export default async function InsightsPage() {
   // Every open listing, not one search page: the counts below must cover all of them.
   const [profile, open] = await Promise.all([loadProfile(db, session.profileId), listOpenOpportunities(db)]);
   // Derived from the profile already loaded above (it used to be loaded a second time, after everything else).
-  const facts = profile ? toCandidateFacts(profile) : null;
+  const facts = await matcherForProfile(db, profile ?? null);
   const matches = matchAll(facts, open);
   const prefs = profile!.profile.preferredCategories;
   const relevant = open.filter((o) => !prefs.length || prefs.includes(o.category));

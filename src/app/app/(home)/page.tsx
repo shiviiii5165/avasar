@@ -15,7 +15,8 @@ import { listSaved } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
 import { listOpenOpportunities, toFacts } from "@/server/services/opportunities";
 import { recommend } from "@/server/domain/recommend";
-import { loadProfile, toCandidateFacts } from "@/server/services/profiles";
+import { matcherForProfile } from "@/server/services/career";
+import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Home" };
 
@@ -32,7 +33,7 @@ export default async function CandidateHome() {
   ]);
   if (!profile) notFound();
   // Derived from the profile already loaded above (it used to be loaded a second time, after everything else).
-  const facts = toCandidateFacts(profile);
+  const facts = await matcherForProfile(db, profile);
   const matches = matchAll(facts, open);
   const applied = new Set(apps.map((a) => a.opportunity.id));
   const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: applied }) : { picks: [], limited: true };

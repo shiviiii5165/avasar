@@ -36,7 +36,8 @@ export interface OpportunityFacts {
   deadline: Date | null;
   startDate: string | null;
   experienceMinYears: number | null;
-  skills: { name: string; required: boolean }[];
+  /** origin "text_mentioned": found in the description only (inferred), never a stated requirement. */
+  skills: { name: string; required: boolean; origin?: "listed" | "text_mentioned" }[];
   eligibility: {
     educationLevels: EducationLevel[] | null;
     graduationYearMin: number | null;

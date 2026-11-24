@@ -28,11 +28,16 @@ function compare<T>(a: Ranked<T> & { deadline: Date | null }, b: Ranked<T> & { d
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-function score<T>(candidate: CandidateFacts, items: Candidate<T>[], now: Date) {
-  return items.map((c) => ({ item: c.item, id: c.id, deadline: c.facts.deadline, match: matchOpportunity(candidate, c.facts, undefined, now) }));
+/** Pages pass the canonical matcher (intelligence/canonical-match.ts); bare facts are kept for the pure unit tests. */
+export type MatchFn = (opp: OpportunityFacts, now?: Date) => MatchResult;
+type Scorer = CandidateFacts | MatchFn;
+
+function score<T>(candidate: Scorer, items: Candidate<T>[], now: Date) {
+  const match: MatchFn = typeof candidate === "function" ? candidate : (o, n) => matchOpportunity(candidate, o, undefined, n);
+  return items.map((c) => ({ item: c.item, id: c.id, deadline: c.facts.deadline, match: match(c.facts, now) }));
 }
 
-export function recommend<T>(candidate: CandidateFacts, items: Candidate<T>[], opts: { limit?: number; exclude?: Set<string>; now?: Date } = {}): { picks: Ranked<T>[]; limited: boolean } {
+export function recommend<T>(candidate: Scorer, items: Candidate<T>[], opts: { limit?: number; exclude?: Set<string>; now?: Date } = {}): { picks: Ranked<T>[]; limited: boolean } {
   const now = opts.now ?? new Date();
   const scored = score(candidate, items, now);
   const closed = (m: MatchResult) => m.eligibility.status === "unavailable" || m.eligibility.checks.some((c) => c.key === "deadline" && c.outcome === "fail");
@@ -47,7 +52,7 @@ export function recommend<T>(candidate: CandidateFacts, items: Candidate<T>[], o
 }
 
 /** Full personalized order for browsing: everything stays visible; only failed or closed listings sink. */
-export function rankForBrowse<T>(candidate: CandidateFacts, items: Candidate<T>[], now = new Date()): Ranked<T>[] {
+export function rankForBrowse<T>(candidate: Scorer, items: Candidate<T>[], now = new Date()): Ranked<T>[] {
   return score(candidate, items, now)
     .sort((a, b) => Number(excluded(a.match)) - Number(excluded(b.match)) || compare(a, b))
     .map(({ item, id, match }) => ({ item, id, match }));

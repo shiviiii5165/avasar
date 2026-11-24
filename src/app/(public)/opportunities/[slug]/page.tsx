@@ -13,8 +13,7 @@ import { getSession } from "@/server/auth/session";
 import { describeDetails } from "@/server/domain/categories";
 import { getDb } from "@/server/db/client";
 import { evaluateEligibility } from "@/server/domain/eligibility";
-import { matchOpportunity } from "@/server/domain/matching";
-import { candidateFactsFor } from "@/server/services/candidate-context";
+import { matcherFor } from "@/server/services/candidate-context";
 import { recordView, savedIds, toggleSaved } from "@/server/services/engagement";
 import { getOpportunityBySlug, similarOpportunities, toFacts } from "@/server/services/opportunities";
 
@@ -38,9 +37,9 @@ export default async function OpportunityPage({ params, searchParams }: { params
   const o = await getOpportunityBySlug(db, slug);
   if (!o) notFound();
   const session = await getSession();
-  const facts = await candidateFactsFor(db, session?.profileId ?? null);
+  const matcher = await matcherFor(db, session?.profileId ?? null);
   const oppFacts = toFacts(o);
-  const match = facts ? matchOpportunity(facts, oppFacts) : null;
+  const match = matcher ? matcher(oppFacts) : null;
   const eligibility = match?.eligibility ?? evaluateEligibility(null, oppFacts);
   let saved = session ? (await savedIds(db, session.identity.id)).has(o.id) : false;
   // Save-after-sign-in: a signed-out "Save" returns here with intent=save. Saving is idempotent (never un-saves).

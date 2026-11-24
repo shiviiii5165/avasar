@@ -9,7 +9,7 @@ import { discoveryFamilies } from "@/server/services/ingestion";
 import { buttonClass, StateMessage } from "@/components/ui";
 import { getSession } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
-import { candidateFactsFor, matchAll } from "@/server/services/candidate-context";
+import { matchAll, matcherFor } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
 import { liveCategories, searchOpportunities, searchSchema } from "@/server/services/opportunities";
 
@@ -36,7 +36,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
     );
   }
 
-  const facts = await candidateFactsFor(db, session?.profileId ?? null);
+  const facts = await matcherFor(db, session?.profileId ?? null);
   const matches = matchAll(facts, result.items);
   const saved = session ? await savedIds(db, session.identity.id) : new Set<string>();
   const families = await discoveryFamilies(db).catch(() => new Set<string>());

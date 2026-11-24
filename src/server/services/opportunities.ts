@@ -193,7 +193,7 @@ export function toFacts(o: OpportunityFull): OpportunityFacts {
     deadline: o.deadline,
     startDate: o.startDate,
     experienceMinYears: o.experienceMinYears,
-    skills: o.skills.map((s) => ({ name: s.name, required: s.required })),
+    skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin === "text_mentioned" ? "text_mentioned" : "listed" })),
     eligibility: e
       ? {
           educationLevels: (e.educationLevels as EducationLevel[] | null) ?? null,

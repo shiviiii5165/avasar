@@ -15,7 +15,9 @@ import type { CandidateFacts, OpportunityFacts } from "./types";
 export type Factor = "skills" | "education" | "experience" | "location" | "workMode" | "preferences";
 export const DEFAULT_WEIGHTS: Record<Factor, number> = { skills: 0.3, education: 0.2, experience: 0.15, location: 0.15, workMode: 0.1, preferences: 0.1 };
 
-export interface FactorResult { factor: Factor; assessed: boolean; value: number; note: string }
+/** Canonical (career-match) score components; see intelligence/canonical-match.ts. */
+export type CanonicalFeature = "skillFit" | "roleAlignment" | "personalFit";
+export interface FactorResult { factor: Factor | CanonicalFeature; assessed: boolean; value: number; note: string }
 
 export interface MatchResult {
   /** 0-100 relative relevance over assessed factors. Not a probability of being hired. */
@@ -31,6 +33,10 @@ export interface MatchResult {
   reasons: string[];
   nextActions: string[];
   eligibility: EligibilityResult;
+  /** Set by the canonical matcher: scoring version, per-requirement verdicts with provenance, and explanations. */
+  version?: string;
+  skillVerdicts?: { requirement: string; importance: "required" | "preferred" | "mentioned"; supportedBy: { name: string; state: string; relation: string } | null; development: string }[];
+  explanations?: { kind: "observed" | "inferred" | "unknown"; text: string }[];
 }
 
 const lc = (s: string) => s.trim().toLowerCase();
@@ -122,9 +128,9 @@ export function matchOpportunity(candidate: CandidateFacts, opp: OpportunityFact
   } else factors.push({ factor: "preferences", assessed: false, value: 0, note: "Set your career preferences" });
 
   const assessed = factors.filter((f) => f.assessed);
-  const assessedWeight = assessed.reduce((s, f) => s + weights[f.factor], 0);
+  const assessedWeight = assessed.reduce((s, f) => s + weights[f.factor as Factor], 0);
   const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
-  const score = assessedWeight ? Math.round((assessed.reduce((s, f) => s + weights[f.factor] * f.value, 0) / assessedWeight) * 100) : null;
+  const score = assessedWeight ? Math.round((assessed.reduce((s, f) => s + weights[f.factor as Factor] * f.value, 0) / assessedWeight) * 100) : null;
 
   const backed = matching.map((m) => have.get(normalizeSkill(m))!).filter((s) => s.evidenceCount > 0).length;
   const evidence = !matching.length ? "none" : backed / matching.length >= 0.66 ? "high" : backed > 0 ? "medium" : "low";

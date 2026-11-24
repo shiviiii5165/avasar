@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { secretMatches } from "./http";
+import { contentDisposition, secretMatches } from "./http";
 
 describe("secretMatches (health token and other shared secrets)", () => {
   it("matches only the exact secret", () => {
@@ -20,5 +20,20 @@ describe("secretMatches (health token and other shared secrets)", () => {
     const given = "é".repeat(token.length); // equal string length, twice the UTF-8 length
     expect(() => secretMatches(given, token)).not.toThrow();
     expect(secretMatches(given, token)).toBe(false);
+  });
+});
+
+describe("contentDisposition", () => {
+  it("keeps non-Latin names usable and the header valid", () => {
+    const v = contentDisposition("inline", "बायोडाटा.pdf");
+    expect(() => new Headers({ "content-disposition": v })).not.toThrow();
+    expect(v).toContain("filename*=UTF-8''%E0%A4");
+  });
+
+  it("cannot be used to inject header content", () => {
+    const v = contentDisposition("attachment", 'a"; x=1\r\nSet-Cookie: s=1\\.pdf');
+    expect(v).not.toMatch(/[\r\n]/);
+    expect(v.match(/"/g)).toHaveLength(2);
+    expect(() => new Headers({ "content-disposition": v })).not.toThrow();
   });
 });

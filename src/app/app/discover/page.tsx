@@ -8,12 +8,13 @@ import { buttonClass, inputClass, PageHeader, StateMessage } from "@/components/
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { rankForBrowse, recommend } from "@/server/domain/recommend";
-import type { CandidateFacts } from "@/server/domain/types";
+import type { Matcher } from "@/server/intelligence/canonical-match";
 import { matchAll } from "@/server/services/candidate-context";
 import { savedIds } from "@/server/services/engagement";
 import { categoryDef } from "@/server/domain/categories";
 import { listOpenOpportunities, liveCategories, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "@/server/services/opportunities";
-import { loadProfile, toCandidateFacts } from "@/server/services/profiles";
+import { matcherForProfile } from "@/server/services/career";
+import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Opportunities for you" };
 
@@ -37,13 +38,13 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const query = input.success ? input.data : searchSchema.parse({});
 
   const asCandidates = (list: OpportunityFull[]) => list.map((o) => ({ id: o.id, item: o, facts: toFacts(o) }));
-  const byMatch = (facts: CandidateFacts | null, list: OpportunityFull[]) => (facts ? rankForBrowse(facts, asCandidates(list)).map((r) => r.item) : list);
+  const byMatch = (facts: Matcher | null, list: OpportunityFull[]) => (facts ? rankForBrowse(facts, asCandidates(list)).map((r) => r.item) : list);
   const unfiltered = !query.q && !query.category && FILTER_KEYS.every((k) => query[k] === undefined);
 
   // Everything starts at once (one database round trip per step, not one per loader). The profile is loaded once
   // and its matching facts derived from it, instead of loading the same profile a second time.
   const profileP = loadProfile(db, session.profileId);
-  const factsP = profileP.then((p) => (p ? toCandidateFacts(p) : null));
+  const factsP = profileP.then((p) => matcherForProfile(db, p ?? null));
   // Best match ranks the whole filtered set before paging; date sorts page in the database. With no search or
   // filters, the filtered set IS the open listings loaded below, so it isn't fetched a second time.
   const searchP = uiSort === "match"

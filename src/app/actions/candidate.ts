@@ -15,7 +15,7 @@ import { StorageUnavailableError } from "@/server/storage";
 import { deleteSavedSearch, saveSearch, toggleSaved } from "@/server/services/engagement";
 import { markAllRead, NOTIFICATION_KINDS, setPreference, type NotificationKind } from "@/server/services/notifications";
 import { getOpportunityBySlug, toFacts } from "@/server/services/opportunities";
-import { matchOpportunity } from "@/server/domain/matching";
+import { evaluateEligibility } from "@/server/domain/eligibility";
 import { requirementQuestions, unansweredRequirements } from "@/server/domain/requirements";
 import {
   addSectionItem,
@@ -184,7 +184,8 @@ export async function applyAction(slug: string, _: ActionState, fd: FormData): P
   for (const q of opp.questions) answers[q.key] = String(fd.get(`q_${q.key}`) ?? "").slice(0, 4000);
   const key = z.string().min(10).max(80).catch(randomUUID()).parse(fd.get("idempotencyKey"));
   // Requirement questions are recomputed here from the opportunity and profile; the browser can't choose them.
-  const requiredKeys = requirementQuestions(matchOpportunity(toCandidateFacts(profile), toFacts(opp)).eligibility);
+  // Eligibility is the same rule set every matcher uses (domain/eligibility), evaluated directly here.
+  const requiredKeys = requirementQuestions(evaluateEligibility(toCandidateFacts(profile), toFacts(opp)));
   const req = z
     .object({
       graduationYear: z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number({ message: "Enter a year" }).int().min(1950, "Enter a year between 1950 and 2045").max(2045, "Enter a year between 1950 and 2045").optional()),

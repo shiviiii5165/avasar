@@ -8,6 +8,7 @@ import type { Db } from "../db/client";
 import { candidateProfiles, candidateSkills, experiences, learningEvidence, skillEvidence } from "../db/schema";
 import { careerMatch, rankCareerMatches, roleReadiness, type CareerMatch } from "../intelligence/career-match";
 import { buildSkillProfile, collectEvidence, type EvidenceType, type SkillProfileEntry } from "../intelligence/evidence";
+import { matcherFor, type Matcher, type MatchInput } from "../intelligence/canonical-match";
 import { registry } from "../intelligence/registry";
 import { listOpenOpportunities, toFacts, type OpportunityFull } from "./opportunities";
 import { loadProfile, toCandidateFacts, type LoadedProfile } from "./profiles";
@@ -60,17 +61,36 @@ export interface CareerIntelligence {
   aitLearnUrl: string | null;
 }
 
+/**
+ * The ONE input every page matches with: matching facts, the evidence-based skill profile (after the student's
+ * exclusions) and target roles. Pages build their matcher from this (matcherFor), so scores agree everywhere.
+ */
+export async function matchInputFor(db: Db, p: LoadedProfile, now = new Date()): Promise<{ input: MatchInput; learning: (typeof learningEvidence.$inferSelect)[] }> {
+  const { items, learning } = await loadEvidence(db, p);
+  const ait = p.profile.aitInsights;
+  return {
+    input: {
+      facts: toCandidateFacts(p),
+      profile: buildSkillProfile(items, registry(), { now, excluded: p.profile.excludedEvidenceTypes }),
+      targetRoles: [...new Set([...p.profile.preferredRoles, ...(ait.goals?.targetRole ? [ait.goals.targetRole] : [])])],
+    },
+    learning,
+  };
+}
+
+/** Matcher for a loaded profile (null when there is none: signed out). */
+export async function matcherForProfile(db: Db, p: LoadedProfile | null, now = new Date()): Promise<Matcher | null> {
+  return p ? matcherFor(registry(), (await matchInputFor(db, p, now)).input) : null;
+}
+
 /** Everything the career dashboard shows, for the signed-in student's OWN profile only (profileId comes from the session). */
 export async function careerIntelligence(db: Db, profileId: string, now = new Date()): Promise<CareerIntelligence | null> {
   const [p, open] = await Promise.all([loadProfile(db, profileId), listOpenOpportunities(db, undefined, now)]);
   if (!p) return null;
   const reg = registry();
-  const { items, learning } = await loadEvidence(db, p);
+  const { input, learning } = await matchInputFor(db, p, now);
   const excluded = p.profile.excludedEvidenceTypes;
-  const skills = buildSkillProfile(items, reg, { now, excluded });
-  const facts = toCandidateFacts(p);
-  const ait = p.profile.aitInsights;
-  const targetRoles = [...new Set([...p.profile.preferredRoles, ...(ait.goals?.targetRole ? [ait.goals.targetRole] : [])])];
+  const { facts, profile: skills, targetRoles } = input;
 
   const scored = open.map((o) => ({ id: o.id, deadline: o.deadline, o, match: careerMatch(reg, facts, skills, { ...toFacts(o), skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin })) }, { targetRoles, now }) }));
   const recommendations = rankCareerMatches(scored, 8).map(({ o, match }) => ({ o, match }));

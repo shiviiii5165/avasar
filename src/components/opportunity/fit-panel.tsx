@@ -6,7 +6,7 @@ import { ELIGIBILITY_LABEL, type EligibilityResult } from "@/server/domain/eligi
 import type { MatchResult } from "@/server/domain/matching";
 
 const STATUS_TONE = { eligible: "success", ineligible: "danger", potentially_eligible: "warning", insufficient_information: "neutral", unavailable: "neutral" } as const;
-const FACTOR_LABEL = { skills: "Skills", education: "Education", experience: "Experience", location: "Location", workMode: "Work mode", preferences: "Preferences" } as const;
+const FACTOR_LABEL = { skills: "Skills", education: "Education", experience: "Experience", location: "Location", workMode: "Work mode", preferences: "Preferences", skillFit: "Skill fit", roleAlignment: "Target role", personalFit: "Your preferences" } as const;
 
 export function EligibilityPanel({ result }: { result: EligibilityResult }) {
   return (

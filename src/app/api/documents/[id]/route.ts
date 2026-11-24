@@ -1,7 +1,7 @@
 import { getSession } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { can } from "@/server/domain/permissions";
-import { apiError } from "@/server/http";
+import { apiError, contentDisposition } from "@/server/http";
 import { readDocumentForViewer, verifyDocumentSignature } from "@/server/services/documents";
 import { employerMayViewDocument } from "@/server/services/employer";
 
@@ -23,7 +23,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   return new Response(new Uint8Array(found.bytes), {
     headers: {
       "content-type": found.doc.mimeType,
-      "content-disposition": `inline; filename="${found.doc.originalName.replace(/"/g, "")}"`,
+      "content-disposition": contentDisposition("inline", found.doc.originalName),
       "cache-control": "private, no-store",
       "x-content-type-options": "nosniff",
     },
