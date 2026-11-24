@@ -292,6 +292,8 @@ test.describe("other sections", () => {
 
     await page.goto("/app/discover?q=pytorch");
     await page.getByRole("link", { name: /Machine Learning Intern/ }).last().click();
+    // Discover's recommendations have their own Save buttons: wait for the listing page before picking its button.
+    await page.waitForURL(/\/opportunities\/[^/?#]+$/);
     const save = page.locator("button[aria-pressed]");
     await expect(save).toHaveAttribute("aria-pressed", "false");
     await save.click();
@@ -303,6 +305,7 @@ test.describe("other sections", () => {
     await expect(page.getByRole("heading", { level: 3, name: /Machine Learning Intern/ })).toBeVisible();
 
     await page.getByRole("link", { name: /Machine Learning Intern/ }).first().click();
+    await page.waitForURL(/\/opportunities\/[^/?#]+$/);
     await page.locator("button[aria-pressed]").click();
     await expect(page.locator("button[aria-pressed]")).toHaveAttribute("aria-pressed", "false");
     await expect(page.locator("button[aria-pressed]")).toBeEnabled();
