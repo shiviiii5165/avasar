@@ -75,7 +75,19 @@ export async function setDismissed(db: Db, identityId: string, opportunityId: st
   await db.insert(dismissedOpportunities).values({ identityId, opportunityId }).onConflictDoNothing();
 }
 
+/** Postgres "undefined_table": migration 0012 not applied yet on this database. */
+export const isMissingTable = (err: unknown) => {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === "42P01" || e?.cause?.code === "42P01";
+};
+
 export async function dismissedIds(db: Db, identityId: string): Promise<Set<string>> {
-  const rows = await db.select({ id: dismissedOpportunities.opportunityId }).from(dismissedOpportunities).where(eq(dismissedOpportunities.identityId, identityId));
-  return new Set(rows.map((r) => r.id));
+  try {
+    const rows = await db.select({ id: dismissedOpportunities.opportunityId }).from(dismissedOpportunities).where(eq(dismissedOpportunities.identityId, identityId));
+    return new Set(rows.map((r) => r.id));
+  } catch (err) {
+    // Deployed before migration 0012: nothing can have been dismissed yet, so pages keep working.
+    if (isMissingTable(err)) return new Set();
+    throw err;
+  }
 }

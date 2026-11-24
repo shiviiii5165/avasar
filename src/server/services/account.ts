@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { audit } from "../audit";
 import type { Db } from "../db/client";
 import { adminRoles, analyticsEvents, dismissedOpportunities, notificationPreferences, notifications, recentlyViewed, savedOpportunities, savedSearches, sessions, userIdentities } from "../db/schema";
+import { isMissingTable } from "./engagement";
 import { eraseCandidateData } from "./profiles";
 
 /**
@@ -25,9 +26,13 @@ export async function deleteCandidateAccount(
     await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.identityId, input.identityId));
     // Personal activity tied to the account (searches can hold what the student typed). Removed, not kept on the
     // minimized row. Admin roles go too. Organization memberships stay so an organization is never left ownerless.
-    for (const t of [savedOpportunities, dismissedOpportunities, savedSearches, recentlyViewed, notifications, notificationPreferences, adminRoles]) {
+    for (const t of [savedOpportunities, savedSearches, recentlyViewed, notifications, notificationPreferences, adminRoles]) {
       await tx.delete(t).where(eq(t.identityId, input.identityId));
     }
+    // In a savepoint: before migration 0012 the table doesn't exist, and that must not abort the deletion.
+    await tx.transaction((sp) => sp.delete(dismissedOpportunities).where(eq(dismissedOpportunities.identityId, input.identityId))).catch((err) => {
+      if (!isMissingTable(err)) throw err;
+    });
     await tx.update(analyticsEvents).set({ identityId: null }).where(eq(analyticsEvents.identityId, input.identityId));
     await audit(tx, {
       actorId: input.actor.id,

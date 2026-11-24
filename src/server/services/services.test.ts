@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { createMemoryDb, type Db } from "../db/client";
 import { adminRoles, applicationEvents, applications, auditLogs, dismissedOpportunities, jobs, notifications, opportunities, opportunitySources, savedOpportunities, savedSearches, userIdentities } from "../db/schema";
@@ -200,6 +200,16 @@ describe("saved and jobs", () => {
     if (draft) await expect(setDismissed(db, candidateId, draft.id, true)).rejects.toThrow("NOT_FOUND");
   });
 
+  it("keeps working before migration 0012 is applied (no dismissed_opportunities table)", async () => {
+    const old = await createMemoryDb();
+    await old.execute(sql`drop table dismissed_opportunities`);
+    const u = await upsertIdentity(old, { provider: "ai_tathastu", subject: "pre-0012", email: null, emailVerified: false, name: null });
+    const p = await ensureProfile(old, u.id, "Pre");
+    expect((await dismissedIds(old, u.id)).size).toBe(0);
+    await deleteCandidateAccount(old, { identityId: u.id, profileId: p!.id, actor: { id: u.id, role: "candidate" }, reason: "test" });
+    const [row] = await old.select().from(userIdentities).where(eq(userIdentities.id, u.id));
+    expect(row!.deletedAt).not.toBeNull();
+  });
   it("account deletion erases saved, dismissed, searches, notifications and roles tied to the account", async () => {
     const opp = await internal();
     const gone = await upsertIdentity(db, { provider: "ai_tathastu", subject: "erase-me", email: "erase@example.invalid", emailVerified: true, name: "Erase Me" });
