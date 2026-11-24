@@ -41,6 +41,8 @@ export const opportunityCategory = pgEnum("opportunity_category", [
   // Extensible categories (later releases). Each has its own fields in `details` and its own flow.
   "hackathon", "competition", "scholarship", "fellowship", "research", "entrepreneurship", "startup_program",
   "academic_project", "professional_project",
+  // Appended last: PostgreSQL enum values can only be added, never reordered.
+  "apprenticeship",
 ]);
 export const employmentType = pgEnum("employment_type", ["full_time", "part_time", "temporary", "contract"]);
 export const opportunityStatus = pgEnum("opportunity_status", ["draft", "imported", "in_review", "approved", "published", "paused", "closed", "expired", "rejected", "suspended"]);
@@ -159,6 +161,8 @@ export const candidateProfiles = pgTable("candidate_profiles", {
   importedFields: jsonb("imported_fields").$type<Record<string, string>>().notNull().default({}),
   /** AI Tathastu intelligence signals (verified skills, readiness, goals, activity, onboarding academics); replaced on every sync. */
   aitInsights: jsonb("ait_insights").$type<Partial<import("../integrations/tathastu-profile").TathastuInsights>>().notNull().default({}),
+  /** Evidence types the student excluded from their career profile (e.g. ["ait_learning"]). Student-controlled only. */
+  excludedEvidenceTypes: text("excluded_evidence_types").array().notNull().default(sql`'{}'::text[]`),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("candidate_profiles_identity").on(t.identityId)]);
@@ -350,7 +354,42 @@ export const opportunitySources = pgTable("opportunity_sources", {
   active: boolean("active").notNull().default(true),
   lastImportAt: timestamp("last_import_at", { withTimezone: true }),
   createdAt: createdAt(),
-});
+  // ── Source registry (0011). A source with an adapter has `adapterKey`; manual sources leave it null. ──
+  adapterKey: text("adapter_key"),
+  /** unreviewed | approved_collection | approved_display | disabled. Only a person can change it (audited, with evidence). */
+  permissionStatus: text("permission_status").$type<SourcePermission>().notNull().default("unreviewed"),
+  permissionEvidence: text("permission_evidence"),
+  permissionReviewedBy: uuid("permission_reviewed_by").references(() => userIdentities.id),
+  permissionReviewedAt: timestamp("permission_reviewed_at", { withTimezone: true }),
+  /** Official/primary (government portal, employer's own site) vs third-party aggregator. */
+  authority: text("authority").$type<"official" | "employer" | "third_party" | "manual">().notNull().default("manual"),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+}, (t) => [uniqueIndex("opportunity_sources_adapter").on(t.adapterKey)]);
+
+export type SourcePermission = "unreviewed" | "approved_collection" | "approved_display" | "disabled";
+
+/** One row per ingestion attempt of a source: what was collected, accepted, rejected and why it stopped. */
+export const ingestionRuns = pgTable("ingestion_runs", {
+  id: id(),
+  sourceId: uuid("source_id").notNull().references(() => opportunitySources.id, { onDelete: "cascade" }),
+  trigger: text("trigger").notNull(), // schedule | manual
+  status: text("status").$type<"running" | "succeeded" | "partial" | "failed" | "skipped">().notNull().default("running"),
+  collected: integer("collected").notNull().default(0),
+  created: integer("created").notNull().default(0),
+  updated: integer("updated").notNull().default(0),
+  unchanged: integer("unchanged").notNull().default(0),
+  duplicates: integer("duplicates").notNull().default(0),
+  rejected: integer("rejected").notNull().default(0),
+  markedStale: integer("marked_stale").notNull().default(0),
+  error: text("error"),
+  startedAt: createdAt(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (t) => [index("ingestion_runs_source").on(t.sourceId, t.startedAt)]);
 
 export const opportunities = pgTable("opportunities", {
   id: id(),
@@ -391,6 +430,23 @@ export const opportunities = pgTable("opportunities", {
   lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
   /** Seeded demonstration data: always labelled in the UI, never counted in metrics. */
   isSample: boolean("is_sample").notNull().default(false),
+  // ── Provenance, verification and freshness (0011). Unknown stays null; nothing is guessed. ──
+  /** unverified | source_confirmed | employer_confirmed | verified | expired | rejected. Changed only with evidence (verification_events). */
+  verificationState: text("verification_state").$type<OpportunityVerificationState>().notNull().default("unverified"),
+  sourceRecordId: text("source_record_id"),
+  /** SHA-256 of the normalized title, employer, locations and description: detects content changes and duplicates. */
+  contentFingerprint: text("content_fingerprint"),
+  postedAt: timestamp("posted_at", { withTimezone: true }),
+  firstCollectedAt: timestamp("first_collected_at", { withTimezone: true }),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+  /** Set when no source listed it in a successful run; cleared when it reappears. Expiry follows docs/INGESTION.md. */
+  staleSince: timestamp("stale_since", { withTimezone: true }),
+  /** Requirement text exactly as the source stated it (shown, never interpreted as a hard rule unless structured). */
+  educationRequirementText: text("education_requirement_text"),
+  eligibilityText: text("eligibility_text"),
+  /** Heuristic flags raised on untrusted source text (e.g. instruction-like phrases); reviewed by an admin. */
+  contentFlags: text("content_flags").array().notNull().default(sql`'{}'::text[]`),
   version: integer("version").notNull().default(1),
   createdBy: uuid("created_by").references(() => userIdentities.id),
   publishedAt: timestamp("published_at", { withTimezone: true }),
@@ -400,14 +456,128 @@ export const opportunities = pgTable("opportunities", {
   uniqueIndex("opportunities_slug").on(t.slug),
   index("opportunities_status_deadline").on(t.status, t.deadline),
   index("opportunities_category").on(t.category),
+  index("opportunities_fingerprint").on(t.contentFingerprint),
 ]);
+
+export type OpportunityVerificationState = "unverified" | "source_confirmed" | "employer_confirmed" | "verified" | "expired" | "rejected";
 
 export const opportunitySkills = pgTable("opportunity_skills", {
   opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   normalized: text("normalized").notNull(),
   required: boolean("required").notNull().default(true),
+  /** listed: the source/employer named it as a skill. text_mentioned: found verbatim in the description (never marked required). */
+  origin: text("origin").$type<"listed" | "text_mentioned">().notNull().default("listed"),
+  /** Canonical skill concept (skill_concepts.id) when the name resolves to one. */
+  conceptId: text("concept_id"),
 }, (t) => [primaryKey({ columns: [t.opportunityId, t.normalized] })]);
+
+/** Every source that lists an opportunity. A duplicate from a second source adds a row here instead of a second listing. */
+export const opportunitySourceRefs = pgTable("opportunity_source_refs", {
+  id: id(),
+  opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
+  sourceId: uuid("source_id").notNull().references(() => opportunitySources.id, { onDelete: "cascade" }),
+  sourceRecordId: text("source_record_id").notNull(),
+  sourceUrl: text("source_url"),
+  contentFingerprint: text("content_fingerprint"),
+  /** How the listing was matched to this record: source_record | url | multi_signal | created. */
+  matchedBy: text("matched_by").notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Set when a successful run of this source no longer lists the record. */
+  missingSince: timestamp("missing_since", { withTimezone: true }),
+}, (t) => [uniqueIndex("opportunity_source_refs_record").on(t.sourceId, t.sourceRecordId), index("opportunity_source_refs_opp").on(t.opportunityId)]);
+
+/**
+ * Append-only verification history for opportunities, organizations and sources. A badge is shown only
+ * from a state reached through one of these rows (evidence, reviewer, time and reason are kept).
+ */
+export const verificationEvents = pgTable("verification_events", {
+  id: id(),
+  targetType: text("target_type").$type<"opportunity" | "organization" | "source">().notNull(),
+  targetId: uuid("target_id").notNull(),
+  fromState: text("from_state"),
+  toState: text("to_state").notNull(),
+  /** official_domain | employer_account | authorized_source | employer_confirmation | manual_review | system_expiry | source_listing */
+  evidenceKind: text("evidence_kind").notNull(),
+  evidence: text("evidence"),
+  reason: text("reason"),
+  reviewerIdentityId: uuid("reviewer_identity_id").references(() => userIdentities.id),
+  at: createdAt(),
+}, (t) => [index("verification_events_target").on(t.targetType, t.targetId)]);
+
+// ─── Skill registry & career intelligence (0011) ───────────────────────────
+/**
+ * Canonical skills. `taxonomySource` says where the concept comes from: 'avsar' (curated here) or an external
+ * taxonomy imported with its own URI and version (ESCO, O*NET). A URI is never invented for a curated concept.
+ */
+export const skillConcepts = pgTable("skill_concepts", {
+  id: text("id").primaryKey(), // stable slug, e.g. "python"
+  displayName: text("display_name").notNull(),
+  category: text("category").notNull(),
+  parentId: text("parent_id"),
+  taxonomySource: text("taxonomy_source").notNull().default("avsar"),
+  taxonomyUri: text("taxonomy_uri"),
+  taxonomyVersion: text("taxonomy_version"),
+  createdAt: createdAt(),
+});
+
+/** Alias → concept. The alias is normalized with normalizeSkill, so each spelling resolves once. */
+export const skillAliases = pgTable("skill_aliases", {
+  alias: text("alias").primaryKey(),
+  conceptId: text("concept_id").notNull().references(() => skillConcepts.id, { onDelete: "cascade" }),
+  /** e.g. "en", "en-IN", "hi-Latn": Indian job terminology is kept, mapped only where the meaning is the same. */
+  locale: text("locale").notNull().default("en"),
+});
+
+export const skillRelations = pgTable("skill_relations", {
+  fromId: text("from_id").notNull().references(() => skillConcepts.id, { onDelete: "cascade" }),
+  toId: text("to_id").notNull().references(() => skillConcepts.id, { onDelete: "cascade" }),
+  /** related: overlapping ability (partial credit, labelled). prerequisite: from is usually learned before to. */
+  kind: text("kind").$type<"related" | "prerequisite">().notNull(),
+}, (t) => [primaryKey({ columns: [t.fromId, t.toId, t.kind] })]);
+
+/** Target roles (occupations) and the skills they need. */
+export const roleProfiles = pgTable("role_profiles", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  aliases: text("aliases").array().notNull().default(sql`'{}'::text[]`),
+  taxonomySource: text("taxonomy_source").notNull().default("avsar"),
+  taxonomyUri: text("taxonomy_uri"),
+  taxonomyVersion: text("taxonomy_version"),
+});
+
+export const roleSkills = pgTable("role_skills", {
+  roleId: text("role_id").notNull().references(() => roleProfiles.id, { onDelete: "cascade" }),
+  conceptId: text("concept_id").notNull().references(() => skillConcepts.id, { onDelete: "cascade" }),
+  importance: text("importance").$type<"essential" | "optional">().notNull(),
+}, (t) => [primaryKey({ columns: [t.roleId, t.conceptId] })]);
+
+/**
+ * Structured learning evidence from AI Tathastu (learning.evidence events). Never conversation text: only what
+ * happened (asked / practiced / completed a task / attempted or passed an assessment / demonstrated in a project),
+ * for which skill, when, and a result when one exists. The student can exclude any row from their career profile.
+ */
+export const learningEvidence = pgTable("learning_evidence", {
+  id: id(),
+  profileId: uuid("profile_id").notNull().references(() => candidateProfiles.id, { onDelete: "cascade" }),
+  /** AI Tathastu's id for the activity; unique per profile so a re-delivered event never doubles. */
+  externalId: text("external_id").notNull(),
+  kind: text("kind").$type<LearningEvidenceKind>().notNull(),
+  skillName: text("skill_name").notNull(),
+  conceptId: text("concept_id"),
+  /** Short activity title (e.g. "SQL joins practice set"), at most 120 characters. */
+  title: text("title"),
+  score: integer("score"),
+  maxScore: integer("max_score"),
+  /** Set only when AI Tathastu says a person or a proctored check verified it. */
+  verified: boolean("verified").notNull().default(false),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  receivedAt: createdAt(),
+  includedInProfile: boolean("included_in_profile").notNull().default(true),
+}, (t) => [uniqueIndex("learning_evidence_external").on(t.profileId, t.externalId), index("learning_evidence_profile").on(t.profileId, t.occurredAt)]);
+
+export type LearningEvidenceKind = "asked" | "practiced" | "task_completed" | "assessment_attempted" | "assessment_passed" | "project_demonstrated";
 
 /** Hard requirements. Null = no requirement. Checked by the eligibility engine, never by match score. */
 export const opportunityEligibility = pgTable("opportunity_eligibility", {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  Bell, Bookmark, ChevronsLeft, ChevronsRight, Compass, FileText, HelpCircle, Home, LineChart, Menu, Settings, User, X,
+  Bell, Bookmark, ChevronsLeft, ChevronsRight, Compass, FileText, HelpCircle, Home, LineChart, Menu, Settings, Target, User, X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,6 +23,7 @@ const PRIMARY: Item[] = [
   { href: "/app/profile", label: "Profile", icon: User },
 ];
 const SECONDARY: Item[] = [
+  { href: "/app/career", label: "Career intelligence", icon: Target },
   { href: "/app/insights", label: "Career insights", icon: LineChart },
   { href: "/app/notifications", label: "Notifications", icon: Bell },
   { href: "/app/settings", label: "Settings", icon: Settings },

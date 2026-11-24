@@ -97,3 +97,28 @@ section filtering, real key rotation timing, and that the deployed AI Tathastu m
 `npm run mock:ait` serves the same contract on `http://localhost:3401` (labelled MOCK; client origin `http://localhost:3300`;
 test controls `/__mock/disconnect|reset|share`). Point Avsar at it with `AVSAR_AIT_BASE_URL=http://localhost:3401`,
 `AVSAR_AIT_CLIENT_ID=avsar`, `AVSAR_AIT_CLIENT_SECRET=mock-only-secret`. It is not SSO and must never be configured outside local development.
+
+## Learning evidence (`learning.evidence` webhook) — Avsar side implemented, AI Tathastu side not yet
+
+Same endpoint, signature, replay window and exactly-once delivery as `profile.updated`.
+
+```json
+{ "id": "<delivery id>", "type": "learning.evidence", "createdAt": "…",
+  "data": { "userId": "<AI Tathastu user id>",
+            "events": [ { "id": "<activity id>", "kind": "practiced", "skill": "SQL", "title": "Joins practice set",
+                          "occurredAt": "2026-11-20T10:00:00Z", "score": 40, "maxScore": 50, "verified": false } ] } }
+```
+
+* `kind`: `asked | practiced | task_completed | assessment_attempted | assessment_passed | project_demonstrated`.
+  Anything else (e.g. chat messages) is rejected. At most 100 events per delivery; title ≤ 120 characters.
+  No conversation text or prompts are accepted by the schema.
+* Stored only when the student's AI Tathastu consent includes **`learning`** (`privacy.scopes.learning === true`
+  in the last profile sync). Without it: outcome `ignored_consent`, nothing stored. When a sync arrives without the
+  scope, or the integration is revoked, or the account is deleted, all learning evidence is removed.
+* `verified: true` counts only on `assessment_passed` and `project_demonstrated`.
+* Future-dated events are refused; re-delivered activity ids are stored once.
+
+**Prerequisites on AI Tathastu (not done; outside Avsar):** add a `learning` scope to `SCOPE_COPY` and the consent
+screen; add `learning.evidence` to the webhook outbox (`src/lib/integrations/webhooks.ts`) emitting only structured
+activity records as above. Until then Avsar receives no learning evidence and the career page shows evidence from
+the profile sync only.

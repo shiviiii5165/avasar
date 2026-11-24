@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { audit } from "../audit";
 import type { Db } from "../db/client";
-import { achievements, candidateProfiles, candidateSkills, certifications, education, experiences, projects } from "../db/schema";
+import { achievements, candidateProfiles, candidateSkills, certifications, education, experiences, learningEvidence, projects } from "../db/schema";
 import { mapProjection, projectionSchema, type MappedProfile } from "../integrations/tathastu-profile";
 
 /**
@@ -101,6 +101,8 @@ export async function applyTathastuProfile(db: Db, profileId: string, raw: unkno
         updatedAt: new Date(),
       })
       .where(eq(candidateProfiles.id, profileId));
+    // Learning evidence exists only under the "learning" consent: withdrawn there, it is removed here.
+    if (m.scopes.learning !== true) await tx.delete(learningEvidence).where(eq(learningEvidence.profileId, profileId));
     await audit(tx, { actorId, actorRole: "system", action: "profile.ait_sync", targetType: "profile", targetId: profileId, metadata: { withheld: m.withheld, unconfirmed: m.unconfirmed } });
   });
   return m;
@@ -118,6 +120,7 @@ export async function clearTathastuImport(db: Db, profileId: string, actorId: st
     for (const t of [education, experiences, projects, certifications, achievements, candidateSkills]) {
       await tx.delete(t).where(and(eq(t.profileId, profileId), eq(t.source, "ai_tathastu")));
     }
+    await tx.delete(learningEvidence).where(eq(learningEvidence.profileId, profileId));
     const imported = cur.importedFields ?? {};
     const scrub: Record<string, null> = {};
     for (const f of IDENTITY_FIELDS) if (imported[f] !== undefined && imported[f] === cur[f]) scrub[f] = null;

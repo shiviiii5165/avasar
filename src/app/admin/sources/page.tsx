@@ -1,45 +1,108 @@
-import { addSourceAction, toggleSourceAction } from "@/app/actions/admin";
-import { Denied, Table } from "@/components/admin/denied";
+import { addEmployerCareersSourceAction, addSourceAction, runSourceNowAction, sourcePermissionAction, toggleSourceAction } from "@/app/actions/admin";
+import { Denied } from "@/components/admin/denied";
 import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
 import { Badge, buttonClass, Card, PageHeader } from "@/components/ui";
 import { adminGate } from "@/server/auth/admin-gate";
 import { getDb } from "@/server/db/client";
-import { listSources } from "@/server/services/admin";
+import { ensureSourceRegistry, listSourcesForAdmin, type SourceHealth } from "@/server/services/ingestion";
 
 export const metadata = { title: "Source Manager" };
 
+const HEALTH: Record<SourceHealth, { label: string; tone: "success" | "warning" | "danger" | "neutral" | "purple" }> = {
+  healthy: { label: "Healthy", tone: "success" },
+  degraded: { label: "Recent failure", tone: "warning" },
+  failing: { label: "Failing", tone: "danger" },
+  never_run: { label: "Not run yet", tone: "neutral" },
+  not_configured: { label: "Not configured", tone: "warning" },
+  awaiting_permission: { label: "Awaiting permission review", tone: "neutral" },
+  display_only: { label: "Display/linking only", tone: "purple" },
+  disabled: { label: "Disabled", tone: "neutral" },
+};
+const PERMISSION_LABEL: Record<string, string> = { unreviewed: "Unreviewed", approved_collection: "Approved for collection", approved_display: "Approved for display/linking only", disabled: "Disabled" };
+const when = (d: Date | null | undefined) => (d ? d.toLocaleString("en-IN") : "—");
+
 export default async function SourcesPage() {
   if (!(await adminGate("source.manage"))) return <Denied />;
-  const sources = await listSources(await getDb());
+  const db = await getDb();
+  await ensureSourceRegistry(db); // built-in sources appear unreviewed and switched off; never auto-approved
+  const sources = await listSourcesForAdmin(db);
   return (
     <div className="space-y-6">
-      <PageHeader title="Source Manager" description="Approved places listings come from. Record how each may be used; Avsar never scrapes against a site's terms, access restrictions or rate limits." />
-      <Table head={["Source", "Kind", "Usage terms", "Imports", "Last import", "Status"]} caption="Opportunity sources">
+      <PageHeader title="Source Manager" description="Where listings come from and how each may be used. A source collects only when a person has recorded permission, it is switched on and fully configured. Avsar never bypasses logins, CAPTCHAs, rate limits or a site's terms." />
+      <div className="space-y-4">
         {sources.map((s) => (
-          <tr key={s.id}>
-            <td className="px-4 py-3 font-medium text-navy">{s.name}{s.url && <p className="text-xs text-muted">{s.url}</p>}</td>
-            <td className="px-4 py-3">{s.kind}</td>
-            <td className="max-w-xs px-4 py-3 text-xs text-muted">{s.termsNote}</td>
-            <td className="px-4 py-3 text-xs">{Object.entries(s.imports).map(([k, v]) => `${k}: ${v}`).join(" · ") || "—"}</td>
-            <td className="px-4 py-3 text-muted">{s.lastImportAt?.toLocaleString("en-IN") ?? "Never"}</td>
-            <td className="px-4 py-3">
-              <form action={toggleSourceAction.bind(null, s.id, !s.active)} className="flex items-center gap-2">
-                <Badge tone={s.active ? "success" : "neutral"}>{s.active ? "Active" : "Inactive"}</Badge>
-                <button className={buttonClass("ghost", "sm")}>{s.active ? "Deactivate" : "Activate"}</button>
-              </form>
-            </td>
-          </tr>
+          <Card key={s.id}>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold text-navy">{s.name}</h2>
+              <Badge tone={HEALTH[s.health].tone}>{HEALTH[s.health].label}</Badge>
+              <Badge>{PERMISSION_LABEL[s.permissionStatus] ?? s.permissionStatus}</Badge>
+              <Badge>{s.authority.replace("_", "-")}</Badge>
+              {s.adapter && <Badge tone="purple">{s.adapter.accessMethod.replace(/_/g, " ")}</Badge>}
+            </div>
+            {s.url && <p className="mt-1 text-xs text-muted">{s.url}</p>}
+            <p className="mt-2 text-sm text-ink/80">{s.termsNote}</p>
+            <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
+              <div><dt className="text-muted">Last run</dt><dd>{when(s.lastRunAt)}{s.lastRun ? ` (${s.lastRun.status})` : ""}</dd></div>
+              <div><dt className="text-muted">Next run</dt><dd>{s.permissionStatus === "approved_collection" && s.active ? when(s.nextRunAt) : "Not scheduled"}</dd></div>
+              <div><dt className="text-muted">Last success / failure</dt><dd>{when(s.lastSuccessAt)} / {when(s.lastFailureAt)}</dd></div>
+              <div><dt className="text-muted">Last 20 runs</dt><dd>{s.totals.collected} collected · {s.totals.rejected} rejected · {s.totals.duplicates} duplicates · {s.totals.failures} failed</dd></div>
+            </dl>
+            {s.lastError && <p className="mt-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">Last error: {s.lastError}</p>}
+            {s.adapter && (
+              <details className="mt-3 text-xs">
+                <summary className="cursor-pointer font-semibold text-navy">Adapter details</summary>
+                <p className="mt-2">Types: {s.adapter.supportedTypes.join(", ")} · every {s.adapter.frequencyMinutes ? `${Math.round(s.adapter.frequencyMinutes / 60)} h` : "— (no collection)"} · at most {s.adapter.rateLimit.requestsPerMinute} requests/min, {s.adapter.rateLimit.maxRequestsPerRun} per run</p>
+                <p className="mt-1">{s.adapter.mapping}</p>
+                {s.adapter.config.length > 0 && (
+                  <ul className="mt-1 list-disc pl-5">{s.adapter.config.map((c) => <li key={c.env}><code>{c.env}</code> {c.set ? "(set)" : "(not set)"}{c.secret ? " · secret" : ""}: {c.description}</li>)}</ul>
+                )}
+                {s.missingConfig.length > 0 && <p className="mt-1 text-warning">Missing: {s.missingConfig.join("; ")}</p>}
+              </details>
+            )}
+            {s.permissionEvidence && <p className="mt-2 text-xs text-muted">Permission evidence: {s.permissionEvidence} (recorded {when(s.permissionReviewedAt)})</p>}
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <ActionForm action={sourcePermissionAction.bind(null, s.id)} submitLabel="Record permission" className="rounded-lg border border-line p-3">
+                <Select name="to" label="Permission status" defaultValue={s.permissionStatus}>
+                  <option value="unreviewed">Unreviewed</option>
+                  <option value="approved_collection">Approved for collection</option>
+                  <option value="approved_display">Approved for display/linking only</option>
+                  <option value="disabled">Disabled</option>
+                </Select>
+                <Textarea name="evidence" label="Evidence of permission" hint="Agreement reference, published terms URL and date checked, or the employer's written consent. Required to approve." />
+              </ActionForm>
+              <div className="flex flex-wrap items-start gap-2">
+                <form action={toggleSourceAction.bind(null, s.id, !s.active)}>
+                  <button className={buttonClass("ghost", "sm")}>{s.active ? "Switch off" : "Switch on"}</button>
+                </form>
+                {s.permissionStatus === "approved_collection" && s.active && s.missingConfig.length === 0 && (
+                  <form action={runSourceNowAction.bind(null, s.id)}>
+                    <button className={buttonClass("secondary", "sm")}>Run now</button>
+                  </form>
+                )}
+              </div>
+            </div>
+          </Card>
         ))}
-      </Table>
-      <Card className="max-w-2xl">
-        <h2 className="mb-4 font-semibold text-navy">Add an approved source</h2>
-        <ActionForm action={addSourceAction} submitLabel="Add source" resetOnSuccess>
-          <Input name="name" label="Name" required />
-          <Select name="kind" label="Kind" defaultValue="feed"><option value="manual">Manual</option><option value="feed">Feed (file or URL)</option><option value="api">API</option></Select>
-          <Input name="url" label="URL" type="url" />
-          <Textarea name="termsNote" label="Usage terms and permission" required hint="e.g. Partner agreement dated …, public RSS feed allowed for redistribution, rate limit 1 request/minute." />
-        </ActionForm>
-      </Card>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="mb-4 font-semibold text-navy">Add an employer careers site</h2>
+          <ActionForm action={addEmployerCareersSourceAction} submitLabel="Add careers source" resetOnSuccess>
+            <Input name="name" label="Employer" required />
+            <Input name="url" label="Careers page URL (https)" type="url" required />
+            <Textarea name="termsNote" label="How we may use it" required hint="e.g. Employer agreed by email on …; robots.txt allows /careers." />
+          </ActionForm>
+        </Card>
+        <Card>
+          <h2 className="mb-4 font-semibold text-navy">Add a manual source</h2>
+          <ActionForm action={addSourceAction} submitLabel="Add source" resetOnSuccess>
+            <Input name="name" label="Name" required />
+            <Select name="kind" label="Kind" defaultValue="manual"><option value="manual">Manual</option><option value="feed">Feed (file or URL)</option><option value="api">API</option></Select>
+            <Input name="url" label="URL" type="url" />
+            <Textarea name="termsNote" label="Usage terms and permission" required hint="e.g. Partner agreement dated …, public RSS feed allowed for redistribution, rate limit 1 request/minute." />
+          </ActionForm>
+        </Card>
+      </div>
     </div>
   );
 }

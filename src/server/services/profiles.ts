@@ -5,7 +5,7 @@ import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Db } from "../db/client";
-import { achievements, candidateProfiles, candidateSkills, certifications, documents, education, experiences, projects, resumes, skillEvidence } from "../db/schema";
+import { achievements, candidateProfiles, candidateSkills, certifications, documents, education, experiences, learningEvidence, projects, resumes, skillEvidence } from "../db/schema";
 import { normalizeSkill, parseSkillList } from "../domain/skills";
 import type { CandidateFacts, EducationLevel, SkillLevel, WorkMode } from "../domain/types";
 
@@ -152,6 +152,7 @@ export async function setSkillLevel(db: Db, profileId: string, skillId: string, 
 export async function eraseCandidateData(db: Db, profileId: string): Promise<string[]> {
   return db.transaction(async (tx) => {
     for (const t of [education, experiences, projects, certifications, achievements, candidateSkills]) await tx.delete(t).where(eq(t.profileId, profileId));
+    await tx.delete(learningEvidence).where(eq(learningEvidence.profileId, profileId));
     const docs = await tx.select({ id: documents.id, key: documents.storageKey }).from(resumes).innerJoin(documents, eq(resumes.documentId, documents.id)).where(eq(resumes.profileId, profileId));
     await tx.delete(resumes).where(eq(resumes.profileId, profileId));
     if (docs.length) await tx.update(documents).set({ deletedAt: new Date() }).where(inArray(documents.id, docs.map((d) => d.id)));
@@ -159,7 +160,7 @@ export async function eraseCandidateData(db: Db, profileId: string): Promise<str
       fullName: null, headline: null, bio: null, city: null, region: null, careerStage: null, visibility: "private",
       preferredRoles: [], preferredLocations: [], preferredCategories: [], workModes: [], interests: [],
       expectedCompMin: null, availableFrom: null, hoursPerWeek: null, workAuthorizedIndia: null,
-      linkedinUrl: null, githubUrl: null, portfolioUrl: null, graduationYear: null,
+      linkedinUrl: null, githubUrl: null, portfolioUrl: null, graduationYear: null, excludedEvidenceTypes: [],
       importedFields: {}, aitScopes: {}, aitSyncStatus: "never", aitSyncError: null, aitSyncedAt: null, updatedAt: new Date(),
     }).where(eq(candidateProfiles.id, profileId));
     return docs.map((d) => d.key);

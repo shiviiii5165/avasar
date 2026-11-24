@@ -16,6 +16,7 @@
     "db:backup": "tsx scripts/db-backup.mts backup",
     "db:restore": "tsx scripts/db-backup.mts restore",
     "mock:ait": "tsx scripts/mock-ait.mts",
+    "eval:matching": "tsx scripts/eval-matching.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

@@ -2,15 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 
-import { transitionAction } from "@/app/actions/admin";
+import { opportunityVerificationAction, transitionAction } from "@/app/actions/admin";
 import { Denied } from "@/components/admin/denied";
 import { OpportunityForm } from "@/components/admin/opportunity-form";
-import { ActionForm, Input } from "@/components/forms/action-form";
+import { ActionForm, Input, Select, Textarea } from "@/components/forms/action-form";
 import { SampleBadge } from "@/components/opportunity/opportunity-card";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { adminGate } from "@/server/auth/admin-gate";
 import { getDb } from "@/server/db/client";
-import { auditLogs, opportunityVersions } from "@/server/db/schema";
+import { auditLogs, opportunitySourceRefs, opportunitySources, opportunityVersions, verificationEvents } from "@/server/db/schema";
+import { VERIFICATION_STATE_LABEL } from "@/server/domain/verification";
 import { can, type Permission } from "@/server/domain/permissions";
 import { nextOpportunityStates, publishProblems, type OpportunityStatus } from "@/server/domain/workflows";
 import { getOpportunityById } from "@/server/services/opportunities";
@@ -34,9 +35,11 @@ export default async function AdminOpportunity({ params, searchParams }: { param
   const db = await getDb();
   const o = await getOpportunityById(db, id);
   if (!o) notFound();
-  const [versions, history] = await Promise.all([
+  const [versions, history, refs, vEvents] = await Promise.all([
     db.select().from(opportunityVersions).where(eq(opportunityVersions.opportunityId, id)).orderBy(desc(opportunityVersions.version)).limit(20),
     db.select().from(auditLogs).where(eq(auditLogs.targetId, id)).orderBy(desc(auditLogs.at)).limit(30),
+    db.select({ ref: opportunitySourceRefs, name: opportunitySources.name }).from(opportunitySourceRefs).innerJoin(opportunitySources, eq(opportunitySourceRefs.sourceId, opportunitySources.id)).where(eq(opportunitySourceRefs.opportunityId, id)),
+    db.select().from(verificationEvents).where(eq(verificationEvents.targetId, id)).orderBy(desc(verificationEvents.at)).limit(20),
   ]);
   const problems = publishProblems({ ...o, isImported: Boolean(o.sourceId && o.importedAt) });
   const transitions = nextOpportunityStates(o.status).filter((t) => PERM[t] && can(s.roles, PERM[t]!));
@@ -70,6 +73,36 @@ export default async function AdminOpportunity({ params, searchParams }: { param
           </div>
         ) : (
           <p className="mt-3 text-sm text-muted">No further actions available to your role from this status.</p>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold text-navy">Verification and provenance</h2>
+        <p className="mt-1 text-sm">State: <Badge tone={o.verificationState === "verified" ? "success" : "neutral"}>{VERIFICATION_STATE_LABEL[o.verificationState]}</Badge> <span className="text-xs text-muted">A badge is shown to students only from this state.</span></p>
+        {o.contentFlags.length > 0 && <p role="alert" className="mt-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">Source text flagged: {o.contentFlags.join(", ")}. Treat it as untrusted; edit it out before publishing.</p>}
+        <p className="mt-2 text-xs text-muted">First collected {o.firstCollectedAt?.toLocaleString("en-IN") ?? "—"} · last checked {o.lastCheckedAt?.toLocaleString("en-IN") ?? "—"} · source updated {o.sourceUpdatedAt?.toLocaleString("en-IN") ?? "unknown"}{o.staleSince ? ` · no source has listed it since ${o.staleSince.toLocaleString("en-IN")}` : ""}</p>
+        {refs.length > 0 && (
+          <ul className="mt-2 space-y-1 text-xs">{refs.map((r) => <li key={r.ref.id}>{r.name}: record {r.ref.sourceRecordId} ({r.ref.matchedBy}){r.ref.missingSince ? ` · missing since ${r.ref.missingSince.toLocaleString("en-IN")}` : ""}</li>)}</ul>
+        )}
+        {can(s.roles, "opportunity.publish") && (
+          <ActionForm action={opportunityVerificationAction.bind(null, o.id)} submitLabel="Change verification" className="mt-4 rounded-lg border border-line p-3">
+            <Select name="to" label="New state" defaultValue={o.verificationState}>
+              {Object.entries(VERIFICATION_STATE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+            <Select name="evidenceKind" label="Evidence" defaultValue="manual_review">
+              <option value="manual_review">Manual review</option>
+              <option value="employer_confirmation">Direct employer confirmation</option>
+              <option value="employer_account">Verified employer account</option>
+              <option value="official_domain">Official employer domain</option>
+              <option value="authorized_source">Authorized official source</option>
+              <option value="source_listing">Listed at the source</option>
+            </Select>
+            <Textarea name="evidence" label="Describe the evidence" hint="Who confirmed what, and how. Required for verified, employer-confirmed and rejected." />
+            <Input name="reason" label="Reason (optional)" maxLength={300} />
+          </ActionForm>
+        )}
+        {vEvents.length > 0 && (
+          <ul className="mt-3 space-y-1 text-xs text-muted">{vEvents.map((v) => <li key={v.id}>{v.at.toLocaleString("en-IN")}: {v.fromState ?? "—"} → {v.toState} ({v.evidenceKind}{v.reviewerIdentityId ? ", reviewer" : ", system"}){v.evidence ? `: ${v.evidence}` : ""}</li>)}</ul>
         )}
       </Card>
 
