@@ -127,7 +127,7 @@ export async function clearTathastuImport(db: Db, profileId: string, actorId: st
     const preferredRoles = imported.careerRole ? cur.preferredRoles.filter((r) => r !== imported.careerRole) : cur.preferredRoles;
     await tx
       .update(candidateProfiles)
-      .set({ ...scrub, preferredRoles, importedFields: {}, aitInsights: {}, aitScopes: {}, aitSyncStatus: "never", aitSyncError: null, aitSyncedAt: null, updatedAt: new Date() })
+      .set({ ...scrub, preferredRoles, importedFields: {}, aitInsights: {}, aitScopes: {}, aitSyncStatus: "never", aitSyncError: null, aitSyncedAt: null, aitUnlinkedAt: new Date(), updatedAt: new Date() })
       .where(eq(candidateProfiles.id, profileId));
     await audit(tx, { actorId, actorRole: "system", action: "profile.ait_unlinked", targetType: "profile", targetId: profileId });
   });

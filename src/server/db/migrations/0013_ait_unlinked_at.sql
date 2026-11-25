@@ -1,0 +1,1 @@
+ALTER TABLE "candidate_profiles" ADD COLUMN "ait_unlinked_at" timestamp with time zone;

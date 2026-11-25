@@ -146,6 +146,41 @@ describe("processWebhook (PGlite, real migrations)", () => {
     expect((await identityOf(db, "ait-disc")).deletedAt).toBeNull(); // the account itself stays
   });
 
+  it("tombstone: a delayed or retried profile built before a disconnect is never imported; a newer one is", async () => {
+    const before = new Date(Date.now() - 1000).toISOString();
+    await send(db, updated("ait-tomb"));
+    const id = await identityOf(db, "ait-tomb");
+    expect((await send(db, revoked("ait-tomb", "user_disconnected"))).outcome).toBe("unlinked");
+    const p = await profileOf(db, id.id);
+    expect(p.aitUnlinkedAt).toBeInstanceOf(Date);
+
+    const late = await send(db, updated("ait-tomb", "profile_recomputed", { generatedAt: before }));
+    expect(late).toMatchObject({ outcome: "ignored", action: "IGNORED_BEFORE_UNLINK" });
+    const noDate = updated("ait-tomb", "profile_recomputed");
+    delete (noDate.data.profile as { generatedAt?: string }).generatedAt;
+    expect((await send(db, noDate)).action).toBe("IGNORED_BEFORE_UNLINK");
+    expect(await db.select().from(candidateSkills).where(and(eq(candidateSkills.profileId, p.id), eq(candidateSkills.source, "ai_tathastu")))).toHaveLength(0);
+
+    // A relink on AI Tathastu produces a fresh projection, which is imported.
+    const fresh = await send(db, updated("ait-tomb", "auto_provision", { generatedAt: new Date(Date.now() + 1000).toISOString() }));
+    expect(fresh.outcome).toBe("updated");
+    expect(await db.select().from(candidateSkills).where(and(eq(candidateSkills.profileId, p.id), eq(candidateSkills.source, "ai_tathastu")))).not.toHaveLength(0);
+  });
+
+  it("partial withdrawal: a section now masked is removed; the other shared sections stay", async () => {
+    await send(db, updated("ait-part"));
+    const id = await identityOf(db, "ait-part");
+    const p = await profileOf(db, id.id);
+    const r = await send(db, updated("ait-part", "consent_changed", {
+      generatedAt: new Date(Date.now() + 1000).toISOString(),
+      education: null,
+      privacy: { scopes: { education: false, skills: true }, masked: ["education", "projects", "experience", "achievements"] },
+    }));
+    expect(r.outcome).toBe("updated");
+    expect(await db.select().from(education).where(eq(education.profileId, p.id))).toHaveLength(0);
+    expect(await db.select().from(candidateSkills).where(and(eq(candidateSkills.profileId, p.id), eq(candidateSkills.source, "ai_tathastu")))).not.toHaveLength(0);
+  });
+
   it("account_deleted deletes the Avsar account: data erased, identity minimized, sessions revoked → deleted", async () => {
     await send(db, updated("ait-del"));
     const id = await identityOf(db, "ait-del");

@@ -155,6 +155,8 @@ export const candidateProfiles = pgTable("candidate_profiles", {
   aitSyncedAt: timestamp("ait_synced_at", { withTimezone: true }),
   aitSyncStatus: text("ait_sync_status").$type<"never" | "ok" | "partial" | "failed">().notNull().default("never"),
   aitSyncError: text("ait_sync_error"),
+  /** Tombstone: when AI Tathastu last told Avsar the link ended. A profile generated before it is never imported. */
+  aitUnlinkedAt: timestamp("ait_unlinked_at", { withTimezone: true }),
   /** Sections the student chose to share with Avsar on AI Tathastu's consent screen (privacy.scopes). */
   aitScopes: jsonb("ait_scopes").$type<Record<string, boolean>>().notNull().default({}),
   /** Identity fields last written by the import; a field the student has since edited in Avsar is no longer listed (Avsar edit wins). */

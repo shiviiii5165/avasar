@@ -223,6 +223,11 @@ async function handle(db: Db, type: string, event: Event, subject: string | null
   const profile = await ensureProfile(db, identityId, null);
   // Out-of-order protection: a projection older than what was last imported (by sign-in or an earlier event) is skipped.
   const generatedAt = Date.parse((event.data?.profile as { generatedAt?: string } | undefined)?.generatedAt ?? "");
+  // Tombstone: a disconnect must not be undone by a delayed or retried profile built before it. Without a
+  // readable generatedAt the order can't be proven, so the event is skipped too (the next real change resends it).
+  if (!created && profile.aitUnlinkedAt && (Number.isNaN(generatedAt) || generatedAt <= profile.aitUnlinkedAt.getTime())) {
+    return { status: 200, outcome: "ignored", action: "IGNORED_BEFORE_UNLINK" };
+  }
   if (!created && profile.aitSyncedAt && !Number.isNaN(generatedAt) && generatedAt <= profile.aitSyncedAt.getTime()) {
     return { status: 200, outcome: "up_to_date", action: "IGNORED_STALE" };
   }
