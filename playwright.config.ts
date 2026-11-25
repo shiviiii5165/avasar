@@ -39,6 +39,8 @@ export default defineConfig({
     { name: "career", testMatch: /career\.spec\.ts/, dependencies: ["setup", "desktop", "responsive"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     // Adds and removes Avsar-only education/experience on the development student; runs after the other profile users.
     { name: "profile", testMatch: /(^|[\\/])profile\.spec\.ts$/, dependencies: ["setup", "desktop", "responsive", "career"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
+    // Read-only journey checks (public Explore, redirects, unique counts); runs after the specs that change the student.
+    { name: "discovery", testMatch: /discovery\.spec\.ts/, dependencies: ["setup", "desktop", "responsive", "career", "profile"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     { name: "profile-import-mock", testMatch: /profile-import\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } },
   ],
   webServer: [

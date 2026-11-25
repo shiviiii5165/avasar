@@ -10,8 +10,9 @@ import type { Db } from "../db/client";
 import { adminRoles, candidateProfiles, sessions, userIdentities } from "../db/schema";
 import type { AdminRole } from "../domain/permissions";
 
-export const SESSION_COOKIE = "avsar_session";
-export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+import { SESSION_COOKIE, SESSION_MAX_MS, SESSION_TTL_MS } from "./cookie";
+
+export { SESSION_COOKIE, SESSION_TTL_MS };
 
 export const sha256 = (v: string) => createHash("sha256").update(v).digest("hex");
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString("base64url");
@@ -82,9 +83,11 @@ export async function resolveSession(db: Db, token: string | undefined): Promise
     .where(and(eq(sessions.tokenHash, sha256(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, now)));
   if (!row || row.identity.disabledAt || row.identity.deletedAt) return null;
 
-  // Sliding activity marker, written at most every 10 minutes.
+  // Sliding session, written at most every 10 minutes: activity extends it by SESSION_TTL_MS, never beyond
+  // SESSION_MAX_MS after sign-in (then the student signs in again). The proxy renews the cookie to match.
   if (now.getTime() - row.session.lastSeenAt.getTime() > 10 * 60 * 1000) {
-    await db.update(sessions).set({ lastSeenAt: now }).where(eq(sessions.id, row.session.id));
+    const expiresAt = new Date(Math.min(now.getTime() + SESSION_TTL_MS, row.session.createdAt.getTime() + SESSION_MAX_MS));
+    await db.update(sessions).set({ lastSeenAt: now, expiresAt: expiresAt > row.session.expiresAt ? expiresAt : row.session.expiresAt }).where(eq(sessions.id, row.session.id));
   }
   return { sessionId: row.session.id, identity: row.identity, roles: (row.roles ?? []) as AdminRole[], profileId: row.profileId ?? null };
 }

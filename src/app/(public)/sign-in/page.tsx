@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 
 import { Doorway } from "@/components/brand/doorway";
 import { buttonClass } from "@/components/ui";
+import { SESSION_COOKIE } from "@/server/auth/cookie";
 import { getSession } from "@/server/auth/session";
 import { safeReturnTo } from "@/server/auth/tathastu";
 import { devAuthEnabled, tathastuConfig } from "@/server/config";
@@ -34,6 +36,8 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
   const returnTo = rawReturn ? safeReturnTo(rawReturn) : "/app/discover"; // straight to personalized opportunities
   const session = await getSession();
   if (session) redirect(returnTo);
+  // A session cookie that no longer resolves: the session ended (expired after inactivity, or signed out elsewhere).
+  const ended = !error && Boolean((await cookies()).get(SESSION_COOKIE)?.value);
   const ssoReady = Boolean(tathastuConfig().config);
   const dev = devAuthEnabled();
   const loginHref = `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
@@ -43,6 +47,9 @@ export default async function SignInPage({ searchParams }: { searchParams: SP })
       <div className="mx-auto w-full max-w-md lg:mx-0">
         <h1 className="font-serif text-4xl leading-tight text-navy sm:text-5xl">Sign in to <em className="italic text-orange">Avsar</em></h1>
         <p className="mt-4 text-lg text-navy-soft">Continue with your AI Tathastu account to explore opportunities and manage your applications.</p>
+        {ended && (
+          <p role="status" className="mt-6 rounded-md bg-warning-soft px-4 py-3 text-sm text-warning">Your Avsar session ended. Continue with AI Tathastu to pick up where you left off.</p>
+        )}
         {error && (
           <p role="alert" className="mt-6 rounded-md bg-danger-soft px-4 py-3 text-sm text-danger">{ERRORS[error] ?? ERRORS.unavailable}</p>
         )}

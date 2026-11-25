@@ -18,6 +18,8 @@ export interface Ranked<T> { item: T; id: string; match: MatchResult }
 export const LIMITED_DATA_THRESHOLD = 0.4;
 
 const excluded = (m: MatchResult) => m.eligibility.status === "ineligible" || m.eligibility.status === "unavailable";
+/** Only generic skills connect it to the student and it isn't in their direction (career-match relevance gate). */
+const offTarget = (m: MatchResult) => m.relevant === false;
 
 function compare<T>(a: Ranked<T> & { deadline: Date | null }, b: Ranked<T> & { deadline: Date | null }) {
   const s = (b.match.score ?? -1) - (a.match.score ?? -1);
@@ -43,7 +45,8 @@ export function recommend<T>(candidate: Scorer, items: Candidate<T>[], opts: { l
   const closed = (m: MatchResult) => m.eligibility.status === "unavailable" || m.eligibility.checks.some((c) => c.key === "deadline" && c.outcome === "fail");
   const open = scored.filter((r) => !closed(r.match));
   const coverage = open.length ? open.reduce((s, r) => s + r.match.completeness, 0) / open.length : 0;
-  const pool = scored.filter((r) => !excluded(r.match) && !opts.exclude?.has(r.id)).sort(compare);
+  // Never padded with off-target listings to fill the slots: fewer, relevant picks beat more, irrelevant ones.
+  const pool = scored.filter((r) => !excluded(r.match) && !offTarget(r.match) && !opts.exclude?.has(r.id)).sort(compare);
   const picks = diversify(pool, opts.limit ?? 3).map(({ item, id, match }) => ({ item, id, match }));
   return { picks, limited: coverage < LIMITED_DATA_THRESHOLD };
 }
@@ -81,9 +84,9 @@ export function diversify<T extends { match: MatchResult }>(sorted: T[], limit: 
   return picks;
 }
 
-/** Full personalized order for browsing: everything stays visible; only failed or closed listings sink. */
+/** Full personalized order for browsing: everything stays visible; off-target listings come after relevant ones, failed or closed last. */
 export function rankForBrowse<T>(candidate: Scorer, items: Candidate<T>[], now = new Date()): Ranked<T>[] {
   return score(candidate, items, now)
-    .sort((a, b) => Number(excluded(a.match)) - Number(excluded(b.match)) || compare(a, b))
+    .sort((a, b) => Number(excluded(a.match)) - Number(excluded(b.match)) || Number(offTarget(a.match)) - Number(offTarget(b.match)) || compare(a, b))
     .map(({ item, id, match }) => ({ item, id, match }));
 }

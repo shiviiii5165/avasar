@@ -17,6 +17,8 @@ export interface MatchInput {
   /** The evidence-based skill profile (buildSkillProfile), after the student's own exclusions. */
   profile: SkillProfileEntry[];
   targetRoles: string[];
+  /** Where the target came from: the student (profile or AI Tathastu goal), worked out from their evidence, or none. */
+  targetSource?: "stated" | "inferred" | "none";
 }
 
 export type Matcher = (opp: OpportunityFacts, now?: Date) => MatchResult;
@@ -67,6 +69,7 @@ export function toMatchResult(cm: CareerMatch): MatchResult {
     skillVerdicts: cm.skills.map(({ requirement, importance, supportedBy, development }) => ({ requirement, importance, supportedBy, development })),
     explanations: cm.explanations,
     domain: cm.domain,
+    relevant: cm.relevant,
   };
 }
 

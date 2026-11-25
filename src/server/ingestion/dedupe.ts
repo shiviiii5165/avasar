@@ -71,6 +71,73 @@ export function compareListings(a: Comparable, b: Comparable): DuplicateDecision
 }
 
 /**
+ * Canonical opportunities: groups records that are the SAME opening and keeps one representative per group.
+ *
+ * Same opening when:
+ *   - a strong signal holds (same source record, same content fingerprint, or the same application URL with the
+ *     same title: a shared careers-page URL alone never merges two roles), or
+ *   - same employer AND same title AND (description similarity ≥ DESCRIPTION_THRESHOLD or the same deadline).
+ *     Locations are NOT compared here: employer feeds often publish one role once per city, which students see
+ *     as the same card five times. The representative shows every city instead.
+ * Different titles, or the same title with a clearly different description, stay separate openings.
+ *
+ * Output keeps input order (position of each group's first record). The representative is the most trustworthy
+ * record (employer-verified, then source-checked, then posted on Avsar, then input order); its `locations` are the
+ * union of the group's, and `duplicateIds` lists the other records' ids so saves and dismissals made on any copy
+ * still apply. Pure; O(n) bucketing plus pairwise checks only within one employer+title bucket.
+ */
+export interface CanonicalInput extends Comparable { id: string; verification?: string | null }
+export function canonicalize<T extends { id: string; locations: string[] }>(items: T[], comparable: (x: T) => CanonicalInput): (T & { duplicateIds: string[] })[] {
+  const n = items.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a: number, b: number) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+  };
+  const cs = items.map(comparable);
+  const strong = new Map<string, number>();
+  const buckets = new Map<string, number[]>();
+  cs.forEach((c, i) => {
+    const title = normalizeTitle(c.title);
+    const keys = [
+      c.sourceId && c.sourceRecordId ? `rec:${c.sourceId}|${c.sourceRecordId}` : null,
+      c.fingerprint ? `fp:${c.fingerprint}` : null,
+      ...c.urls.map(normalizeUrl).filter(Boolean).map((u) => `url:${u}|${title}`),
+    ].filter((k): k is string => Boolean(k));
+    for (const k of keys) {
+      const j = strong.get(k);
+      if (j === undefined) strong.set(k, i);
+      else union(i, j);
+    }
+    const employer = normalizeEmployer(c.organization);
+    if (employer && title) {
+      const b = `${employer}|${title}`;
+      buckets.set(b, [...(buckets.get(b) ?? []), i]);
+    }
+  });
+  for (const list of buckets.values())
+    for (let x = 0; x < list.length; x++)
+      for (let y = x + 1; y < list.length; y++) {
+        const a = cs[list[x]], b = cs[list[y]];
+        if (find(list[x]) === find(list[y])) continue;
+        const sameDeadline = a.deadline !== null && b.deadline !== null && a.deadline.toISOString().slice(0, 10) === b.deadline.toISOString().slice(0, 10);
+        if (sameDeadline || jaccard(a.description, b.description) >= DESCRIPTION_THRESHOLD) union(list[x], list[y]);
+      }
+
+  const trust = (i: number) => (cs[i].verification === "org_verified" ? 4 : cs[i].verification === "source_verified" ? 2 : 0) + (cs[i].sourceId ? 0 : 1);
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) groups.set(find(i), [...(groups.get(find(i)) ?? []), i]);
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, members]) => {
+      const rep = [...members].sort((a, b) => trust(b) - trust(a) || a - b)[0];
+      const locations = [...new Set(members.flatMap((i) => items[i].locations))];
+      return { ...items[rep], locations, duplicateIds: members.filter((i) => i !== rep).map((i) => items[i].id) };
+    });
+}
+
+/**
  * Keeps the first of each set of duplicates in an already-ordered list, up to `limit` items. For display only:
  * nothing is merged or deleted. Stricter than ingestion on one signal: a shared URL alone (an employer's generic
  * careers page) does not make two differently titled roles the same listing.

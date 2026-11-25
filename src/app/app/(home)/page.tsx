@@ -14,7 +14,7 @@ import { matchAll } from "@/server/services/candidate-context";
 import { DismissButton } from "@/components/forms/buttons";
 import { dismissedIds, listSaved } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
-import { listOpenOpportunities, toFacts } from "@/server/services/opportunities";
+import { listOpenOpportunities, toFacts, canonicalIdSet } from "@/server/services/opportunities";
 import { recommend } from "@/server/domain/recommend";
 import { matcherForProfile } from "@/server/services/career";
 import { loadProfile } from "@/server/services/profiles";
@@ -38,7 +38,7 @@ export default async function CandidateHome() {
   const facts = await matcherForProfile(db, profile);
   const matches = matchAll(facts, open);
   const applied = new Set(apps.map((a) => a.opportunity.id));
-  const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: new Set([...applied, ...dismissed]) }) : { picks: [], limited: true };
+  const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: canonicalIdSet(new Set([...applied, ...dismissed]), open) }) : { picks: [], limited: true };
   const recommended = rec.picks.map((r) => r.item);
   // Thin profile: recommendations rest on little data, so say so instead of implying precision.
   const limited = rec.limited;

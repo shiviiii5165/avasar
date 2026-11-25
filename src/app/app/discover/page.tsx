@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { Search, SlidersHorizontal } from "lucide-react";
 
-import { FilterFields, ShowOnlyFields } from "@/components/opportunity/filters";
+import { FieldSelect, FilterFields, ShowOnlyFields } from "@/components/opportunity/filters";
 import { FieldChip } from "@/components/opportunity/field";
 import { cardMatch, OpportunityCard } from "@/components/opportunity/opportunity-card";
-import { classifyOpportunity, DOMAIN_GROUPS, DOMAINS, domainDef, searchIntent, type DomainGroup } from "@/server/intelligence/domains";
-import { registry } from "@/server/intelligence/registry";
+import { domainDef } from "@/server/intelligence/domains";
+import { discoveryRules, fieldOptions } from "@/server/services/discovery";
 import type { MatchResult } from "@/server/domain/matching";
 import { SyncStatusCard } from "@/components/profile/sync-status";
 import { buttonClass, inputClass, PageHeader, StateMessage } from "@/components/ui";
@@ -20,8 +20,10 @@ import { matchAll } from "@/server/services/candidate-context";
 import { DismissButton, SaveButton } from "@/components/forms/buttons";
 import { dismissedIds, savedIds } from "@/server/services/engagement";
 import { categoryDef } from "@/server/domain/categories";
-import { listOpenOpportunities, liveCategories, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "@/server/services/opportunities";
-import { matcherForProfile } from "@/server/services/career";
+import { byDeadline, canonicalIdSet, recordIdIn, listOpenOpportunities, liveCategories, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "@/server/services/opportunities";
+import { matchInputFor } from "@/server/services/career";
+import { matcherFor } from "@/server/intelligence/canonical-match";
+import { registry } from "@/server/intelligence/registry";
 import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Opportunities for you" };
@@ -60,43 +62,33 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const byMatch = (facts: Matcher | null, list: OpportunityFull[]) => (facts ? rankForBrowse(facts, asCandidates(list)).map((r) => r.item) : list);
   const unfiltered = !query.q && !query.category && FILTER_KEYS.every((k) => query[k] === undefined);
 
-  // Career field of each listing (same classifier the matcher uses), memoised per request.
-  const reg = registry();
-  const fieldCache = new Map<string, string | null>();
-  const fieldOf = (o: OpportunityFull) => {
-    if (!fieldCache.has(o.id)) fieldCache.set(o.id, classifyOpportunity(reg, o).domain);
-    return fieldCache.get(o.id)!;
-  };
-  // "BA internship", "ML intern": a query naming a role searches that role's field, plus plain text matches.
-  const intent = query.q ? searchIntent(reg, query.q) : null;
-  const needle = query.q?.toLowerCase() ?? "";
-  const textHit = (o: OpportunityFull) => [o.title, o.organizationName, o.summary ?? "", ...o.skills.map((s) => s.name)].some((t) => t.toLowerCase().includes(needle));
-  const keep = query.field || intent
-    ? (o: OpportunityFull) => (!query.field || fieldOf(o) === query.field) && (!intent || fieldOf(o) === intent.domain || textHit(o))
-    : undefined;
-  const byDeadline = (list: OpportunityFull[]) => [...list].sort((a, b) => (a.deadline?.getTime() ?? Infinity) - (b.deadline?.getTime() ?? Infinity) || (a.id < b.id ? -1 : 1));
+  // Field and role-intent rules shared with public Explore (services/discovery.ts): same classification everywhere.
+  const { fieldOf, intent, keep, dbQuery } = discoveryRules(query);
 
   // Everything starts at once (one database round trip per step, not one per loader). The profile is loaded once
   // and its matching facts derived from it, instead of loading the same profile a second time.
   const profileP = loadProfile(db, session.profileId);
-  const factsP = profileP.then((p) => matcherForProfile(db, p ?? null));
+  const inputP = profileP.then((p) => (p ? matchInputFor(db, p) : null));
+  const factsP = inputP.then((i) => (i ? matcherFor(registry(), i.input) : null));
   // Best match ranks the whole filtered set before paging; date sorts page in the database. With no search or
   // filters, the filtered set IS the open listings loaded below, so it isn't fetched a second time.
   // Field and role-intent filters need each listing's classification, so they always take the ranked path.
   const searchP = keep
-    ? searchOpportunitiesRanked(db, { ...query, q: intent ? undefined : query.q }, async (list) => (uiSort === "match" ? byMatch(await factsP, list) : uiSort === "deadline" ? byDeadline(list) : list), undefined, keep)
+    ? searchOpportunitiesRanked(db, dbQuery(query), async (list) => (uiSort === "match" ? byMatch(await factsP, list) : uiSort === "deadline" ? byDeadline(list) : list), undefined, keep)
     : uiSort === "match"
       ? unfiltered ? null : searchOpportunitiesRanked(db, query, async (list) => byMatch(await factsP, list))
-      : searchOpportunities(db, query);
+      : searchOpportunities(db, query, new Date());
   searchP?.catch(() => undefined); // awaited below; this only stops an early failure elsewhere leaving it unhandled
-  const [profile, open, saved, facts, live, dismissed] = await Promise.all([
+  const [profile, open, savedRecords, facts, live, dismissedRecords, matchInput] = await Promise.all([
     profileP,
     listOpenOpportunities(db, RANK_LIMIT),
     savedIds(db, session.identity.id),
     factsP,
     liveCategories(db),
     dismissedIds(db, session.identity.id),
+    inputP,
   ]);
+  const target = matchInput?.input;
   const result = searchP
     ? await searchP
     : open.length < RANK_LIMIT
@@ -106,6 +98,9 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const tabCats = [...new Set(["job", "internship", "gig", ...live])];
   const TABS: [string, string][] = [["", "All"], ...tabCats.map((c) => [c, categoryDef(c)?.plural ?? c] as [string, string])];
   const matches = matchAll(facts, [...open, ...result.items]);
+  // Saves and dismissals made on any record of an opening apply to its canonical card.
+  const saved = canonicalIdSet(savedRecords, [...open, ...result.items]);
+  const dismissed = canonicalIdSet(dismissedRecords, open);
 
   const rec = facts ? recommend(facts, asCandidates(open), { exclude: dismissed }) : { picks: [], limited: true };
   const hidden = open.filter((o) => dismissed.has(o.id));
@@ -126,16 +121,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   for (const o of inField) shown.add(o.id);
   const nearby = facts ? pick((m) => m.domain?.relation === "adjacent") : [];
 
-  // Field filter options: fields that open listings actually have, grouped, with counts.
-  const fieldCounts = new Map<string, number>();
-  for (const o of open) {
-    const f = fieldOf(o);
-    if (f) fieldCounts.set(f, (fieldCounts.get(f) ?? 0) + 1);
-  }
-  if (query.field && !fieldCounts.has(query.field)) fieldCounts.set(query.field, 0);
-  const fieldGroups = (Object.keys(DOMAIN_GROUPS) as DomainGroup[])
-    .map((g) => ({ g, label: DOMAIN_GROUPS[g].label, fields: DOMAINS.filter((d) => d.group === g && fieldCounts.has(d.id)) }))
-    .filter((x) => x.fields.length);
+  const fields = fieldOptions(open, fieldOf, query.field);
 
   const activeFilters = FILTER_KEYS.filter((k) => query[k] !== undefined);
   const current: Record<string, string | undefined> = {
@@ -165,7 +151,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
         actions={
           <>
             <Link href={`/opportunities/${o.slug}`} className={buttonClass("primary", "sm")}>View details</Link>
-            <SaveButton opportunityId={o.id} saved={saved.has(o.id)} path="/app/discover" />
+            <SaveButton opportunityId={recordIdIn(savedRecords, o)} saved={saved.has(o.id)} path="/app/discover" />
             {dismissable && <DismissButton opportunityId={o.id} title={o.title} />}
           </>
         }
@@ -191,6 +177,16 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
     <div className="space-y-8">
       <PageHeader title="Opportunities for you" description="Matched to the profile you share from AI Tathastu. Open any listing to see exactly why it fits." />
       {p && <SyncStatusCard status={p.aitSyncStatus} syncedAt={p.aitSyncedAt} error={p.aitSyncError} provider={session.identity.provider} compact />}
+      {target && target.targetSource !== "stated" && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-purple/20 bg-purple-soft/40 px-4 py-3 text-sm text-navy" data-testid="goal-checkpoint">
+          {target.targetSource === "inferred" ? (
+            <span>Matching you as <span className="font-semibold">{target.targetRoles[0]}</span>, worked out from the skills on your profile.</span>
+          ) : (
+            <span><span className="font-semibold">Add your career goal</span> so recommendations put your field first. Until then they use your skills only.</span>
+          )}
+          <Link href="/app/profile#preferences" className="font-semibold text-purple underline-offset-4 hover:underline">{target.targetSource === "inferred" ? "Set your own goal" : "Add goal"}</Link>
+        </p>
+      )}
 
       {open.length === 0 ? (
         <StateMessage kind="empty" title="No open opportunities yet" body="Every listing is checked by a person before it is published. New ones will appear here, and on your Home page, as soon as they are approved." />
@@ -218,7 +214,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
                   {hidden.map((o) => (
                     <li key={o.id} className="flex flex-wrap items-center justify-between gap-2">
                       <Link href={`/opportunities/${o.slug}`} className="text-navy hover:underline">{o.title} · {o.organizationName}</Link>
-                      <DismissButton opportunityId={o.id} title={o.title} undo />
+                      <DismissButton opportunityId={recordIdIn(dismissedRecords, o)} title={o.title} undo />
                     </li>
                   ))}
                 </ul>
@@ -261,17 +257,9 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             <form method="get" action="/app/discover" role="search" aria-label="Search opportunities" className="space-y-3 rounded-xl border border-line bg-surface p-4 shadow-card">
               {query.category && <input type="hidden" name="category" value={query.category} />}
               <div className="flex flex-wrap items-end gap-3">
-                {fieldGroups.length > 0 && (
-                  <div className="flex min-w-0 flex-[0_1_15rem] flex-col gap-1">
-                    <label htmlFor="dfield" className="text-sm font-semibold text-navy">Field</label>
-                    <select id="dfield" name="field" defaultValue={query.field ?? ""} className={inputClass}>
-                      <option value="">All fields</option>
-                      {fieldGroups.map(({ g, label, fields }) => (
-                        <optgroup key={g} label={label}>
-                          {fields.map((d) => <option key={d.id} value={d.id}>{d.label} ({fieldCounts.get(d.id)})</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
+                {fields.length > 0 && (
+                  <div className="min-w-0 flex-[0_1_15rem]">
+                    <FieldSelect id="dfield" value={query.field} options={fields} className={inputClass} />
                   </div>
                 )}
                 <div className="relative min-w-0 flex-[1_1_16rem]">
@@ -313,7 +301,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
               {activeFilters.length ? <> · {activeFilters.length} filter{activeFilters.length > 1 ? "s" : ""}</> : null}
             </p>
             {items.length === 0 ? emptyState() : (
-              <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4" data-testid="browse-results">
                 {items.map((o) => <li key={o.id}>{card(o, false)}</li>)}
               </ul>
             )}

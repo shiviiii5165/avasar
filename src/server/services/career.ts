@@ -7,11 +7,11 @@ import { audit } from "../audit";
 import type { Db } from "../db/client";
 import { candidateProfiles, learningEvidence } from "../db/schema";
 import { distinctListings } from "../ingestion/dedupe";
-import { careerMatch, rankCareerMatches, roleReadiness, type CareerMatch } from "../intelligence/career-match";
+import { careerMatch, inferTargetRole, rankCareerMatches, roleReadiness, type CareerMatch } from "../intelligence/career-match";
 import { buildSkillProfile, collectEvidence, type EvidenceType, type SkillProfileEntry } from "../intelligence/evidence";
 import { matcherFor, type Matcher, type MatchInput } from "../intelligence/canonical-match";
 import { registry } from "../intelligence/registry";
-import { listOpenOpportunities, toFacts, type OpportunityFull } from "./opportunities";
+import { hasAnyId, listOpenOpportunities, toFacts, type OpportunityFull } from "./opportunities";
 import { experienceSkillLinks, loadProfile, toCandidateFacts, type LoadedProfile } from "./profiles";
 
 /** Evidence types a student can switch off for their career profile ("ait_all" = everything from AI Tathastu). */
@@ -48,6 +48,7 @@ export async function loadEvidence(db: Db, p: LoadedProfile) {
 export interface CareerIntelligence {
   skills: SkillProfileEntry[];
   targetRoles: string[];
+  targetSource: "stated" | "inferred" | "none";
   readiness: NonNullable<ReturnType<typeof roleReadiness>>[];
   recommendations: { o: OpportunityFull; match: CareerMatch }[];
   roadmap: { skill: string; conceptId: string; why: string; buildsOn: string | null; openListings: number }[];
@@ -63,13 +64,19 @@ export interface CareerIntelligence {
 export async function matchInputFor(db: Db, p: LoadedProfile, now = new Date()): Promise<{ input: MatchInput; learning: (typeof learningEvidence.$inferSelect)[] }> {
   const { items, learning } = await loadEvidence(db, p);
   const ait = p.profile.aitInsights;
+  // Every kind of evidence on the profile counts; there is no per-type opt-out on the career page.
+  // (What AI Tathastu sends at all is still governed by the student's consent there.)
+  const profile = buildSkillProfile(items, registry(), { now });
+  // The target comes from the student: their roles in Avsar and their AI Tathastu career goal. Only when there is none
+  // is one worked out from their evidence (labelled as such wherever it is shown), so nobody has to fill a form first.
+  const stated = [...new Set([...p.profile.preferredRoles, ...(ait.goals?.targetRole ? [ait.goals.targetRole] : [])])];
+  const inferred = stated.length ? null : inferTargetRole(registry(), profile);
   return {
     input: {
       facts: toCandidateFacts(p),
-      // Every kind of evidence on the profile counts; there is no per-type opt-out on the career page.
-      // (What AI Tathastu sends at all is still governed by the student's consent there.)
-      profile: buildSkillProfile(items, registry(), { now }),
-      targetRoles: [...new Set([...p.profile.preferredRoles, ...(ait.goals?.targetRole ? [ait.goals.targetRole] : [])])],
+      profile,
+      targetRoles: stated.length ? stated : inferred ? [inferred.title] : [],
+      targetSource: stated.length ? "stated" : inferred ? "inferred" : "none",
     },
     learning,
   };
@@ -96,7 +103,7 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
 
   const scored = open.map((o) => ({ id: o.id, deadline: o.deadline, o, match: careerMatch(reg, facts, skills, { ...toFacts(o), skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin })) }, { targetRoles, now }) }));
   // Ranking is unchanged; the same listing reached through two feeds (or posted twice) is then shown once, in its best-ranked position.
-  const ranked = rankCareerMatches(scored.filter((x) => !opts.exclude?.has(x.id)), scored.length);
+  const ranked = rankCareerMatches(scored.filter((x) => x.match.relevant && (!opts.exclude || !hasAnyId(opts.exclude, x.o))), scored.length);
   const recommendations = distinctListings(ranked, ({ o }) => ({ sourceId: o.sourceId, sourceRecordId: o.sourceRecordId, urls: [o.sourceUrl, o.externalUrl], fingerprint: o.contentFingerprint, title: o.title, organization: o.organizationName, locations: o.locations, workMode: o.workMode, description: o.description, deadline: o.deadline }), 8).map(({ o, match }) => ({ o, match }));
 
   const roleIds = [...new Set(targetRoles.map((t) => reg.roleFor(t)?.id).filter((x): x is string => Boolean(x)))].slice(0, 3);
@@ -132,7 +139,7 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
     }
   }
 
-  return { skills, targetRoles, readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: aitLearnUrl() };
+  return { skills, targetRoles, targetSource: input.targetSource ?? "none", readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: aitLearnUrl() };
 }
 
 // ─── Student controls (always scoped to the caller's own profile) ─────────

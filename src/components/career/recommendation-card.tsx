@@ -22,7 +22,7 @@ const fmt = (d: Date | null) => (d ? d.toLocaleDateString("en-IN", { day: "numer
  * (career-match/v2): its field, the student's skills that cover it, and the one skill most worth building.
  * No percentage or probability is shown; the full explanation stays one tap away.
  */
-export function RecommendationCard({ o, match, saved, byName }: { o: OpportunityFull; match: CareerMatch; saved: boolean; byName: Map<string, SkillProfileEntry> }) {
+export function RecommendationCard({ o, match, saved, savedRecordId, byName }: { o: OpportunityFull; match: CareerMatch; saved: boolean; savedRecordId?: string; byName: Map<string, SkillProfileEntry> }) {
   const { bar } = fieldStyle(match.domain.id);
   const deadline = deadlineLabel(o.deadline);
   const pay = ["job", "internship", "gig"].includes(o.category) || o.compMin !== null || o.compMax !== null ? formatComp(o) : cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>);
@@ -121,7 +121,7 @@ export function RecommendationCard({ o, match, saved, byName }: { o: Opportunity
 
         <div className="mt-auto pt-3">
           <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-            <SaveButton opportunityId={o.id} saved={saved} path="/app/career" />
+            <SaveButton opportunityId={savedRecordId ?? o.id} saved={saved} path="/app/career" />
             <DismissButton opportunityId={o.id} title={o.title} />
             <span className="ml-auto"><VerificationBadge level={o.verification} /></span>
           </div>

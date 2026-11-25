@@ -12,6 +12,7 @@ import { importRecords, opportunities, opportunityEligibility, opportunitySkills
 import { normalizeSkill, parseSkillList } from "../domain/skills";
 import type { EducationLevel, OpportunityFacts } from "../domain/types";
 import { canTransitionOpportunity, publishProblems, type OpportunityStatus } from "../domain/workflows";
+import { canonicalize } from "../ingestion/dedupe";
 import { injectionFlags } from "../ingestion/sanitize";
 
 export type OpportunityRow = typeof opportunities.$inferSelect;
@@ -19,6 +20,31 @@ export type EligibilityRow = typeof opportunityEligibility.$inferSelect;
 export interface OpportunityFull extends OpportunityRow {
   skills: { name: string; normalized: string; required: boolean; origin?: "listed" | "text_mentioned" }[];
   eligibility: EligibilityRow | null;
+  /** Other records of the same opening (other sources or one per city), folded into this one by canonicalOpen. */
+  duplicateIds?: string[];
+}
+
+/**
+ * The ONE canonical identity every list uses (Explore, Opportunities, Home, Career): records of the same opening
+ * are folded into one representative (ingestion/dedupe.ts canonicalize). Counts and pages are taken after this.
+ */
+export function canonicalOpen(list: OpportunityFull[]): OpportunityFull[] {
+  return canonicalize(list, (o) => ({ id: o.id, verification: o.verification, sourceId: o.sourceId, sourceRecordId: o.sourceRecordId, urls: [o.sourceUrl, o.externalUrl], fingerprint: o.contentFingerprint, title: o.title, organization: o.organizationName, locations: o.locations, workMode: o.workMode, description: o.description, deadline: o.deadline }));
+}
+
+/** True when the student acted on this opening under any of its records (saved, dismissed, applied). */
+export function hasAnyId(set: ReadonlySet<string>, o: Pick<OpportunityFull, "id" | "duplicateIds">): boolean {
+  return set.has(o.id) || (o.duplicateIds ?? []).some((id) => set.has(id));
+}
+/** The record id the student actually acted on (so un-saving or "show again" changes that record), else the canonical id. */
+export function recordIdIn(set: ReadonlySet<string>, o: Pick<OpportunityFull, "id" | "duplicateIds">): string {
+  return set.has(o.id) ? o.id : (o.duplicateIds ?? []).find((id) => set.has(id)) ?? o.id;
+}
+/** A set of record ids widened to the canonical ids that stand for them, for code that checks `set.has(o.id)`. */
+export function canonicalIdSet(set: ReadonlySet<string>, list: Pick<OpportunityFull, "id" | "duplicateIds">[]): Set<string> {
+  const out = new Set(set);
+  for (const o of list) if (hasAnyId(set, o)) out.add(o.id);
+  return out;
 }
 
 // ─── Public discovery ──────────────────────────────────────────────────────
@@ -66,15 +92,15 @@ function searchFilter(db: Db, input: SearchInput, now: Date) {
   return and(...where)!;
 }
 
-export async function searchOpportunities(db: Db, input: SearchInput, now = new Date()) {
-  const order =
-    input.sort === "deadline" ? [sql`${opportunities.deadline} asc nulls last`, asc(opportunities.id)] : [desc(opportunities.publishedAt), asc(opportunities.id)];
-  const filter = searchFilter(db, input, now);
-  const [rows, [{ total }]] = await Promise.all([
-    db.select().from(opportunities).where(filter).orderBy(...order).limit(PAGE_SIZE).offset((input.page - 1) * PAGE_SIZE),
-    db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
-  ]);
-  return { items: await withDetails(db, rows), total, page: input.page, pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+/** Deadline order: earliest first, rolling (no deadline) last, id as tie-break. */
+export const byDeadline = (list: OpportunityFull[]) => [...list].sort((a, b) => (a.deadline?.getTime() ?? Infinity) - (b.deadline?.getTime() ?? Infinity) || (a.id < b.id ? -1 : 1));
+
+/**
+ * Date-sorted search (newest or closing soon). Goes through the same canonical pipeline as the ranked search, so
+ * a listing carried by two sources is counted and shown once, and pages never repeat it.
+ */
+export async function searchOpportunities(db: Db, input: SearchInput, now = new Date(), keep?: (o: OpportunityFull) => boolean) {
+  return searchOpportunitiesRanked(db, input, (list) => (input.sort === "deadline" ? byDeadline(list) : list), now, keep);
 }
 
 /** Upper bound on listings ranked per request (server memory only; the page sent to the browser is PAGE_SIZE). */
@@ -97,12 +123,13 @@ export async function searchOpportunitiesRanked(
 ) {
   const filter = searchFilter(db, input, now);
   const [rows, [{ total: dbTotal }]] = await Promise.all([
-    db.select().from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
+    db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
     db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
   ]);
-  const loaded = await withDetails(db, rows);
+  // Canonical first: the count and the pages are of unique openings, never of source records.
+  const loaded = canonicalOpen(rows.map(fromDetailRow));
   const kept = keep ? loaded.filter(keep) : loaded;
-  const total = keep ? kept.length : dbTotal;
+  const total = kept.length;
   // `rank` may await data loaded in parallel (e.g. the candidate's profile), so the search never waits for it to start.
   const ranked = await rank(kept);
   const start = (input.page - 1) * PAGE_SIZE;
@@ -130,7 +157,7 @@ export async function liveCategories(db: Db, now = new Date()): Promise<Category
 export async function listOpenOpportunities(db: Db, limit = RANK_LIMIT, now = new Date()) {
   // Same order as the search (newest first, id as tie-break), so a ranked list built from these rows is identical.
   const rows = await db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(limit);
-  return rows.map(fromDetailRow);
+  return canonicalOpen(rows.map(fromDetailRow));
 }
 
 /**

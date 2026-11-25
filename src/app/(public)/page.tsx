@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowRight, BadgeCheck, Compass, FileCheck2, ListChecks, ShieldCheck, Sparkles } from "lucide-react";
 
 import { ClimbScene } from "@/components/brand/climb-scene";
 import { Doorway, Leaves, Waves } from "@/components/brand/doorway";
 import { BrandSignature } from "@/components/site/site-footer";
 import { buttonClass } from "@/components/ui";
+import { getSession } from "@/server/auth/session";
 
 const STEPS = [
   { icon: Compass, title: "Find", body: "Look at jobs and internships. All in one place." },
@@ -19,7 +21,10 @@ const PROMISES = [
   { icon: Sparkles, text: "We always tell you why. No computer says “no” to you on its own." },
 ];
 
-export default function HomePage() {
+/** Signed-in students go straight to their dashboard; the marketing page is for visitors (and right after sign-out). */
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ signed_out?: string }> }) {
+  const [session, { signed_out }] = await Promise.all([getSession(), searchParams]);
+  if (session && !session.roles.length && !signed_out) redirect("/app");
   return (
     <>
       <section aria-labelledby="hero-title" className="relative -mt-[72px] overflow-hidden bg-gradient-to-br from-ivory via-peach-soft/60 to-lavender-soft/70 pt-[72px]">

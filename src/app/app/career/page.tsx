@@ -5,15 +5,13 @@ import { GoalSkills } from "@/components/career/goal-skills";
 import { RecommendationCard } from "@/components/career/recommendation-card";
 import { SkillExplorer } from "@/components/career/skill-explorer";
 import { skillLinks, skillViews } from "@/components/career/skill-view";
-import { OfficialPortalLinks } from "@/components/opportunity/portal-links";
-import { discoveryLinks } from "@/server/ingestion/discovery";
-import { discoveryFamilies } from "@/server/services/ingestion";
 import { buttonClass, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { registry } from "@/server/intelligence/registry";
 import { careerIntelligence } from "@/server/services/career";
 import { dismissedIds, savedIds } from "@/server/services/engagement";
+import { hasAnyId, recordIdIn } from "@/server/services/opportunities";
 
 export const metadata = { title: "Career intelligence" };
 
@@ -29,8 +27,6 @@ export default async function CareerPage() {
   const data = await careerIntelligence(db, session.profileId, new Date(), { exclude: dismissed });
   if (!data) return <StateMessage kind="error" title="Profile not found" />;
   const { skills, readiness, recommendations, roadmap } = data;
-  const families = await discoveryFamilies(db).catch(() => new Set<string>());
-  const portalLinks = discoveryLinks({ query: data.targetRoles[0] ?? skills.find((s) => s.state === "demonstrated" || s.state === "verified")?.name, families });
   const reg = registry();
   const domains = Object.fromEntries(readiness.map((r) => [r.role.id, reg.roles.find((x) => x.id === r.role.id)?.domain ?? null]));
   const byName = new Map(skills.map((s) => [s.name, s]));
@@ -53,23 +49,22 @@ export default async function CareerPage() {
         <SkillExplorer skills={views} links={skillLinks(skills)} aitLearnUrl={data.aitLearnUrl} />
       )}
 
-      <GoalSkills readiness={readiness} skills={skills} roadmap={roadmap} domains={domains} aitLearnUrl={data.aitLearnUrl} />
+      <GoalSkills readiness={readiness} skills={skills} roadmap={roadmap} domains={domains} aitLearnUrl={data.aitLearnUrl} inferred={data.targetSource === "inferred"} />
 
       <section aria-labelledby="recs-title" className="rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-6">
         <h2 id="recs-title" className="text-xl font-semibold text-navy">Openings that fit you</h2>
         <p className="mt-0.5 text-sm text-muted">Picked using your skills, your career goal and your preferences.</p>
         {recommendations.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-dashed border-line p-5 text-sm text-muted">No open listings to recommend right now. Check back soon, or search the official portals below.</p>
+          <p className="mt-4 rounded-xl border border-dashed border-line p-5 text-sm text-muted">No open listings fit your profile right now. New listings are added as they are checked; your recommendations update on every visit.</p>
         ) : (
           <ul className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="recommendations">
             {recommendations.map(({ o, match }) => (
               <li key={o.id} className="min-w-0">
-                <RecommendationCard o={o} match={match} saved={saved.has(o.id)} byName={byName} />
+                <RecommendationCard o={o} match={match} saved={hasAnyId(saved, o)} savedRecordId={recordIdIn(saved, o)} byName={byName} />
               </li>
             ))}
           </ul>
         )}
-        <OfficialPortalLinks links={portalLinks} title={data.targetRoles[0] ? `Search official portals for ${data.targetRoles[0]}` : "Search official portals"} />
       </section>
     </div>
   );

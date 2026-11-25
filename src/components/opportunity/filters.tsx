@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 
 import { buttonClass, inputClass } from "@/components/ui";
 import { categoryDef } from "@/server/domain/categories";
+import type { FieldOptions } from "@/server/services/discovery";
 import type { SearchInput } from "@/server/services/opportunities";
 
 const select = `${inputClass} pr-8`;
@@ -69,9 +70,27 @@ export function ShowOnlyFields({ value }: { value: Partial<SearchInput> }) {
   );
 }
 
+/** Career field select (same field rules and counts on every page). Counts are unique open listings. */
+export function FieldSelect({ value, options, id = "field", className = select }: { value?: string; options: FieldOptions; id?: string; className?: string }) {
+  if (!options.length) return null;
+  return (
+    <div>
+      <label htmlFor={id} className="text-xs font-semibold text-navy">Field</label>
+      <select id={id} name="field" defaultValue={value ?? ""} className={className}>
+        <option value="">All fields</option>
+        {options.map(({ group, label, fields }) => (
+          <optgroup key={group} label={label}>
+            {fields.map((d) => <option key={d.id} value={d.id}>{d.label} ({d.count})</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /** Search and filters as a plain GET form: works without JavaScript; the URL is the state. */
 /** `categories`: only those with live listings (empty categories aren't offered). */
-export function OpportunityFilters({ value, action = "/opportunities", categories = ["job", "internship", "gig"] }: { value: Partial<SearchInput>; action?: string; categories?: string[] }) {
+export function OpportunityFilters({ value, action = "/opportunities", categories = ["job", "internship", "gig"], fields = [] }: { value: Partial<SearchInput>; action?: string; categories?: string[]; fields?: FieldOptions }) {
   return (
     <form action={action} method="get" role="search" aria-label="Search opportunities" className="space-y-4 rounded-xl border border-line bg-surface p-4 shadow-card">
       <div className="relative">
@@ -87,6 +106,7 @@ export function OpportunityFilters({ value, action = "/opportunities", categorie
             {categories.map((c) => <option key={c} value={c}>{categoryDef(c)?.plural ?? c}</option>)}
           </select>
         </div>
+        <FieldSelect value={value.field} options={fields} />
         <FilterFields value={value} />
         <div>
           <label htmlFor="sort" className="text-xs font-semibold text-navy">Sort by</label>

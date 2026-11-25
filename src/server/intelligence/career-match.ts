@@ -18,7 +18,7 @@
 import { evaluateEligibility, type EligibilityResult } from "../domain/eligibility";
 import { matchOpportunity } from "../domain/matching";
 import type { CandidateFacts, OpportunityFacts } from "../domain/types";
-import { classifyOpportunity, domainDef, domainRelation, type Classification, type DomainRelation } from "./domains";
+import { classifyOpportunity, domainDef, domainOfConcept, domainRelation, type Classification, type DomainRelation } from "./domains";
 import { STATE_LABEL, type SkillProfileEntry, type SkillState } from "./evidence";
 import type { Relation, SkillRegistry } from "./registry";
 
@@ -81,6 +81,48 @@ export interface CareerMatch {
   domain: { id: string | null; label: string | null; basis: Classification["basis"]; confidence: Classification["confidence"]; relation: DomainRelation | "role" | null };
   explanations: Explanation[];
   learnNext: string[];
+  /**
+   * Relevance gate (independent of the score): the listing is in the student's direction (their target role, its field
+   * or a neighbouring one), or the student's evidence covers at least one SPECIFIC skill it asks for. Generic skills
+   * (concepts that point to no field: Excel, communication, MS Office…) never make a listing relevant on their own.
+   * With no target and no specific skills on the profile there is nothing to judge by, so everything stays relevant.
+   */
+  relevant: boolean;
+  /** The specific (field-bearing) skills the student's evidence covers for this listing. */
+  specificSkills: string[];
+}
+
+/** Soft skills and office basics written as free text: shared by nearly every listing, so they show no direction. */
+const GENERIC_TEXT = /^(communication|communications|teamwork|team work|team player|leadership|problem solving|problem-solving|time management|interpersonal|adaptability|critical thinking|creativity|attention to detail|multitasking|multi-tasking|hard working|hardworking|ms office|microsoft office|computer skills|basic computer|english|organisational|organizational)( skills?)?$/;
+
+/**
+ * A skill is specific when it points to a field (domains.ts). Unknown free-text skills count as specific (an exact
+ * unusual skill is a strong signal) unless they're common soft skills or office basics.
+ */
+export function isSpecificSkill(reg: SkillRegistry, key: string): boolean {
+  if (key.startsWith("text:")) return !GENERIC_TEXT.test(key.slice(5).trim());
+  return domainOfConcept(reg, key) !== null;
+}
+
+/**
+ * A target role worked out from evidence when the student hasn't stated one: the catalogue role whose ESSENTIAL skills
+ * the profile best covers (exact or specialization, anything but "learning"), needing at least two essentials and at
+ * least half of them. Null when nothing is that clear: no guess is better than a wrong one.
+ */
+export function inferTargetRole(reg: SkillRegistry, profile: SkillProfileEntry[]): { id: string; title: string; covered: string[] } | null {
+  const usable = profile.filter((e) => e.state !== "learning");
+  let best: { id: string; title: string; covered: string[]; ratio: number } | null = null;
+  for (const role of reg.roles) {
+    if (!role.essential.length) continue;
+    const covered = role.essential.filter((id) => {
+      const s = bestSupport(reg, usable, id);
+      return s && (s.rel === "exact" || s.rel === "specialization");
+    });
+    const ratio = covered.length / role.essential.length;
+    if (covered.length < 2 || ratio < 0.5) continue;
+    if (!best || ratio > best.ratio || (ratio === best.ratio && covered.length > best.covered.length)) best = { id: role.id, title: role.title, covered: covered.map((id) => reg.displayName(id, id)), ratio };
+  }
+  return best && { id: best.id, title: best.title, covered: best.covered };
 }
 
 function bestSupport(reg: SkillRegistry, profile: SkillProfileEntry[], want: string) {
@@ -194,6 +236,12 @@ export function careerMatch(
   // (listed after scored ones, never above them), so "near you" can't outrank "qualified for it".
   const score = den && !(opp.skills.length > 0 && skillFit === null) ? Math.round((num / den) * 100) : null;
 
+  // Relevance gate: direction, or at least one specific skill covered (exact, specialization or related).
+  const specificSkills = verdicts.filter((v) => v.supportedBy && isSpecificSkill(reg, reg.key(v.requirement))).map((v) => v.requirement);
+  const profileHasSpecific = profile.some((e) => e.state !== "learning" && isSpecificSkill(reg, e.key));
+  const inDirection = relation === "role" || relation === "same" || relation === "adjacent";
+  const relevant = inDirection || specificSkills.length > 0 || (!targets.length && !profileHasSpecific);
+
   const learnNext = [
     ...verdicts.filter((v) => v.importance === "required" && v.development === "next_step"),
     ...verdicts.filter((v) => v.importance === "required" && (v.development === "in_progress" || v.development === "gap")),
@@ -212,6 +260,8 @@ export function careerMatch(
     domain: { id: cls.domain, label: fieldLabel, basis: cls.basis, confidence: cls.confidence, relation },
     explanations,
     learnNext,
+    relevant,
+    specificSkills,
   };
 }
 

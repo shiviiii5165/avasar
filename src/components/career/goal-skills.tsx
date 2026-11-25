@@ -18,7 +18,7 @@ type Roadmap = { skill: string; conceptId: string; why: string; buildsOn: string
  * act on. Counts are counts of the role's listed skills; there is no readiness percentage, and nothing here
  * promises selection or a job.
  */
-export function GoalSkills({ readiness, skills, roadmap, domains, aitLearnUrl }: { readiness: Readiness[]; skills: SkillProfileEntry[]; roadmap: Roadmap; domains: Record<string, string | null>; aitLearnUrl: string | null }) {
+export function GoalSkills({ readiness, skills, roadmap, domains, aitLearnUrl, inferred = false }: { readiness: Readiness[]; skills: SkillProfileEntry[]; roadmap: Roadmap; domains: Record<string, string | null>; aitLearnUrl: string | null; inferred?: boolean }) {
   const byName = new Map(skills.map((s) => [s.name, s]));
   const [first, ...others] = readiness;
   return (
@@ -37,7 +37,7 @@ export function GoalSkills({ readiness, skills, roadmap, domains, aitLearnUrl }:
         </div>
       ) : (
         <>
-          <Goal r={first} byName={byName} domain={domains[first.role.id] ?? null} primary />
+          <Goal r={first} byName={byName} domain={domains[first.role.id] ?? null} primary inferred={inferred} />
           {roadmap.length > 0 && <NextSteps roadmap={roadmap} role={first.role.title} aitLearnUrl={aitLearnUrl} />}
           {others.map((r) => (
             <details key={r.role.id} className="group mt-4 rounded-xl border border-line">
@@ -64,7 +64,7 @@ function statusOf(s: RoleSkill): SkillStatusKey {
   return s.supportedBy.relation === "related" ? "related" : s.supportedBy.state;
 }
 
-function Goal({ r, byName, domain, primary = false }: { r: Readiness; byName: Map<string, SkillProfileEntry>; domain: string | null; primary?: boolean }) {
+function Goal({ r, byName, domain, primary = false, inferred = false }: { r: Readiness; byName: Map<string, SkillProfileEntry>; domain: string | null; primary?: boolean; inferred?: boolean }) {
   const rows = r.skills.map((s) => {
     const status = statusOf(s);
     const entry = s.supportedBy ? byName.get(s.supportedBy.name) : undefined;
@@ -84,10 +84,13 @@ function Goal({ r, byName, domain, primary = false }: { r: Readiness; byName: Ma
       {primary && (
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Your career goal</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">{inferred ? "Suggested from your skills" : "Your career goal"}</p>
             <p className="mt-0.5 font-serif text-3xl leading-tight text-navy sm:text-4xl" data-testid="career-goal">{r.role.title}</p>
           </div>
-          {domain && <FieldChip domainId={domain} />}
+          <div className="flex flex-wrap items-center gap-2">
+            {domain && <FieldChip domainId={domain} />}
+            {inferred && <Link href="/app/profile#preferences" className="text-sm font-semibold text-purple underline-offset-4 hover:underline">Set your own goal</Link>}
+          </div>
         </div>
       )}
 

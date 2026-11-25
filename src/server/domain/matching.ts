@@ -39,6 +39,12 @@ export interface MatchResult {
   explanations?: { kind: "observed" | "inferred" | "unknown"; text: string }[];
   /** The listing's field (intelligence/domains.ts) and how it relates to the student's target; null fields = unknown. */
   domain?: { id: string | null; label: string | null; basis: "title" | "skills" | "unknown"; confidence: "high" | "medium" | "low" | "none"; relation: "role" | "same" | "adjacent" | "group" | "none" | null };
+  /**
+   * Set by the canonical matcher. False when nothing but generic skills (Excel, communication…) connects the listing to
+   * the student and it isn't in their direction: it may be shown when browsing, but is never recommended or ranked above
+   * relevant listings. Undefined (bare-facts matching) means "not assessed".
+   */
+  relevant?: boolean;
 }
 
 const lc = (s: string) => s.trim().toLowerCase();

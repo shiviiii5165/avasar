@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SESSION_COOKIE, SESSION_TTL_MS, sessionCookieOptions } from "./server/auth/cookie";
 import { RETURN_PATH_HEADER, requestPathOf } from "./server/auth/return-path";
 import { CSP_NONCE_HEADER, cspMode, newNonce, strictCsp } from "./server/csp";
 
@@ -51,6 +52,13 @@ export function proxy(request: NextRequest) {
   headers.set(mode === "enforce" ? "content-security-policy" : "content-security-policy-report-only", csp);
   const res = NextResponse.next({ request: { headers } });
   res.headers.set(mode === "enforce" ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only", csp);
+  // Sliding session: on page loads, renew the cookie's expiry so an active student isn't signed out after a fixed
+  // week. The value is passed through unchanged and never trusted here; the database decides if it's still valid
+  // (and caps the lifetime). Sign-in, sign-out and other API routes set or clear the cookie themselves.
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  if (token && request.method === "GET" && !request.nextUrl.pathname.startsWith("/api/")) {
+    res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(new Date(Date.now() + SESSION_TTL_MS)));
+  }
   return res;
 }
 
