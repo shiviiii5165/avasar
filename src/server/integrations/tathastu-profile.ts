@@ -141,7 +141,12 @@ export function parseDateRange(dates: string | null): { start: string | null; en
   };
 }
 
-const SKILL_LEVELS: SkillLevel[] = ["beginner", "intermediate", "advanced", "expert"];
+/** Shown (and stored) when the source names no institution or organization: unknown is said plainly, never guessed. */
+export const INSTITUTION_NOT_STATED = "Institution not stated";
+export const ORGANIZATION_NOT_STATED = "Organization not stated";
+export const ROLE_NOT_STATED = "Role not stated";
+
+const SKILL_LEVELS: SkillLevel[] =["beginner", "intermediate", "advanced", "expert"];
 /**
  * AI Tathastu's engine labels (Foundational 0, Working 25, Proficient 50, Advanced 75), capitalised as it sends
  * them, mapped in order onto Avsar's levels. Lowercase values are Avsar's own vocabulary and pass through.
@@ -162,6 +167,23 @@ const safeUrl = (u: string | null | undefined) => {
     return null;
   }
 };
+
+/**
+ * One entry per identity (case- and punctuation-insensitive). Two entries are the same only when every part of the
+ * identity matches, so different degrees at one institution, or two roles at one company, stay separate. Of a
+ * duplicate set, the copy with the most filled fields is kept, at the position of the first.
+ */
+export function onePer<T extends Record<string, unknown>>(rows: T[], identity: (r: T) => unknown[]): T[] {
+  const norm = (v: unknown) => (v == null ? "" : String(v).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
+  const filled = (r: T) => Object.values(r).filter((v) => v !== null && v !== "" && v !== false).length;
+  const out = new Map<string, T>();
+  for (const r of rows) {
+    const k = identity(r).map(norm).join("|");
+    const prev = out.get(k);
+    if (!prev || filled(r) > filled(prev)) out.set(k, prev ? { ...r, sourceKey: prev.sourceKey } : r);
+  }
+  return [...out.values()];
+}
 
 /** Intelligence-layer signals, copied without inventing anything: missing → null. */
 export function insightsFrom(p: Projection): TathastuInsights {
@@ -202,18 +224,21 @@ export function mapProjection(p: Projection): MappedProfile {
 
   const id = p.identity;
   const gradYear = id.expectedGraduationYear ?? id.graduationYear ?? null;
-  // Education shared but empty (no confirmed resume/LinkedIn entries yet): use the university the student
-  // entered at onboarding. Newer AI Tathastu versions send this fallback themselves; this covers older ones.
-  const educationIn = shared("education") && !(p.education ?? []).length && id.university
+  // An entry is usable when it names an institution, a degree or a field of study. A degree without an
+  // institution (common in resume extraction) is kept, with the institution shown as not stated: dropping it
+  // silently left students with no education at all (it also stopped the onboarding fallback below).
+  const usableEducation = (p.education ?? []).filter((e) => e.institution || e.degree || e.fieldOfStudy);
+  // Education shared but with no usable entry (no confirmed resume/LinkedIn entries yet): use the university the
+  // student entered at onboarding. Newer AI Tathastu versions send this fallback themselves; this covers older ones.
+  const educationIn = shared("education") && !usableEducation.length && id.university
     ? [{ institution: id.university, degree: id.degree, fieldOfStudy: id.specialization, dates: gradYear ? String(gradYear) : null, grade: null }]
-    : (p.education ?? []);
+    : usableEducation;
   const education = shared("education")
     ? educationIn
-        .filter((e) => e.institution)
         .map((e, i) => {
           const d = parseDateRange(e.dates);
           return {
-            institution: e.institution!,
+            institution: e.institution ?? INSTITUTION_NOT_STATED,
             level: educationLevelFrom(e.degree, e.fieldOfStudy),
             degree: e.degree,
             field: e.fieldOfStudy,
@@ -224,6 +249,8 @@ export function mapProjection(p: Projection): MappedProfile {
           };
         })
     : null;
+  // The same entry can arrive once per source (resume and LinkedIn): keep the most complete copy, in source order.
+  const educationOnce = education && onePer(education, (e) => [e.institution, e.degree ?? e.field, e.graduationYear]);
 
   const seen = new Set<string>();
   const skills = p.skills
@@ -249,8 +276,8 @@ export function mapProjection(p: Projection): MappedProfile {
         .map((e, i) => {
           const d = parseDateRange(e.dates);
           return {
-            organization: e.organization ?? "Organization not stated",
-            title: e.role ?? "Role not stated",
+            organization: e.organization ?? ORGANIZATION_NOT_STATED,
+            title: e.role ?? ROLE_NOT_STATED,
             kind: /\bintern/i.test(e.role ?? "") ? "internship" : "unspecified",
             startDate: d.start,
             endDate: d.end,
@@ -260,6 +287,7 @@ export function mapProjection(p: Projection): MappedProfile {
           };
         })
     : null;
+  const experiencesOnce = experiences && onePer(experiences, (e) => [e.organization, e.title, e.startDate?.slice(0, 4)]);
 
   const ach = shared("achievements") ? (p.achievements ?? []).filter((a) => a.title) : null;
   const certifications = ach
@@ -278,10 +306,10 @@ export function mapProjection(p: Projection): MappedProfile {
       country: p.identity.location?.country ?? null,
       careerRole: p.identity.careerRole?.label ?? null,
     },
-    education: section("education", education),
+    education: section("education", educationOnce),
     skills: section("skills", skills),
     projects: section("projects", projects),
-    experiences: section("experience", experiences),
+    experiences: section("experience", experiencesOnce),
     certifications: section("achievements", certifications),
     achievements: section("achievements", achievements),
     insights: insightsFrom(p),

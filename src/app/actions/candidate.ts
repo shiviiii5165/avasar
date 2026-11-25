@@ -23,6 +23,7 @@ import {
   profileSchemas,
   toCandidateFacts,
   removeSectionItem,
+  updateSectionItem,
   replaceSkills,
   setSkillLevel,
   updateProfileFields,
@@ -146,6 +147,20 @@ export async function addSectionAction(section: Section, _: ActionState, fd: For
   }
   revalidatePath("/app", "layout");
   return { ok: true, message: "Added" };
+}
+
+/** Edit an Avsar-added record (imported AI Tathastu records are read-only here). */
+export async function updateSectionAction(section: Section, id: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  if (!["education", "experience", "project", "certification"].includes(section)) return { ok: false, message: "Unknown section" };
+  const s = await requireCandidate();
+  const rowId = z.string().uuid().safeParse(id);
+  if (!rowId.success) return { ok: false, message: "This record can't be edited." };
+  const parsed = profileSchemas[section].safeParse(formObject(fd));
+  if (!parsed.success) return { ok: false, errors: fieldErrors(parsed.error) };
+  const changed = await updateSectionItem(await getDb(), s.profileId, section, rowId.data, parsed.data as Record<string, unknown>);
+  if (!changed) return { ok: false, message: "This record can't be edited here. Records from AI Tathastu are changed on AI Tathastu." };
+  revalidatePath("/app", "layout");
+  return { ok: true, message: "Saved" };
 }
 
 export async function removeSectionAction(section: Section, id: string) {

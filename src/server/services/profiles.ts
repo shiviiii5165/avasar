@@ -177,6 +177,27 @@ export async function addSectionItem(db: Db, profileId: string, section: Section
   await db.insert(table).values({ ...values, profileId } as never);
 }
 
+/** Skills the student linked to each of their experiences (skill_evidence of kind "experience"), own profile only. */
+export async function experienceSkillLinks(db: Db, profileId: string) {
+  return db
+    .select({ skillName: candidateSkills.name, experienceId: experiences.id, title: experiences.title, org: experiences.organization, createdAt: skillEvidence.createdAt })
+    .from(skillEvidence)
+    .innerJoin(candidateSkills, eq(skillEvidence.skillId, candidateSkills.id))
+    .innerJoin(experiences, and(eq(skillEvidence.refId, experiences.id), eq(experiences.profileId, profileId)))
+    .where(and(eq(candidateSkills.profileId, profileId), eq(skillEvidence.kind, "experience")));
+}
+
+/**
+ * Edits one of the student's own (Avsar) records. Scoped by profileId and source = 'avsar': a record imported from
+ * AI Tathastu is never changed here (it's edited there and would be replaced on the next sync). Returns whether a
+ * row was updated, without saying if another student's id exists.
+ */
+export async function updateSectionItem(db: Db, profileId: string, section: Section, id: string, values: Record<string, unknown>): Promise<boolean> {
+  const table = SECTION_TABLE[section];
+  const rows = await db.update(table).set(values as never).where(and(eq(table.id, id), eq(table.profileId, profileId), eq(table.source, "avsar"))).returning({ id: table.id });
+  return rows.length > 0;
+}
+
 export async function removeSectionItem(db: Db, profileId: string, section: Section, id: string) {
   const table = SECTION_TABLE[section];
   // Scoped by profileId (never another candidate's records) and to the student's own rows: imported rows are

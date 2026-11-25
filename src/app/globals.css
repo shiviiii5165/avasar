@@ -230,3 +230,9 @@ body {
   .nav-pending { animation: nav-pending-in 1ms linear 200ms forwards; transform: none; }
   *, *::before, *::after { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Modal dialogs (components/forms/form-dialog.tsx): a short fade-and-rise, only when motion is allowed. */
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}

@@ -4,7 +4,7 @@ import { createMemoryDb, type Db } from "../db/client";
 import { upsertIdentity } from "../auth/identity";
 import { educationLevelFrom, mapProjection, projectionSchema } from "../integrations/tathastu-profile";
 import { applyTathastuProfile, fetchTathastuProfile, ProfileSyncError, recordSyncFailure } from "./profile-sync";
-import { addSectionItem, ensureProfile, loadProfile, replaceSkills, updateProfileFields } from "./profiles";
+import { addSectionItem, ensureProfile, loadProfile, replaceSkills, updateProfileFields, updateSectionItem } from "./profiles";
 
 /** Fixture shaped exactly like AI Tathastu's ProfessionalProjectionV1. */
 const projection = (over: Record<string, unknown> = {}) => ({
@@ -179,5 +179,67 @@ describe("intelligence-layer data from AI Tathastu", () => {
     await applyTathastuProfile(db, profileId, projection({ goals: { targetRole: { id: "fe", label: "Frontend Developer" }, needs: [], assessed: false } }), "ait-sub-1", actor);
     const p = (await loadProfile(db, profileId))!;
     expect(p.profile.aitInsights.goals).toEqual({ targetRole: "Frontend Developer", needs: [], assessed: false });
+  });
+});
+
+describe("education and experience from AI Tathastu (root cause of missing records)", () => {
+  const id = { id: "ait-sub-1", email: null, name: "Student", headline: null, avatarUrl: null, careerRole: null, location: null };
+
+  it("keeps an education entry that names a degree but no institution, and says the institution is unknown", () => {
+    const m = mapProjection(projectionSchema.parse(projection({ education: [{ institution: null, degree: "B.Tech", fieldOfStudy: "Computer Science", dates: "2022 - 2026", grade: null }] })));
+    expect(m.education).toEqual([expect.objectContaining({ institution: "Institution not stated", degree: "B.Tech", field: "Computer Science", startYear: 2022, graduationYear: 2026 })]);
+  });
+
+  it("uses the onboarding university when every shared entry is unusable (was: zero education rows)", () => {
+    const m = mapProjection(projectionSchema.parse(projection({ identity: { ...id, university: "LPU", degree: "B.Tech" }, education: [{ institution: null, degree: null, fieldOfStudy: null, dates: "2024", grade: null }] })));
+    expect(m.education).toEqual([expect.objectContaining({ institution: "LPU", degree: "B.Tech" })]);
+  });
+
+  it("shows the same entry from two sources once, keeping the fuller copy; distinct entries stay", () => {
+    const m = mapProjection(projectionSchema.parse(projection({
+      education: [
+        { institution: "COEP", degree: "B.Tech", fieldOfStudy: null, dates: "2022 - 2026", grade: null },
+        { institution: "COEP Pune", degree: "B.Tech", fieldOfStudy: "CS", dates: "2022 - 2026", grade: "8.4" },
+        { institution: "coep", degree: "B.Tech", fieldOfStudy: "Computer Science", dates: "2022 - 2026", grade: "8.4" },
+        { institution: "COEP", degree: "M.Tech", fieldOfStudy: null, dates: "2026 - 2028", grade: null },
+      ],
+      experience: [
+        { organization: "Acme", role: "Intern", dates: "Jun 2025 - Aug 2025", description: null },
+        { organization: "ACME", role: "intern", dates: "Jun 2025 - Aug 2025", description: "Built dashboards" },
+        { organization: "Acme", role: "Data Analyst", dates: "2026 - Present", description: null },
+      ],
+    })));
+    expect(m.education!.map((e) => [e.institution, e.degree, e.grade])).toEqual([["coep", "B.Tech", "8.4"], ["COEP Pune", "B.Tech", "8.4"], ["COEP", "M.Tech", null]]);
+    expect(m.experiences!.map((e) => [e.title, e.description])).toEqual([["intern", "Built dashboards"], ["Data Analyst", null]]);
+    expect(m.experiences![1]).toMatchObject({ current: true, startDate: "2026-01-01", endDate: null });
+  });
+
+  it("imports education and experience; repeated sync events and updates never duplicate; Avsar records are never overwritten", async () => {
+    const p0 = (await loadProfile(db, profileId))!;
+    const own = p0.education.filter((e) => e.source === "avsar").length;
+    const ownExp = p0.experiences.filter((e) => e.source === "avsar").length;
+    for (let i = 0; i < 3; i++) await applyTathastuProfile(db, profileId, projection(), "ait-sub-1", actor);
+    let p = (await loadProfile(db, profileId))!;
+    expect(p.education.filter((e) => e.source === "ai_tathastu").map((e) => e.institution)).toEqual(["COEP"]);
+    expect(p.experiences.filter((e) => e.source === "ai_tathastu").map((e) => [e.organization, e.title, e.startDate, e.endDate])).toEqual([["Acme", "Intern", "2025-06-01", "2025-08-01"]]);
+    // An update on AI Tathastu replaces the imported record; the student's own records stay as they were.
+    await applyTathastuProfile(db, profileId, projection({ experience: [{ organization: "Acme", role: "Intern", dates: "Jun 2025 - Sep 2025", description: "Shipped search" }] }), "ait-sub-1", actor);
+    p = (await loadProfile(db, profileId))!;
+    expect(p.experiences.filter((e) => e.source === "ai_tathastu")).toEqual([expect.objectContaining({ endDate: "2025-09-01", description: "Shipped search" })]);
+    expect(p.education.filter((e) => e.source === "avsar")).toHaveLength(own);
+    expect(p.experiences.filter((e) => e.source === "avsar")).toHaveLength(ownExp);
+  });
+
+  it("edits only the student's own records, never an imported one", async () => {
+    await addSectionItem(db, profileId, "experience", { organization: "Own Org", title: "Volunteer", kind: "volunteer", startDate: null, endDate: null, current: false, description: null });
+    const p = (await loadProfile(db, profileId))!;
+    const mine = p.experiences.find((e) => e.organization === "Own Org")!;
+    const imported = p.experiences.find((e) => e.source === "ai_tathastu")!;
+    expect(await updateSectionItem(db, profileId, "experience", mine.id, { title: "Volunteer lead" })).toBe(true);
+    expect(await updateSectionItem(db, profileId, "experience", imported.id, { title: "Hacked" })).toBe(false);
+    expect(await updateSectionItem(db, "00000000-0000-4000-8000-000000000000", "experience", mine.id, { title: "Other student" })).toBe(false);
+    const after = (await loadProfile(db, profileId))!;
+    expect(after.experiences.find((e) => e.id === mine.id)!.title).toBe("Volunteer lead");
+    expect(after.experiences.find((e) => e.id === imported.id)!.title).toBe("Intern");
   });
 });

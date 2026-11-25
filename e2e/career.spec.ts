@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { OUT } from "../playwright.config";
+import { dialogValue, saveInDialog } from "./profile-helpers";
 
 /**
  * Career intelligence, end to end, as the development student. The test builds a small synthetic profile through
@@ -22,20 +23,16 @@ const tooWide = (page: Page) =>
   );
 const bubble = (page: Page, name: string) => page.locator(`[data-testid="skill-network"] g[role="button"][data-skill="${name}"]`);
 
-async function saveField(page: Page, field: string, value: string, submit: string) {
-  const form = page.locator("form").filter({ has: page.getByRole("button", { name: submit }) });
-  await form.locator(`input[name="${field}"]`).fill(value);
-  await form.getByRole("button", { name: submit }).click();
-  await expect(form.getByRole("status")).toBeVisible();
-}
+const setSkills = (page: Page, value: string) => saveInDialog(page, "Edit my skills", "Skills you add in Avsar", { skills: value }, "Save my added skills");
+const setRoles = (page: Page, value: string) => saveInDialog(page, "Edit roles", "Roles you want", { preferredRoles: value }, "Save roles");
 
 /** The persona's skills before this file ran (other specs add some); put back at the end. */
 let originalSkills = "";
 
 test("empty profile: friendly empty states instead of a blank graph", async ({ page }) => {
   await page.goto("/app/profile");
-  originalSkills = await page.locator("form").filter({ has: page.getByRole("button", { name: "Save my added skills" }) }).locator('input[name="skills"]').inputValue();
-  await saveField(page, "skills", "", "Save my added skills");
+  originalSkills = await dialogValue(page, "Edit my skills", "Skills you add in Avsar", "skills");
+  await setSkills(page, "");
   await page.goto("/app/career");
   await expect(page.getByRole("heading", { level: 1, name: "Career intelligence" })).toBeVisible();
   await expect(page.getByTestId("skill-explorer-empty")).toBeVisible();
@@ -44,15 +41,10 @@ test("empty profile: friendly empty states instead of a blank graph", async ({ p
 
 test("set up a Machine learning engineer profile", async ({ page }) => {
   await page.goto("/app/profile");
-  await saveField(page, "preferredRoles", "Machine learning engineer", "Save roles");
-  await saveField(page, "skills", "Python, Statistics, Communication, Excel", "Save my added skills");
-  await page.getByText("Add a project", { exact: true }).click();
-  // The profile's section forms reuse input ids (f-title, f-skills), so fields are found by name inside their form.
-  const project = page.locator("form").filter({ has: page.getByRole("button", { name: "Add project" }) });
-  await project.locator('input[name="title"]').fill("Sentiment classifier");
-  await project.locator('input[name="skills"]').fill("Python, Machine Learning, NLP");
-  await project.getByRole("button", { name: "Add project" }).click();
-  await expect(page.getByText("Skills: Python, Machine Learning, NLP")).toBeVisible();
+  await setRoles(page, "Machine learning engineer");
+  await setSkills(page, "Python, Statistics, Communication, Excel");
+  await saveInDialog(page, "Add project", "Add a project", { title: "Sentiment classifier", skills: "Python, Machine Learning, NLP" }, "Add project");
+  await expect(page.getByTestId("project-item").filter({ hasText: "Sentiment classifier" })).toContainText("Machine Learning");
 });
 
 test.describe("with a profile", () => {
@@ -156,8 +148,8 @@ test.describe("with a profile", () => {
   test("restore the development profile", async ({ page }) => {
     await page.goto("/app/profile");
     await page.getByRole("button", { name: "Remove Sentiment classifier" }).click();
-    await expect(page.getByText("Skills: Python, Machine Learning, NLP")).toHaveCount(0);
-    await saveField(page, "skills", originalSkills, "Save my added skills");
-    await saveField(page, "preferredRoles", "", "Save roles");
+    await expect(page.getByTestId("project-item").filter({ hasText: "Sentiment classifier" })).toHaveCount(0);
+    await setSkills(page, originalSkills);
+    await setRoles(page, "");
   });
 });

@@ -5,14 +5,14 @@ import { z } from "zod";
 
 import { audit } from "../audit";
 import type { Db } from "../db/client";
-import { candidateProfiles, candidateSkills, experiences, learningEvidence, skillEvidence } from "../db/schema";
+import { candidateProfiles, learningEvidence } from "../db/schema";
 import { distinctListings } from "../ingestion/dedupe";
 import { careerMatch, rankCareerMatches, roleReadiness, type CareerMatch } from "../intelligence/career-match";
 import { buildSkillProfile, collectEvidence, type EvidenceType, type SkillProfileEntry } from "../intelligence/evidence";
 import { matcherFor, type Matcher, type MatchInput } from "../intelligence/canonical-match";
 import { registry } from "../intelligence/registry";
 import { listOpenOpportunities, toFacts, type OpportunityFull } from "./opportunities";
-import { loadProfile, toCandidateFacts, type LoadedProfile } from "./profiles";
+import { experienceSkillLinks, loadProfile, toCandidateFacts, type LoadedProfile } from "./profiles";
 
 /** Evidence types a student can switch off for their career profile ("ait_all" = everything from AI Tathastu). */
 export const CONTROLLABLE_EVIDENCE: { key: EvidenceType | "ait_all"; label: string }[] = [
@@ -27,12 +27,7 @@ export const CONTROLLABLE_EVIDENCE: { key: EvidenceType | "ait_all"; label: stri
 export async function loadEvidence(db: Db, p: LoadedProfile) {
   const profileId = p.profile.id;
   const [links, learning] = await Promise.all([
-    db
-      .select({ skillName: candidateSkills.name, experienceId: experiences.id, title: experiences.title, org: experiences.organization, createdAt: skillEvidence.createdAt })
-      .from(skillEvidence)
-      .innerJoin(candidateSkills, eq(skillEvidence.skillId, candidateSkills.id))
-      .innerJoin(experiences, and(eq(skillEvidence.refId, experiences.id), eq(experiences.profileId, profileId)))
-      .where(and(eq(candidateSkills.profileId, profileId), eq(skillEvidence.kind, "experience"))),
+    experienceSkillLinks(db, profileId),
     db.select().from(learningEvidence).where(eq(learningEvidence.profileId, profileId)).orderBy(desc(learningEvidence.occurredAt)).limit(500),
   ]);
   const items = collectEvidence(
@@ -78,6 +73,12 @@ export async function matchInputFor(db: Db, p: LoadedProfile, now = new Date()):
     },
     learning,
   };
+}
+
+/** AI Tathastu Learning, when a valid https base URL is configured. */
+export function aitLearnUrl(): string | null {
+  const base = process.env.AVSAR_AIT_BASE_URL?.trim().replace(/\/$/, "");
+  return base && /^https:\/\//.test(base) ? `${base}/learning` : null;
 }
 
 /** Matcher for a loaded profile (null when there is none: signed out). */
@@ -131,8 +132,7 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
     }
   }
 
-  const base = process.env.AVSAR_AIT_BASE_URL?.trim().replace(/\/$/, "");
-  return { skills, targetRoles, readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: base && /^https:\/\//.test(base) ? `${base}/learning` : null };
+  return { skills, targetRoles, readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: aitLearnUrl() };
 }
 
 // ─── Student controls (always scoped to the caller's own profile) ─────────

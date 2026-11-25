@@ -1,12 +1,18 @@
 "use client";
 
-import { createContext, startTransition, useActionState, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useId, useRef, type ReactNode } from "react";
 
 import { buttonClass } from "@/components/ui";
 import type { ActionState } from "@/app/actions/candidate";
 
 type Action = (state: ActionState, fd: FormData) => Promise<ActionState>;
-const FormContext = createContext<{ errors: Record<string, string>; pending: boolean }>({ errors: {}, pending: false });
+const FormContext = createContext<{ errors: Record<string, string>; pending: boolean; idPrefix: string }>({ errors: {}, pending: false, idPrefix: "f" });
+
+/** Field id unique to its form (several forms on one page can share field names). */
+function useFieldId(name: string, explicit?: string) {
+  const { idPrefix } = useContext(FormContext);
+  return explicit ?? `${idPrefix}-${name}`;
+}
 
 /** Field errors for inputs inside an ActionForm (null when the field is fine). */
 export function useFieldError(name: string): string | null {
@@ -19,14 +25,18 @@ export function useFieldError(name: string): string | null {
  * the form after every action); clears only on success when resetOnSuccess is set. Without JavaScript the
  * native form action still runs.
  */
-export function ActionForm({ action, children, submitLabel, className = "", resetOnSuccess = false }: { action: Action; children?: ReactNode; submitLabel?: string; className?: string; resetOnSuccess?: boolean }) {
+export function ActionForm({ action, children, submitLabel, className = "", resetOnSuccess = false, onSuccess, footer }: { action: Action; children?: ReactNode; submitLabel?: string; className?: string; resetOnSuccess?: boolean; onSuccess?: () => void; footer?: ReactNode }) {
   const [state, formAction, pending] = useActionState(action, null);
   const ref = useRef<HTMLFormElement>(null);
+  const idPrefix = `f${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   useEffect(() => {
     if (resetOnSuccess && state?.ok) ref.current?.reset();
+    if (state?.ok) onSuccess?.();
+    // onSuccess runs once per result; a new callback identity alone must not re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, resetOnSuccess]);
   return (
-    <FormContext.Provider value={{ errors: state?.errors ?? {}, pending }}>
+    <FormContext.Provider value={{ errors: state?.errors ?? {}, pending, idPrefix }}>
       <form
         ref={ref}
         action={formAction}
@@ -49,7 +59,7 @@ export function ActionForm({ action, children, submitLabel, className = "", rese
             <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">Please fix the highlighted fields.</p>
           )}
         </div>
-        {submitLabel && <SubmitButton label={submitLabel} />}
+        {footer ?? (submitLabel && <SubmitButton label={submitLabel} />)}
       </form>
     </FormContext.Provider>
   );
@@ -67,7 +77,7 @@ export function SubmitButton({ label, variant = "primary", className = "" }: { l
 /** A labelled input that reads its error from the surrounding ActionForm. */
 export function Input({ name, label, hint, required, className = "", ...props }: React.ComponentProps<"input"> & { name: string; label: string; hint?: string }) {
   const error = useFieldError(name);
-  const id = props.id ?? `f-${name}`;
+  const id = useFieldId(name, props.id);
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="block text-sm font-semibold text-navy">
@@ -91,7 +101,7 @@ export function Input({ name, label, hint, required, className = "", ...props }:
 
 export function Textarea({ name, label, hint, required, className = "", ...props }: React.ComponentProps<"textarea"> & { name: string; label: string; hint?: string }) {
   const error = useFieldError(name);
-  const id = props.id ?? `f-${name}`;
+  const id = useFieldId(name, props.id);
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="block text-sm font-semibold text-navy">
@@ -115,7 +125,7 @@ export function Textarea({ name, label, hint, required, className = "", ...props
 
 export function Select({ name, label, children, required, ...props }: React.ComponentProps<"select"> & { name: string; label: string }) {
   const error = useFieldError(name);
-  const id = props.id ?? `f-${name}`;
+  const id = useFieldId(name, props.id);
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="block text-sm font-semibold text-navy">

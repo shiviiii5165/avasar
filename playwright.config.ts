@@ -37,6 +37,8 @@ export default defineConfig({
     { name: "responsive", testMatch: /responsive\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE } },
     // Edits the development student's profile and restores it at the end; runs after the specs that read it.
     { name: "career", testMatch: /career\.spec\.ts/, dependencies: ["setup", "desktop", "responsive"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
+    // Adds and removes Avsar-only education/experience on the development student; runs after the other profile users.
+    { name: "profile", testMatch: /(^|[\\/])profile\.spec\.ts$/, dependencies: ["setup", "desktop", "responsive", "career"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     { name: "profile-import-mock", testMatch: /profile-import\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } },
   ],
   webServer: [

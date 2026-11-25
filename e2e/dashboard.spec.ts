@@ -322,11 +322,14 @@ test.describe("other sections", () => {
 
   test("Profile: a skill added in Avsar is saved and labelled as Avsar-owned", async ({ page }) => {
     await page.goto("/app/profile");
-    const field = page.getByLabel("Skills you want to add in Avsar (comma separated)");
-    await field.fill("Python, Docker");
-    await page.getByRole("button", { name: "Save my added skills" }).click();
+    await page.getByTestId("manage-skills").locator("summary").click();
+    await page.getByRole("button", { name: "Edit my skills" }).click();
+    const dialog = page.getByRole("dialog", { name: "Skills you add in Avsar" });
+    await dialog.getByLabel("Skills you want to add in Avsar (comma separated)").fill("Python, Docker");
+    await dialog.getByRole("button", { name: "Save my added skills" }).click();
     await expect(page.getByRole("status").filter({ hasText: /saved|updated/i }).first()).toBeVisible();
     await page.reload();
+    await page.getByTestId("manage-skills").locator("summary").click();
     await expect(page.getByText("Added in Avsar", { exact: true })).toBeVisible();
     await expect(page.getByRole("list", { name: "Skills you added in Avsar" })).toContainText("Docker");
   });

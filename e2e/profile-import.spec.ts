@@ -18,7 +18,7 @@ async function refreshFromProvider(page: Page) {
   await page.waitForURL(/\/app\/profile/);
 }
 
-const ownSkills = (page: Page) => page.getByRole("list", { name: "Skills you added in Avsar" });
+const ownSkills = (page: Page) => page.locator('ul[aria-label="Skills you added in Avsar"]');
 
 test.describe.configure({ mode: "serial" });
 
@@ -34,7 +34,25 @@ test("mock provider: successful, partial and failed imports, reconnect, and Avsa
     await expect(page.getByText(/Profile imported from AI Tathastu/)).toBeVisible(); // compact status line
     await page.goto("/app/profile");
     await expect(page.getByText(/^Profile imported from AI Tathastu/)).toBeVisible();
-    await expect(page.getByRole("list", { name: "Skills from AI Tathastu" })).toContainText("React · advanced · verified");
+    await expect(page.locator('ul[aria-label="Skills from AI Tathastu"]')).toContainText("React · advanced · verified");
+    // Education and experience shared by AI Tathastu are imported with their details, marked as AI Tathastu-owned.
+    const edu = page.getByTestId("education-item");
+    await expect(edu).toHaveCount(1);
+    await expect(edu).toContainText("College of Engineering Pune");
+    await expect(edu).toContainText("B.Tech, Computer Science");
+    await expect(edu).toContainText("2022 – 2026");
+    await expect(edu).toContainText("From AI Tathastu");
+    const exp = page.getByTestId("experience-item");
+    await expect(exp).toHaveCount(1);
+    await expect(exp).toContainText("Frontend Intern");
+    await expect(exp).toContainText("Pixel Labs");
+    await expect(exp).toContainText("Jun 2025 – Aug 2025");
+    await expect(exp).toContainText("Built accessible UI components.");
+    await expect(exp.getByRole("button", { name: /^Edit / })).toHaveCount(0); // read-only here
+    // A second sync of the same profile doesn't duplicate anything.
+    await refreshFromProvider(page);
+    await expect(page.getByTestId("education-item")).toHaveCount(1);
+    await expect(page.getByTestId("experience-item")).toHaveCount(1);
   });
 
   await test.step("intelligence-layer data reaches Career insights", async () => {
@@ -48,8 +66,12 @@ test("mock provider: successful, partial and failed imports, reconnect, and Avsa
   });
 
   await test.step("add a skill in Avsar", async () => {
-    await page.getByLabel("Skills you want to add in Avsar (comma separated)").fill("Docker");
-    await page.getByRole("button", { name: "Save my added skills" }).click();
+    await page.getByTestId("manage-skills").locator("summary").click();
+    await page.getByRole("button", { name: "Edit my skills" }).click();
+    const dialog = page.getByRole("dialog", { name: "Skills you add in Avsar" });
+    await dialog.getByLabel("Skills you want to add in Avsar (comma separated)").fill("Docker");
+    await dialog.getByRole("button", { name: "Save my added skills" }).click();
+    await expect(dialog).toBeHidden();
     await page.reload();
     await expect(ownSkills(page)).toContainText("Docker");
   });
@@ -58,7 +80,7 @@ test("mock provider: successful, partial and failed imports, reconnect, and Avsa
     await mock(page, "/__mock/share?sections=skills");
     await refreshFromProvider(page);
     await expect(page.getByText(/Some sections weren.t shared with Avsar/)).toBeVisible();
-    await expect(page.getByRole("list", { name: "Skills from AI Tathastu" })).toContainText("React");
+    await expect(page.locator('ul[aria-label="Skills from AI Tathastu"]')).toContainText("React");
     await expect(ownSkills(page)).toContainText("Docker");
   });
 
