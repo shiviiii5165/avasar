@@ -57,7 +57,6 @@ export interface CareerIntelligence {
   recommendations: { o: OpportunityFull; match: CareerMatch }[];
   roadmap: { skill: string; conceptId: string; why: string; buildsOn: string | null; openListings: number }[];
   learning: (typeof learningEvidence.$inferSelect)[];
-  excluded: string[];
   openListings: number;
   aitLearnUrl: string | null;
 }
@@ -72,7 +71,9 @@ export async function matchInputFor(db: Db, p: LoadedProfile, now = new Date()):
   return {
     input: {
       facts: toCandidateFacts(p),
-      profile: buildSkillProfile(items, registry(), { now, excluded: p.profile.excludedEvidenceTypes }),
+      // Every kind of evidence on the profile counts; there is no per-type opt-out on the career page.
+      // (What AI Tathastu sends at all is still governed by the student's consent there.)
+      profile: buildSkillProfile(items, registry(), { now }),
       targetRoles: [...new Set([...p.profile.preferredRoles, ...(ait.goals?.targetRole ? [ait.goals.targetRole] : [])])],
     },
     learning,
@@ -90,7 +91,6 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
   if (!p) return null;
   const reg = registry();
   const { input, learning } = await matchInputFor(db, p, now);
-  const excluded = p.profile.excludedEvidenceTypes;
   const { facts, profile: skills, targetRoles } = input;
 
   const scored = open.map((o) => ({ id: o.id, deadline: o.deadline, o, match: careerMatch(reg, facts, skills, { ...toFacts(o), skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin })) }, { targetRoles, now }) }));
@@ -132,7 +132,7 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
   }
 
   const base = process.env.AVSAR_AIT_BASE_URL?.trim().replace(/\/$/, "");
-  return { skills, targetRoles, readiness, recommendations, roadmap, learning, excluded, openListings: open.length, aitLearnUrl: base && /^https:\/\//.test(base) ? `${base}/learning` : null };
+  return { skills, targetRoles, readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: base && /^https:\/\//.test(base) ? `${base}/learning` : null };
 }
 
 // ─── Student controls (always scoped to the caller's own profile) ─────────

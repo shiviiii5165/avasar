@@ -9,16 +9,21 @@ import { STATUS, type SkillState } from "@/server/intelligence/evidence";
 import { layoutSkillNetwork, LABEL_PX, type NetworkLayout } from "./skill-network-layout";
 import type { SkillLink, SkillView } from "./skill-view";
 import { StatusPill } from "./status-pill";
-import { STATUS_ORDER, STATUS_STYLE } from "./status-style";
+import { SKILL_PALETTE, skillColours, STATUS_ORDER, STATUS_STYLE, type SkillColour } from "./status-style";
 
 /**
  * The student's skills as a colourful bubble network (visual language shared with AI Tathastu's Skills
  * Intelligence), with a list view as the text alternative.
- *  - Colour = evidence status (legend + filters). Size = number of evidence items on record. Nothing else.
- *  - Lines join skills used in the same project or job on the profile. No other line is ever drawn.
+ *  - Colour only tells skills apart (dealt out from the student's own evidence ranking, never by name).
+ *  - How a skill is known is the circle's style: solid = shown in work, solid + tick = verified,
+ *    inner dashed ring = learning or practising, white with a dashed outline = added to profile only.
+ *  - Size = number of evidence items on record. Nothing else.
+ *  - Lines join skills used in the same project or job. With many links, each skill draws only its strongest
+ *    few; every link of the selected skill is drawn, and all are listed in its details.
  *  - Tap, click, Enter or Space on a skill opens its details below the picture; Escape closes them.
  */
 const MAX_DRAWN = 24;
+const LINKS_PER_SKILL = 3;
 const STATES = STATUS_ORDER.filter((s): s is SkillState => s !== "related" && s !== "not_shown");
 
 export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillView[]; links: SkillLink[]; aitLearnUrl: string | null }) {
@@ -38,13 +43,34 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
   const drawn = useMemo(() => shown.slice(0, MAX_DRAWN), [shown]);
   const drawnKeys = useMemo(() => new Set(drawn.map((s) => s.key)), [drawn]);
   const drawnLinks = useMemo(() => links.filter((l) => drawnKeys.has(l.source) && drawnKeys.has(l.target)), [links, drawnKeys]);
+  // Readable at any size: each skill keeps its strongest few links (most shared projects/jobs first).
+  const quietLinks = useMemo(() => {
+    const used = new Map<string, number>();
+    return [...drawnLinks]
+      .sort((a, b) => b.shared - a.shared || a.source.localeCompare(b.source) || a.target.localeCompare(b.target))
+      .filter((l) => {
+        if ((used.get(l.source) ?? 0) >= LINKS_PER_SKILL || (used.get(l.target) ?? 0) >= LINKS_PER_SKILL) return false;
+        used.set(l.source, (used.get(l.source) ?? 0) + 1);
+        used.set(l.target, (used.get(l.target) ?? 0) + 1);
+        return true;
+      });
+  }, [drawnLinks]);
+  const colours = useMemo(() => skillColours(skills), [skills]);
   const selected = skills.find((s) => s.key === selectedKey) ?? null;
   const byKey = useMemo(() => new Map(skills.map((s) => [s.key, s])), [skills]);
   const usedWith = useMemo(
-    () => (selected ? links.filter((l) => l.source === selected.key || l.target === selected.key).map((l) => ({ skill: byKey.get(l.source === selected.key ? l.target : l.source)!, via: l.via })).filter((x) => x.skill) : []),
+    () =>
+      selected
+        ? links
+            .filter((l) => l.source === selected.key || l.target === selected.key)
+            .sort((a, b) => b.shared - a.shared)
+            .map((l) => ({ skill: byKey.get(l.source === selected.key ? l.target : l.source)!, via: l.via }))
+            .filter((x) => x.skill)
+        : [],
     [selected, links, byKey],
   );
   const focusKey = selectedKey ?? hoverKey;
+  const shownLinks = useMemo(() => (focusKey ? [...quietLinks, ...drawnLinks.filter((l) => (l.source === focusKey || l.target === focusKey) && !quietLinks.includes(l))] : quietLinks), [focusKey, quietLinks, drawnLinks]);
   const neighbours = useMemo(() => {
     if (!focusKey) return null;
     const n = new Set([focusKey]);
@@ -60,7 +86,7 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const layout = useMemo<NetworkLayout | null>(() => (width > 0 && drawn.length ? layoutSkillNetwork(drawn.map((s) => ({ id: s.key, name: s.name, evidenceCount: s.evidenceCount })), drawnLinks, width) : null), [drawn, drawnLinks, width]);
+  const layout = useMemo<NetworkLayout | null>(() => (width > 0 && drawn.length ? layoutSkillNetwork(drawn.map((s) => ({ id: s.key, name: s.name, evidenceCount: s.evidenceCount })), quietLinks, width) : null), [drawn, quietLinks, width]);
 
   const opener = useRef<HTMLElement | null>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -136,16 +162,16 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
           {layout ? (
             <svg width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} className="block" role="group" aria-label={`${drawn.length} skills as bubbles. Bigger means more evidence on record. The list view shows the same skills as text.`}>
               <defs>
-                {STATES.map((s) => (
-                  <radialGradient key={s} id={`${uid}-${s}`} cx="32%" cy="28%" r="80%">
-                    <stop offset="0%" stopColor={STATUS_STYLE[s].light} />
-                    <stop offset="55%" stopColor={STATUS_STYLE[s].deep} stopOpacity={STATUS_STYLE[s].outlined ? 0 : 1} />
-                    <stop offset="100%" stopColor={STATUS_STYLE[s].deep} stopOpacity={STATUS_STYLE[s].outlined ? 0 : 1} />
+                {SKILL_PALETTE.map((p, i) => (
+                  <radialGradient key={i} id={`${uid}-fill-${i}`} cx="32%" cy="28%" r="80%">
+                    <stop offset="0%" stopColor={p.light} />
+                    <stop offset="60%" stopColor={p.deep} />
+                    <stop offset="100%" stopColor={p.deep} />
                   </radialGradient>
                 ))}
               </defs>
               <g aria-hidden>
-                {drawnLinks.map((l) => {
+                {shownLinks.map((l) => {
                   const a = layout.nodes.get(l.source);
                   const b = layout.nodes.get(l.target);
                   if (!a || !b) return null;
@@ -160,10 +186,10 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
                       key={`${l.source}|${l.target}`}
                       d={`M ${a.x} ${a.y} Q ${mx - (dy / len) * bend} ${my + (dx / len) * bend} ${b.x} ${b.y}`}
                       fill="none"
-                      stroke={STATUS_STYLE[byKey.get(l.source)?.state ?? "declared"].dot}
+                      stroke={colours.get(l.source)?.light ?? "#a59fc0"}
                       strokeLinecap="round"
                       strokeWidth={touches ? 2.25 : 1.25}
-                      strokeOpacity={faded ? 0.1 : touches ? 0.9 : 0.45}
+                      strokeOpacity={faded ? 0.08 : touches ? 0.9 : 0.4}
                       className="motion-safe:transition-[stroke-opacity,stroke-width] motion-safe:duration-200"
                     />
                   );
@@ -180,7 +206,8 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
                     y={p.y}
                     r={p.r}
                     lines={p.lines}
-                    fill={`url(#${uid}-${s.state})`}
+                    colour={colours.get(s.key)!}
+                    fill={`url(#${uid}-fill-${colours.get(s.key)!.index})`}
                     active={s.key === selectedKey}
                     dimmed={neighbours !== null && !neighbours.has(s.key)}
                     onSelect={() => open(s.key)}
@@ -212,7 +239,7 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
                 onClick={() => open(s.key)}
                 className="flex min-h-11 w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors duration-150 hover:bg-surface-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-purple aria-pressed:bg-purple-soft/50"
               >
-                <span aria-hidden className="size-3 shrink-0 rounded-full" style={{ background: STATUS_STYLE[s.state].dot }} />
+                <span aria-hidden className="size-3 shrink-0 rounded-full" style={{ background: colours.get(s.key)!.deep }} />
                 <span className="min-w-0 flex-1 truncate font-semibold text-navy">{s.name}</span>
                 <span className="shrink-0 text-xs text-muted">{s.label}</span>
                 <span className="hidden w-24 shrink-0 text-right text-xs tabular-nums text-muted sm:block">{s.evidenceCount} evidence</span>
@@ -223,22 +250,28 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
       )}
 
       <div ref={panel} aria-live="polite" className="scroll-mt-24">
-        {selected && <SkillDetail skill={selected} usedWith={usedWith} onSelect={(k) => setSelectedKey(k)} onClose={close} aitLearnUrl={aitLearnUrl} />}
+        {selected && <SkillDetail skill={selected} accent={colours.get(selected.key)!.deep} colourOf={(k) => colours.get(k)?.deep ?? "#a59fc0"} usedWith={usedWith} onSelect={(k) => setSelectedKey(k)} onClose={close} aitLearnUrl={aitLearnUrl} />}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-xs text-muted">
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-3 text-xs text-muted">
         <span className="inline-flex items-center gap-1.5">
-          <svg aria-hidden width="22" height="12"><circle cx="5" cy="6" r="3.5" fill="#a59fc0" /><circle cx="15" cy="6" r="5.5" fill="#a59fc0" /></svg>
-          Bigger bubble = more evidence on record
+          <svg aria-hidden width="14" height="14"><circle cx="7" cy="7" r="6" fill="#047857" /><circle cx="10.5" cy="3.5" r="3.2" fill="#ffffff" /><path d="M9 3.6 L10.2 4.8 L12.1 2.6" fill="none" stroke="#047857" strokeWidth="1.2" strokeLinecap="round" /></svg>
+          Verified
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <svg aria-hidden width="18" height="8"><path d="M1 6 Q 9 0 17 6" fill="none" stroke="#a59fc0" strokeWidth="1.5" /></svg>
-          Line = used in the same project or job
+          <svg aria-hidden width="14" height="14"><circle cx="7" cy="7" r="6" fill="#5b21b6" /></svg>
+          Shown in your work
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <svg aria-hidden width="12" height="12"><circle cx="6" cy="6" r="5" fill="#eef4ff" stroke="#3b82f6" strokeWidth="1.2" strokeDasharray="2 1.5" /></svg>
-          Dashed = added to profile, nothing backs it yet
+          <svg aria-hidden width="14" height="14"><circle cx="7" cy="7" r="6" fill="#0e7490" fillOpacity="0.85" /><circle cx="7" cy="7" r="3.5" fill="none" stroke="#ffffff" strokeWidth="1" strokeDasharray="1.6 1.3" /></svg>
+          Learning or practising
         </span>
+        <span className="inline-flex items-center gap-1.5">
+          <svg aria-hidden width="14" height="14"><circle cx="7" cy="7" r="6" fill="#ffffff" stroke="#be185d" strokeWidth="1.3" strokeDasharray="2.2 1.6" /></svg>
+          Added to profile
+        </span>
+        <span>Bigger = more evidence</span>
+        <span>Line = used together</span>
       </div>
     </section>
   );
@@ -260,9 +293,12 @@ function FilterChip({ active, onClick, label, count, dot, hint }: { active: bool
   );
 }
 
-function Bubble({ skill, x, y, r, lines, fill, active, dimmed, onSelect, onHover }: { skill: SkillView; x: number; y: number; r: number; lines: string[]; fill: string; active: boolean; dimmed: boolean; onSelect: () => void; onHover: (on: boolean) => void }) {
-  const style = STATUS_STYLE[skill.state];
-  const outlined = Boolean(style.outlined);
+function Bubble({ skill, colour, x, y, r, lines, fill, active, dimmed, onSelect, onHover }: { skill: SkillView; colour: SkillColour; x: number; y: number; r: number; lines: string[]; fill: string; active: boolean; dimmed: boolean; onSelect: () => void; onHover: (on: boolean) => void }) {
+  // How the skill is known is drawn as the circle's style; its colour only tells it apart from its neighbours.
+  const listed = skill.state === "declared";
+  const inProgress = skill.state === "practiced" || skill.state === "learning";
+  const verified = skill.state === "verified";
+  const ink = listed ? colour.deep : "#ffffff";
   const lineH = LABEL_PX + 1.5;
   const block = lines.length * lineH + 11;
   const firstY = y - block / 2 + LABEL_PX - 1;
@@ -272,6 +308,8 @@ function Bubble({ skill, x, y, r, lines, fill, active, dimmed, onSelect, onHover
       onSelect();
     }
   };
+  // Tick badge for verified skills, on the circle's upper-right edge.
+  const bx = x + r * 0.68, by = y - r * 0.68;
   return (
     <g
       role="button"
@@ -287,36 +325,43 @@ function Bubble({ skill, x, y, r, lines, fill, active, dimmed, onSelect, onHover
       onFocus={() => onHover(true)}
       onBlur={() => onHover(false)}
       className="cursor-pointer outline-none motion-safe:transition-opacity motion-safe:duration-200 [&:focus-visible>.focus-ring]:opacity-100"
-      style={{ opacity: dimmed ? 0.3 : 1 }}
+      style={{ opacity: dimmed ? 0.4 : 1 }}
     >
       <title>{`${skill.name} · ${skill.label}`}</title>
-      {active && <circle cx={x} cy={y} r={r + 7} fill={style.dot} fillOpacity={0.18} />}
+      {active && <circle cx={x} cy={y} r={r + 7} fill={colour.light} fillOpacity={0.35} />}
       <circle className="focus-ring opacity-0" cx={x} cy={y} r={r + 4} fill="none" stroke="#1c1f4a" strokeWidth={2} />
-      {outlined ? (
-        <circle cx={x} cy={y} r={r} fill={style.light} stroke={style.dot} strokeWidth={active ? 2.5 : 1.75} strokeDasharray="5 4" />
+      {listed ? (
+        <circle cx={x} cy={y} r={r} fill="#ffffff" stroke={colour.deep} strokeWidth={active ? 2.5 : 1.75} strokeDasharray="5 4" />
       ) : (
-        <circle cx={x} cy={y} r={r} fill={fill} stroke="#ffffff" strokeWidth={active ? 3 : 2} />
+        <>
+          <circle cx={x} cy={y} r={r} fill={fill} fillOpacity={inProgress ? 0.85 : 1} stroke="#ffffff" strokeWidth={active ? 3 : 2} />
+          {inProgress && <circle cx={x} cy={y} r={r - 5} fill="none" stroke="#ffffff" strokeOpacity={0.8} strokeWidth={1.25} strokeDasharray="3 3" />}
+        </>
       )}
-      <text x={x} textAnchor="middle" fontSize={LABEL_PX} fontWeight={700} fill={outlined ? style.deep : "#ffffff"} className="pointer-events-none select-none" style={outlined ? undefined : { textShadow: "0 1px 2px rgba(15, 23, 42, 0.35)" }}>
+      <text x={x} textAnchor="middle" fontSize={LABEL_PX} fontWeight={700} fill={ink} className="pointer-events-none select-none" style={listed ? undefined : { textShadow: "0 1px 2px rgba(15, 23, 42, 0.35)" }}>
         {lines.map((line, i) => (
           <tspan key={i} x={x} y={firstY + i * lineH}>
             {line}
           </tspan>
         ))}
       </text>
-      <text x={x} y={firstY + lines.length * lineH + 0.5} textAnchor="middle" fontSize={9.5} fontWeight={600} fill={outlined ? style.deep : "#ffffff"} fillOpacity={0.9} className="pointer-events-none select-none tabular-nums">
+      <text x={x} y={firstY + lines.length * lineH + 0.5} textAnchor="middle" fontSize={9.5} fontWeight={600} fill={ink} fillOpacity={0.9} className="pointer-events-none select-none tabular-nums">
         {skill.evidenceCount} evidence
       </text>
+      {verified && (
+        <g aria-hidden className="pointer-events-none">
+          <circle cx={bx} cy={by} r={8} fill="#ffffff" stroke={colour.deep} strokeWidth={1.25} />
+          <path d={`M ${bx - 3.4} ${by + 0.2} L ${bx - 1} ${by + 2.5} L ${bx + 3.5} ${by - 2.4}`} fill="none" stroke={colour.deep} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+      )}
     </g>
   );
 }
-
-function SkillDetail({ skill, usedWith, onSelect, onClose, aitLearnUrl }: { skill: SkillView; usedWith: { skill: SkillView; via: string }[]; onSelect: (key: string) => void; onClose: () => void; aitLearnUrl: string | null }) {
-  const style = STATUS_STYLE[skill.state];
+function SkillDetail({ skill, accent, colourOf, usedWith, onSelect, onClose, aitLearnUrl }: { skill: SkillView; accent: string; colourOf: (key: string) => string; usedWith: { skill: SkillView; via: string }[]; onSelect: (key: string) => void; onClose: () => void; aitLearnUrl: string | null }) {
   const needsEvidence = skill.state !== "verified" && skill.state !== "demonstrated";
   return (
     <div role="region" aria-label={`${skill.name} details`} className="mt-4 overflow-hidden rounded-xl border border-line bg-surface" data-testid="skill-detail">
-      <div aria-hidden className="h-1" style={{ background: style.dot }} />
+      <div aria-hidden className="h-1" style={{ background: accent }} />
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -386,7 +431,7 @@ function SkillDetail({ skill, usedWith, onSelect, onClose, aitLearnUrl }: { skil
                   {usedWith.slice(0, 8).map((u) => (
                     <li key={u.skill.key}>
                       <button type="button" onClick={() => onSelect(u.skill.key)} title={`Both in: ${u.via}`} className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-xs font-semibold text-navy transition-colors duration-150 hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-purple">
-                        <span aria-hidden className="size-2 rounded-full" style={{ background: STATUS_STYLE[u.skill.state].dot }} />
+                        <span aria-hidden className="size-2 rounded-full" style={{ background: colourOf(u.skill.key) }} />
                         {u.skill.name}
                         <span className="sr-only">, both in {u.via}</span>
                       </button>

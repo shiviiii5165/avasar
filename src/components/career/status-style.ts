@@ -19,3 +19,26 @@ export const STATUS_STYLE: Record<SkillStatusKey, StatusStyle> = {
 
 /** Display order: strongest evidence first. */
 export const STATUS_ORDER: SkillStatusKey[] = ["verified", "demonstrated", "practiced", "learning", "declared", "related", "not_shown"];
+
+/**
+ * Bubble colours: one per skill, only to tell skills apart (the same palette as AI Tathastu's skill network).
+ * Nothing is tied to a skill's name: colours are dealt out in order of the student's own evidence (best-evidenced
+ * first, name as tie-break), across ALL their skills, so a skill keeps its colour when filters change.
+ * "deep" carries white 11px labels at ≥ 4.5:1.
+ */
+export const SKILL_PALETTE = [
+  { light: "#a78bfa", deep: "#5b21b6" }, // violet
+  { light: "#22d3ee", deep: "#0e7490" }, // cyan
+  { light: "#34d399", deep: "#047857" }, // emerald
+  { light: "#fb923c", deep: "#c2410c" }, // coral
+  { light: "#f472b6", deep: "#be185d" }, // pink
+  { light: "#60a5fa", deep: "#1d4ed8" }, // blue
+  { light: "#2dd4bf", deep: "#0f766e" }, // turquoise
+  { light: "#e879f9", deep: "#a21caf" }, // magenta
+] as const;
+export type SkillColour = (typeof SKILL_PALETTE)[number] & { index: number };
+
+export function skillColours(skills: { key: string; name: string; evidenceCount: number }[]): Map<string, SkillColour> {
+  const order = [...skills].sort((a, b) => b.evidenceCount - a.evidenceCount || a.name.localeCompare(b.name));
+  return new Map(order.map((s, k) => [s.key, { ...SKILL_PALETTE[k % SKILL_PALETTE.length], index: k % SKILL_PALETTE.length }]));
+}

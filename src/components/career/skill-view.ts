@@ -22,7 +22,8 @@ export interface SkillView {
   /** "Essential for Data Analyst" when the skill is part of the student's first career goal. */
   goal: string | null;
 }
-export interface SkillLink { source: string; target: string; via: string }
+/** Two skills used in the same project or job. `shared` = how many projects or jobs they share. */
+export interface SkillLink { source: string; target: string; via: string; shared: number }
 
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null);
 /** Evidence that is a shared piece of work: two skills used in it are "used together". */
@@ -74,7 +75,9 @@ export function skillLinks(skills: SkillProfileEntry[]): SkillLink[] {
     for (let i = 0; i < keys.length; i++)
       for (let j = i + 1; j < keys.length; j++) {
         const id = `${keys[i]}|${keys[j]}`;
-        if (!out.has(id)) out.set(id, { source: keys[i], target: keys[j], via: w.label });
+        const l = out.get(id);
+        if (l) l.shared++;
+        else out.set(id, { source: keys[i], target: keys[j], via: w.label, shared: 1 });
       }
   }
   return [...out.values()];

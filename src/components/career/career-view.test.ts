@@ -63,7 +63,7 @@ describe("career page view model, for eight synthetic students", () => {
       });
       it("links only skills that share a project", () => {
         const links = skillLinks(profile);
-        if (b) expect(links).toEqual([{ source: [a, b].map((n) => reg.key(n)).sort()[0], target: [a, b].map((n) => reg.key(n)).sort()[1], via: "Capstone project" }]);
+        if (b) expect(links).toEqual([{ source: [a, b].map((n) => reg.key(n)).sort()[0], target: [a, b].map((n) => reg.key(n)).sort()[1], via: "Capstone project", shared: 1 }]);
         else expect(links).toEqual([]);
       });
       it("keeps recommendations domain-aware: an in-field listing ranks above an off-field one", () => {
