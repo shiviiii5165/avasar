@@ -9,7 +9,7 @@ import type { Db } from "../db/client";
 import { ingestionRuns, opportunities, opportunitySkills, opportunitySourceRefs, opportunitySources, opportunityVersions } from "../db/schema";
 import { ADAPTERS, adapterFor, boundGetter, missingConfig, type CollectResult, type SourceAdapter } from "../ingestion/adapters";
 import { boardPageUrl, KNOWN_BOARDS } from "../ingestion/ats";
-import { compareListings } from "../ingestion/dedupe";
+import { roleTitle, sameOpening } from "../ingestion/dedupe";
 import { normalizeListing, normalizeTitle, type NormalizedListing } from "../ingestion/normalize";
 import type { Resolver, Transport } from "../ingestion/safe-fetch";
 import { registry } from "../intelligence/registry";
@@ -162,18 +162,26 @@ async function upsertListing(db: Db, source: SourceRow, l: NormalizedListing, no
             eq(opportunities.contentFingerprint, l.fingerprint),
             urls.length ? inArray(opportunities.sourceUrl, urls) : sql`false`,
             urls.length ? inArray(opportunities.externalUrl, urls) : sql`false`,
-            sql`btrim(lower(regexp_replace(regexp_replace(${opportunities.title}, '[^a-zA-Z0-9+# ]+', ' ', 'g'), '\s+', ' ', 'g'))) = ${normalizeTitle(l.title)}`,
+            sql`btrim(lower(regexp_replace(regexp_replace(${opportunities.title}, '[^a-zA-Z0-9+# ]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))) = ${normalizeTitle(l.title)}`,
+            // The same role posted per city ("… (Pune)", "… - Bengaluru") at the same employer.
+            and(
+              sql`lower(${opportunities.organizationName}) = ${l.organization.toLowerCase()}`,
+              sql`btrim(lower(regexp_replace(regexp_replace(${opportunities.title}, '[^a-zA-Z0-9+# ]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))) like ${`${roleTitle(l.title)}%`}`,
+            ),
           ),
           eq(opportunities.isSample, false),
         ),
       )
       .limit(50);
-    const me = { sourceId: source.id, sourceRecordId: l.sourceRecordId, urls, fingerprint: l.fingerprint, title: l.title, organization: l.organization, locations: l.locations, workMode: l.workMode, description: l.description, deadline: l.deadline };
+    const me = { sourceId: source.id, sourceRecordId: l.sourceRecordId, urls, fingerprint: l.fingerprint, title: l.title, organization: l.organization, locations: l.locations, workMode: l.workMode, description: l.description, deadline: l.deadline, employmentType: l.employmentType };
     for (const c of candidates) {
-      const d = compareListings(me, { sourceId: c.sourceId, sourceRecordId: c.sourceRecordId, urls: [c.sourceUrl, c.externalUrl], fingerprint: c.contentFingerprint, title: c.title, organization: c.organizationName, locations: c.locations, workMode: c.workMode, description: c.description, deadline: c.deadline });
-      if (!d.duplicate) continue;
-      const [added] = await tx.insert(opportunitySourceRefs).values({ opportunityId: c.id, sourceId: source.id, sourceRecordId: l.sourceRecordId, sourceUrl: l.sourceUrl, contentFingerprint: l.fingerprint, matchedBy: d.matchedBy!, firstSeenAt: now, lastSeenAt: now }).returning();
-      await tx.update(opportunities).set({ lastCheckedAt: now, staleSince: null }).where(eq(opportunities.id, c.id));
+      // One rule for "same opening" here and on every page (dedupe.ts sameOpening), so feeds can't create what pages hide.
+      const matchedBy = sameOpening(me, { sourceId: c.sourceId, sourceRecordId: c.sourceRecordId, urls: [c.sourceUrl, c.externalUrl], fingerprint: c.contentFingerprint, title: c.title, organization: c.organizationName, locations: c.locations, workMode: c.workMode, description: c.description, deadline: c.deadline, employmentType: c.employmentType });
+      if (!matchedBy) continue;
+      const [added] = await tx.insert(opportunitySourceRefs).values({ opportunityId: c.id, sourceId: source.id, sourceRecordId: l.sourceRecordId, sourceUrl: l.sourceUrl, contentFingerprint: l.fingerprint, matchedBy, firstSeenAt: now, lastSeenAt: now }).returning();
+      // The same role in another city: one listing that names every city, never a second card.
+      const locations = [...new Set([...c.locations, ...l.locations])];
+      await tx.update(opportunities).set({ lastCheckedAt: now, staleSince: null, ...(locations.length !== c.locations.length ? { locations } : {}) }).where(eq(opportunities.id, c.id));
       return { kind: "duplicates", refId: added.id };
     }
 

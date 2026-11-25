@@ -82,15 +82,35 @@ export interface CareerMatch {
   explanations: Explanation[];
   learnNext: string[];
   /**
-   * Relevance gate (independent of the score): the listing is in the student's direction (their target role, its field
-   * or a neighbouring one), or the student's evidence covers at least one SPECIFIC skill it asks for. Generic skills
-   * (concepts that point to no field: Excel, communication, MS Office…) never make a listing relevant on their own.
-   * With no target and no specific skills on the profile there is nothing to judge by, so everything stays relevant.
+   * Relevance tier (RELEVANCE below), independent of the score and ranked BEFORE it, so the career goal is a primary
+   * signal: strong (the student's role or field, backed by their skills) > good (their field, or a neighbouring field,
+   * or a clear specific-skill fit where the field is unknown/related) > weak (a different field, or only generic skills
+   * in common). Weak listings are never recommended and are ranked after the others when browsing.
    */
+  tier: RelevanceTier;
+  /** tier !== "weak". */
   relevant: boolean;
   /** The specific (field-bearing) skills the student's evidence covers for this listing. */
   specificSkills: string[];
 }
+
+export type RelevanceTier = "strong" | "good" | "weak";
+/**
+ * The tier rules, written out so they can be read and tested:
+ *  - Generic skills (Excel, communication, soft skills: concepts that point to no field) never count towards relevance.
+ *  - Coverage = the listing's SPECIFIC skills the student's evidence supports (exact, specialization or related).
+ *  With a target role:
+ *    role/same field   → strong if any specific skill is covered or the listing names none; else good.
+ *    adjacent field    → good.
+ *    same broad group  → good only with substantial coverage (≥ MIN_COVERED specific skills and ≥ MIN_SHARE of them); else weak.
+ *    unknown field     → the same substantial-coverage test.
+ *    mixed title       → good when ≥ MIN_SHARE of the listing's specific skills (by weight) are in the student's field or a
+ *                        neighbouring one and the student covers a specific skill ("NLP Research Intern" for an ML student).
+ *    unrelated field   → weak otherwise, whatever the skill overlap (one shared skill never turns a sales role into an ML match).
+ *  Without a target role: good with any specific coverage; weak otherwise, unless the profile has no specific skills at all
+ *  (nothing to judge by: everything stays good and the page says the picks are general).
+ */
+export const RELEVANCE = { MIN_COVERED: 2, MIN_SHARE: 0.5 } as const;
 
 /** Soft skills and office basics written as free text: shared by nearly every listing, so they show no direction. */
 const GENERIC_TEXT = /^(communication|communications|teamwork|team work|team player|leadership|problem solving|problem-solving|time management|interpersonal|adaptability|critical thinking|creativity|attention to detail|multitasking|multi-tasking|hard working|hardworking|ms office|microsoft office|computer skills|basic computer|english|organisational|organizational)( skills?)?$/;
@@ -236,11 +256,33 @@ export function careerMatch(
   // (listed after scored ones, never above them), so "near you" can't outrank "qualified for it".
   const score = den && !(opp.skills.length > 0 && skillFit === null) ? Math.round((num / den) * 100) : null;
 
-  // Relevance gate: direction, or at least one specific skill covered (exact, specialization or related).
-  const specificSkills = verdicts.filter((v) => v.supportedBy && isSpecificSkill(reg, reg.key(v.requirement))).map((v) => v.requirement);
+  // Relevance tier (see RELEVANCE).
+  const specificAsked = verdicts.filter((v) => isSpecificSkill(reg, reg.key(v.requirement)));
+  const specificSkills = specificAsked.filter((v) => v.supportedBy).map((v) => v.requirement);
+  const substantial = specificSkills.length >= RELEVANCE.MIN_COVERED && specificSkills.length / Math.max(1, specificAsked.length) >= RELEVANCE.MIN_SHARE;
   const profileHasSpecific = profile.some((e) => e.state !== "learning" && isSpecificSkill(reg, e.key));
-  const inDirection = relation === "role" || relation === "same" || relation === "adjacent";
-  const relevant = inDirection || specificSkills.length > 0 || (!targets.length && !profileHasSpecific);
+  // Mixed titles: the title names one field, but at least half of the listing's specific skills (by weight) are in the
+  // student's field or a neighbouring one, and the student covers one of its specific skills.
+  const inTargetField = (key: string) => {
+    const d = key.startsWith("text:") ? null : domainOfConcept(reg, key);
+    return Boolean(d) && targets.some((t) => domainRelation(t.domain, d) === "same" || domainRelation(t.domain, d) === "adjacent");
+  };
+  const weightOf = (v: SkillVerdict) => SCORING.requirementWeight[v.importance];
+  const askedWeight = specificAsked.reduce((s, v) => s + weightOf(v), 0);
+  const fieldWeight = specificAsked.filter((v) => inTargetField(reg.key(v.requirement))).reduce((s, v) => s + weightOf(v), 0);
+  const workFits = targets.length > 0 && specificSkills.length > 0 && askedWeight > 0 && fieldWeight / askedWeight >= RELEVANCE.MIN_SHARE;
+  const tier: RelevanceTier = targets.length
+    ? relation === "role" || relation === "same"
+      ? specificSkills.length || !specificAsked.length ? "strong" : "good"
+      : relation === "adjacent"
+        ? "good"
+        : ((relation === "none" || relation === "group") && workFits) || ((relation === "group" || relation === null) && substantial)
+          ? "good"
+          : "weak"
+    : specificSkills.length || !profileHasSpecific
+      ? "good"
+      : "weak";
+  const relevant = tier !== "weak";
 
   const learnNext = [
     ...verdicts.filter((v) => v.importance === "required" && v.development === "next_step"),
@@ -260,6 +302,7 @@ export function careerMatch(
     domain: { id: cls.domain, label: fieldLabel, basis: cls.basis, confidence: cls.confidence, relation },
     explanations,
     learnNext,
+    tier,
     relevant,
     specificSkills,
   };

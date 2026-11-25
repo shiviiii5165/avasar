@@ -103,7 +103,9 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
 
   const scored = open.map((o) => ({ id: o.id, deadline: o.deadline, o, match: careerMatch(reg, facts, skills, { ...toFacts(o), skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin })) }, { targetRoles, now }) }));
   // Ranking is unchanged; the same listing reached through two feeds (or posted twice) is then shown once, in its best-ranked position.
-  const ranked = rankCareerMatches(scored.filter((x) => x.match.relevant && (!opts.exclude || !hasAnyId(opts.exclude, x.o))), scored.length);
+  const TIER = { strong: 0, good: 1, weak: 2 } as const;
+  const ranked = rankCareerMatches(scored.filter((x) => x.match.relevant && (!opts.exclude || !hasAnyId(opts.exclude, x.o))), scored.length)
+    .sort((a, b) => TIER[a.match.tier] - TIER[b.match.tier]); // stable: score order kept within a tier
   const recommendations = distinctListings(ranked, ({ o }) => ({ sourceId: o.sourceId, sourceRecordId: o.sourceRecordId, urls: [o.sourceUrl, o.externalUrl], fingerprint: o.contentFingerprint, title: o.title, organization: o.organizationName, locations: o.locations, workMode: o.workMode, description: o.description, deadline: o.deadline }), 8).map(({ o, match }) => ({ o, match }));
 
   const roleIds = [...new Set(targetRoles.map((t) => reg.roleFor(t)?.id).filter((x): x is string => Boolean(x)))].slice(0, 3);

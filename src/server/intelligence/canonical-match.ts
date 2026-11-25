@@ -70,6 +70,7 @@ export function toMatchResult(cm: CareerMatch): MatchResult {
     explanations: cm.explanations,
     domain: cm.domain,
     relevant: cm.relevant,
+    tier: cm.tier,
   };
 }
 

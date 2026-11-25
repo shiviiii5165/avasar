@@ -2,9 +2,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { createMemoryDb, type Db } from "../db/client";
 import { opportunities, opportunitySkills } from "../db/schema";
-import { canonicalize } from "../ingestion/dedupe";
+import { canonicalize, roleTitle, sameOpening } from "../ingestion/dedupe";
 import { discoveryRules } from "./discovery";
-import { canonicalIdSet, hasAnyId, listOpenOpportunities, PAGE_SIZE, recordIdIn, searchOpportunities, searchSchema } from "./opportunities";
+import { recommend } from "../domain/recommend";
+import { canonicalIdSet, hasAnyId, listOpenOpportunities, PAGE_SIZE, recordIdIn, searchOpportunities, searchSchema, toFacts } from "./opportunities";
 
 const RUBRIK_TITLE = "Senior AI Engineer - Enterprise Agentic Systems";
 const RUBRIK_DESC = "Build agentic AI systems for enterprise data security. Design LLM-based agents, evaluation pipelines and retrieval. Work with Python and distributed systems.";
@@ -105,9 +106,39 @@ describe("discovery pipeline on the database: unique counts, pages, field filter
     expect(all.filter((o) => o.title === RUBRIK_TITLE)).toHaveLength(1);
   });
 
+  it("Home and Opportunities recommendations are built from the same canonical set: no duplicate can come back", async () => {
+    const open = await listOpenOpportunities(db);
+    const rec = recommend((o) => ({ score: 50, completeness: 1, evidence: "none", factors: [], matchingSkills: [], missingRequiredSkills: [], missingPreferredSkills: [], reasons: [], nextActions: [], eligibility: { status: "eligible", checks: [], missingInformation: [] }, tier: o.title.includes("Agentic") ? "strong" : "good" }) as never, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { limit: 10 });
+    const titles = rec.picks.map((r) => `${r.item.title}|${r.item.organizationName}`);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles.filter((t) => t.startsWith(RUBRIK_TITLE))).toHaveLength(1);
+  });
+
   it("search finds by title, employer and skill, counting each opening once", async () => {
     for (const [q, n] of [["Agentic", 1], ["Rubrik", 1], ["python", 15], ["Logistix", 1]] as const) {
       expect((await searchOpportunities(db, searchSchema.parse({ q }))).total, q).toBe(n);
     }
+  });
+});
+
+describe("same-opening rule edge cases", () => {
+  const base = { sourceId: "s1", sourceRecordId: "1", urls: ["https://jobs.example.com/rubrik/101"], fingerprint: "f1", title: "Senior AI Engineer - Enterprise Agentic Systems", organization: "Rubrik", locations: ["Bengaluru"], workMode: "onsite", description: RUBRIK_DESC, deadline: null, employmentType: "full_time" };
+  const other = (over: Record<string, unknown>) => ({ ...base, sourceId: "s2", sourceRecordId: "zz", fingerprint: "f2", urls: [], ...over });
+
+  it("tracking parameters and different source ids don't hide a duplicate", () => {
+    expect(sameOpening(base, other({ urls: ["https://jobs.example.com/rubrik/101/?utm_source=linkedin&gh_src=abc&ref=feed"] }))).toBe("url");
+    expect(sameOpening(base, other({ locations: ["Pune"], description: `${RUBRIK_DESC} Location: Pune.` }))).toBe("same_role");
+  });
+  it("city suffixes in titles and empty descriptions don't hide a duplicate", () => {
+    expect(roleTitle("Senior AI Engineer - Enterprise Agentic Systems (Pune)")).toBe(roleTitle(base.title));
+    expect(roleTitle("Sr. AI Engineer – Enterprise Agentic Systems - Bengaluru, Remote")).toBe(roleTitle(base.title));
+    expect(sameOpening({ ...base, description: "" }, other({ description: "", locations: ["Chennai"] }))).toBe("same_role");
+  });
+  it("different roles at the same employer stay distinct", () => {
+    expect(roleTitle("Product Manager II - Ads")).not.toBe(roleTitle("Product Manager II"));
+    expect(sameOpening({ ...base, title: "Product Manager II" }, other({ title: "Product Manager II - Ads" }))).toBeNull();
+    expect(sameOpening(base, other({ urls: ["https://jobs.example.com/rubrik/101"], title: "Sales Development Representative" }))).toBeNull(); // shared careers URL
+    expect(sameOpening(base, other({ employmentType: "internship" }))).toBeNull();
+    expect(sameOpening(base, other({ description: "Own the Kubernetes platform, on-call rotation and capacity planning for storage clusters across regions worldwide." }))).toBeNull();
   });
 });

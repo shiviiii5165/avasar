@@ -121,3 +121,45 @@ describe("target role worked out from evidence (no goal stated)", () => {
     expect(inferTargetRole(reg, buildSkillProfile([ev("Python", "ait_learning"), ev("Machine Learning", "ait_learning")], reg, { now: NOW }))).toBeNull();
   });
 });
+
+describe("relevance tiers (career goal is a primary signal)", () => {
+  const sales: L = { id: "sales", title: "Cluster Manager, Enterprise Sales - Bank & Direct", skills: [["Data visualization", false], ["Negotiation", true], ["CRM", false]] };
+  const swe: L = { id: "swe", title: "Senior Software Engineer", skills: [["Java", true], ["Docker", false]] };
+  const mlRole: L = { id: "ml-se", title: "Senior AI Engineer - Enterprise Agentic Systems", skills: [["Python", true], ["Machine Learning", true], ["Docker", false]] };
+  const ds: L = { id: "ds2", title: "Data Scientist", skills: [["Python", true], ["Statistics", true]] };
+  const bi: L = { id: "bi", title: "Business Intelligence Analyst", skills: [["SQL", true], ["Power BI", true], ["Excel", false]] };
+  const mech: L = { id: "mech2", title: "Mechanical Design Engineer", skills: [["AutoCAD", true], ["SolidWorks", true], ["Excel", false]] };
+  const tierOf = (m: ReturnType<typeof student>, l: L) => m(opp(l), NOW).tier;
+  const pool = [sales, swe, mlRole, ds, bi, mech, ...LISTINGS];
+  const ranked = (m: ReturnType<typeof student>) => rankForBrowse(m, pool.map((l) => ({ id: l.id, item: l, facts: opp(l) })), NOW).map((r) => r.id);
+
+  it("regression (Home screenshot): an ML student is never recommended a Sales role for one shared skill", () => {
+    const m = student("Machine learning engineer", ["Data visualization", "AWS", "Docker", "Git"], ["Python", "Machine Learning"]);
+    expect(tierOf(m, sales)).toBe("weak");
+    expect(tierOf(m, mlRole)).toBe("strong");
+    expect(tierOf(m, ds)).toBe("good"); // neighbouring field
+    const recs = recommend(m, pool.map((l) => ({ id: l.id, item: l, facts: opp(l) })), { now: NOW, limit: 5 }).picks.map((r) => r.id);
+    expect(recs).not.toContain("sales");
+    const order = ranked(m);
+    for (const relevant of ["ml-se", "ml", "ai", "ds2"]) for (const off of ["sales", "swe", "ops-generic", "mech2"]) expect(order.indexOf(relevant), `${relevant} before ${off}`).toBeLessThan(order.indexOf(off));
+  });
+
+  it("a Business Analyst ranks analyst roles above unrelated engineering roles", () => {
+    const m = student("Business analyst", ["Excel", "SQL", "Requirements gathering", "Power BI"]);
+    expect(tierOf(m, LISTINGS.find((l) => l.id === "ba")!)).toBe("strong");
+    expect(["strong", "good"]).toContain(tierOf(m, bi));
+    expect(tierOf(m, mech)).toBe("weak");
+    expect(tierOf(m, swe)).toBe("weak");
+    const order = ranked(m);
+    for (const off of ["mech2", "mech", "civil", "swe", "ml"]) {
+      expect(order.indexOf("ba")).toBeLessThan(order.indexOf(off));
+      expect(order.indexOf("bi")).toBeLessThan(order.indexOf(off));
+    }
+  });
+
+  it("no relevant listings means no recommendations, not filler", () => {
+    const m = student("Machine learning engineer", ["Python", "Machine Learning"]);
+    const onlyOther = [sales, mech, LISTINGS.find((l) => l.id === "hr")!].map((l) => ({ id: l.id, item: l, facts: opp(l) }));
+    expect(recommend(m, onlyOther, { now: NOW, limit: 3 }).picks).toEqual([]);
+  });
+});

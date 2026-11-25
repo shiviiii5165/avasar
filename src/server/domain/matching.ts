@@ -45,6 +45,8 @@ export interface MatchResult {
    * relevant listings. Undefined (bare-facts matching) means "not assessed".
    */
   relevant?: boolean;
+  /** Relevance tier from the canonical matcher (career-match RELEVANCE): ranked before the score. */
+  tier?: "strong" | "good" | "weak";
 }
 
 const lc = (s: string) => s.trim().toLowerCase();

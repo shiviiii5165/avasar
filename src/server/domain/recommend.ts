@@ -18,10 +18,16 @@ export interface Ranked<T> { item: T; id: string; match: MatchResult }
 export const LIMITED_DATA_THRESHOLD = 0.4;
 
 const excluded = (m: MatchResult) => m.eligibility.status === "ineligible" || m.eligibility.status === "unavailable";
-/** Only generic skills connect it to the student and it isn't in their direction (career-match relevance gate). */
-const offTarget = (m: MatchResult) => m.relevant === false;
+/** Weak tier: a different field, or only generic skills in common (career-match RELEVANCE). */
+const offTarget = (m: MatchResult) => m.relevant === false || m.tier === "weak";
+
+/** Relevance tier first (the career goal is a primary signal), then score. Unassessed (bare facts) ranks as "good". */
+const TIER_RANK = { strong: 0, good: 1, weak: 2 } as const;
+const tierRank = (m: MatchResult) => TIER_RANK[m.tier ?? "good"];
 
 function compare<T>(a: Ranked<T> & { deadline: Date | null }, b: Ranked<T> & { deadline: Date | null }) {
+  const t = tierRank(a.match) - tierRank(b.match);
+  if (t) return t;
   const s = (b.match.score ?? -1) - (a.match.score ?? -1);
   if (s) return s;
   const da = a.deadline?.getTime() ?? Infinity;

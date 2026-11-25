@@ -71,22 +71,69 @@ export function compareListings(a: Comparable, b: Comparable): DuplicateDecision
 }
 
 /**
- * Canonical opportunities: groups records that are the SAME opening and keeps one representative per group.
- *
- * Same opening when:
- *   - a strong signal holds (same source record, same content fingerprint, or the same application URL with the
- *     same title: a shared careers-page URL alone never merges two roles), or
- *   - same employer AND same title AND (description similarity ≥ DESCRIPTION_THRESHOLD or the same deadline).
- *     Locations are NOT compared here: employer feeds often publish one role once per city, which students see
- *     as the same card five times. The representative shows every city instead.
- * Different titles, or the same title with a clearly different description, stay separate openings.
- *
- * Output keeps input order (position of each group's first record). The representative is the most trustworthy
- * record (employer-verified, then source-checked, then posted on Avsar, then input order); its `locations` are the
- * union of the group's, and `duplicateIds` lists the other records' ids so saves and dismissals made on any copy
- * still apply. Pure; O(n) bucketing plus pairwise checks only within one employer+title bucket.
+ * The title that identifies a role across feeds: normalized (normalize.ts normalizeTitle) with a trailing location
+ * or work-mode qualifier removed, so "Senior AI Engineer (Pune)", "Senior AI Engineer - Bengaluru" and
+ * "Sr. AI Engineer – Remote, India" all identify the same role. Only known place/work-mode words are removed;
+ * anything else in the title ("- Ads", "- Payments", "II") is part of the role and kept.
  */
-export interface CanonicalInput extends Comparable { id: string; verification?: string | null }
+const PLACE_WORDS = new Set([
+  "india", "remote", "hybrid", "onsite", "on site", "work from home", "wfh", "anywhere",
+  "bengaluru", "bangalore", "mumbai", "navi mumbai", "pune", "hyderabad", "chennai", "delhi", "new delhi", "ncr", "delhi ncr", "gurugram", "gurgaon",
+  "noida", "kolkata", "ahmedabad", "jaipur", "chandigarh", "kochi", "cochin", "coimbatore", "indore", "lucknow", "bhubaneswar", "thiruvananthapuram",
+  "trivandrum", "mysuru", "mysore", "nagpur", "vadodara", "surat", "visakhapatnam", "goa", "mohali", "bhopal", "patna", "guwahati", "dehradun",
+]);
+export function roleTitle(title: string): string {
+  let t = title.trim();
+  for (let guard = 0; guard < 3; guard++) {
+    const m = t.match(/^(.*\S)\s*(?:\(([^()]*)\)|[-–—|,:]\s*([^-–—|,:()]+))$/);
+    if (!m) break;
+    const tail = (m[2] ?? m[3] ?? "").toLowerCase().replace(/[^a-z ,/]+/g, " ").split(/[,/]| or | and /).map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (!tail.length || !tail.every((w) => PLACE_WORDS.has(w))) break;
+    t = m[1];
+  }
+  return normalizeTitle(t);
+}
+
+/** A description too short to tell two postings apart (empty, or a one-line teaser). */
+const MIN_DESCRIPTION_WORDS = 12;
+const informative = (d: string) => d.trim().split(/\s+/).filter(Boolean).length >= MIN_DESCRIPTION_WORDS;
+
+export interface OpeningInput extends Comparable { employmentType?: string | null }
+export type OpeningMatch = "source_record" | "url" | "fingerprint" | "same_role" | null;
+
+/**
+ * Are two records the SAME opening? Used by ingestion (before creating a listing) and by every page (canonicalize),
+ * so both apply one rule:
+ *   strong   same source record · same content fingerprint · same application URL (tracking parameters removed) AND
+ *            the same role title (a shared careers-page URL alone never merges two roles)
+ *   same_role  same employer AND same role title (roleTitle) AND compatible job type AND
+ *            (description similarity ≥ DESCRIPTION_THRESHOLD, or the same deadline, or neither description says
+ *            enough to tell them apart). Locations are NOT compared: feeds publish one role once per city.
+ * Different role titles, different job types, or the same title with clearly different descriptions stay separate.
+ */
+export function sameOpening(a: OpeningInput, b: OpeningInput): OpeningMatch {
+  const ta = roleTitle(a.title), tb = roleTitle(b.title);
+  if (a.sourceId && a.sourceId === b.sourceId && a.sourceRecordId && a.sourceRecordId === b.sourceRecordId) return "source_record";
+  const ua = new Set(a.urls.map(normalizeUrl).filter(Boolean));
+  if (ta === tb && b.urls.map(normalizeUrl).some((u) => u && ua.has(u))) return "url";
+  if (a.fingerprint && a.fingerprint === b.fingerprint) return "fingerprint";
+  const employer = normalizeEmployer(a.organization);
+  if (!employer || employer !== normalizeEmployer(b.organization) || !ta || ta !== tb) return null;
+  if (a.employmentType && b.employmentType && a.employmentType !== b.employmentType) return null;
+  const sameDeadline = a.deadline !== null && b.deadline !== null && a.deadline.toISOString().slice(0, 10) === b.deadline.toISOString().slice(0, 10);
+  const uninformative = !informative(a.description) && !informative(b.description);
+  return sameDeadline || uninformative || jaccard(a.description, b.description) >= DESCRIPTION_THRESHOLD ? "same_role" : null;
+}
+
+/**
+ * Canonical opportunities: groups records that are the SAME opening (sameOpening) and keeps one representative per
+ * group. Output keeps input order (position of each group's first record). The representative is the most
+ * trustworthy record (employer-verified, then source-checked, then posted on Avsar, then input order); its
+ * `locations` are the union of the group's, and `duplicateIds` lists the other records' ids so saves and dismissals
+ * made on any copy still apply. Pure; strong signals are hashed, the role rule is checked only within one
+ * employer + role-title bucket.
+ */
+export interface CanonicalInput extends OpeningInput { id: string; verification?: string | null }
 export function canonicalize<T extends { id: string; locations: string[] }>(items: T[], comparable: (x: T) => CanonicalInput): (T & { duplicateIds: string[] })[] {
   const n = items.length;
   const parent = Array.from({ length: n }, (_, i) => i);
@@ -99,7 +146,7 @@ export function canonicalize<T extends { id: string; locations: string[] }>(item
   const strong = new Map<string, number>();
   const buckets = new Map<string, number[]>();
   cs.forEach((c, i) => {
-    const title = normalizeTitle(c.title);
+    const title = roleTitle(c.title);
     const keys = [
       c.sourceId && c.sourceRecordId ? `rec:${c.sourceId}|${c.sourceRecordId}` : null,
       c.fingerprint ? `fp:${c.fingerprint}` : null,
@@ -119,10 +166,8 @@ export function canonicalize<T extends { id: string; locations: string[] }>(item
   for (const list of buckets.values())
     for (let x = 0; x < list.length; x++)
       for (let y = x + 1; y < list.length; y++) {
-        const a = cs[list[x]], b = cs[list[y]];
         if (find(list[x]) === find(list[y])) continue;
-        const sameDeadline = a.deadline !== null && b.deadline !== null && a.deadline.toISOString().slice(0, 10) === b.deadline.toISOString().slice(0, 10);
-        if (sameDeadline || jaccard(a.description, b.description) >= DESCRIPTION_THRESHOLD) union(list[x], list[y]);
+        if (sameOpening(cs[list[x]], cs[list[y]])) union(list[x], list[y]);
       }
 
   const trust = (i: number) => (cs[i].verification === "org_verified" ? 4 : cs[i].verification === "source_verified" ? 2 : 0) + (cs[i].sourceId ? 0 : 1);
@@ -136,7 +181,6 @@ export function canonicalize<T extends { id: string; locations: string[] }>(item
       return { ...items[rep], locations, duplicateIds: members.filter((i) => i !== rep).map((i) => items[i].id) };
     });
 }
-
 /**
  * Keeps the first of each set of duplicates in an already-ordered list, up to `limit` items. For display only:
  * nothing is merged or deleted. Stricter than ingestion on one signal: a shared URL alone (an employer's generic

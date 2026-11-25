@@ -199,3 +199,25 @@ describe("learning evidence: consent, ownership and grounding", () => {
     expect(noConsent.outcome).toBe("ignored_consent");
   });
 });
+
+describe("ingestion safeguard: the same role posted once per city", () => {
+  it("attaches later cities to the first listing (locations merged) instead of creating new listings", async () => {
+    const ncs = await source("ncs");
+    const desc = "Build agentic AI systems for enterprise data security. Design LLM-based agents, evaluation pipelines and retrieval with Python.";
+    const role = { title: "Senior AI Engineer - Enterprise Agentic Systems", organization: "Rubrik", description: desc, requiredSkills: ["Python"], deadline: null };
+    const t = new Date(NOW.getTime() + 10 * 3600_000);
+    const run = await runIngestion(db, ncs.id, { trigger: "manual", env: ENV, now: t, deps: { collect: collect([
+      rec("RB-1", { ...role, locations: ["Bengaluru"], applyUrl: "https://boards.example.com/rubrik/jobs/101?gh_src=feed" }),
+      rec("RB-2", { ...role, locations: ["Pune"], applyUrl: "https://boards.example.com/rubrik/jobs/102" }),
+      rec("RB-3", { ...role, title: "Senior AI Engineer - Enterprise Agentic Systems (Hyderabad)", locations: ["Hyderabad"], applyUrl: "https://boards.example.com/rubrik/jobs/103?utm_source=x" }),
+      rec("RB-4", { ...role, title: "Staff AI Engineer - Enterprise Agentic Systems", locations: ["Bengaluru"], applyUrl: "https://boards.example.com/rubrik/jobs/104" }),
+    ], false) } });
+    expect(run).toMatchObject({ created: 2, duplicates: 2 });
+    const rubrik = await db.select().from(opportunities).where(eq(opportunities.organizationName, "Rubrik"));
+    expect(rubrik.map((o) => o.title).sort()).toEqual(["Senior AI Engineer - Enterprise Agentic Systems", "Staff AI Engineer - Enterprise Agentic Systems"]);
+    const senior = rubrik.find((o) => o.title.startsWith("Senior"))!;
+    expect(senior.locations.sort()).toEqual(["Bengaluru", "Hyderabad", "Pune"]);
+    const refs = await db.select().from(opportunitySourceRefs).where(eq(opportunitySourceRefs.opportunityId, senior.id));
+    expect(refs.map((r) => r.matchedBy).sort()).toEqual(["created", "same_role", "same_role"]); // provenance kept per record
+  });
+});

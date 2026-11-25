@@ -181,6 +181,20 @@ export function classifyOpportunity(reg: SkillRegistry, o: { title: string; skil
   }
   const [best] = [...votes.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
   if (best && total && best[1] / total >= 0.6) return { domain: best[0], roleId: null, roleTitle: null, basis: "skills", confidence: best[1] >= 3 ? "medium" : "low" };
+
+  // Last resort: skills found in the description text (ingestion marks them text_mentioned). Weaker evidence, so it
+  // needs at least three mentions pointing the same way and a clear majority, and is always low confidence.
+  const textVotes = new Map<string, number>();
+  let textTotal = 0;
+  for (const s of o.skills) {
+    if (s.origin !== "text_mentioned") continue;
+    const id = reg.resolve(s.name);
+    const d = id ? domainOfConcept(reg, id) : null;
+    textTotal++;
+    if (d) textVotes.set(d, (textVotes.get(d) ?? 0) + 1);
+  }
+  const [bestText] = [...textVotes.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  if (bestText && bestText[1] >= 3 && bestText[1] / textTotal >= 0.6) return { domain: bestText[0], roleId: null, roleTitle: null, basis: "skills", confidence: "low" };
   return { domain: null, roleId: null, roleTitle: null, basis: "unknown", confidence: "none" };
 }
 

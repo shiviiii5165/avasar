@@ -75,7 +75,7 @@ export interface NormalizedListing {
 
 export type NormalizeResult = { ok: true; listing: NormalizedListing } | { ok: false; issues: string[] };
 
-const TRACKING = /^(utm_|fbclid$|gclid$|ref$|refid$|source$|src$|trk$|mc_)/i;
+const TRACKING = /^(utm_|fbclid$|gclid$|msclkid$|ref$|refid$|referrer$|source$|src$|trk$|trackingid$|mc_|gh_src$|lever-source|lever-origin$|_ga$|_gl$|ccuid$|li_fat_id$)/i;
 /** https URL with tracking parameters, fragment and trailing slash removed; null when not a safe https URL. */
 export function normalizeUrl(raw: string | null | undefined): string | null {
   if (!raw) return null;

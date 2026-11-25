@@ -29,7 +29,7 @@ export interface OpportunityFull extends OpportunityRow {
  * are folded into one representative (ingestion/dedupe.ts canonicalize). Counts and pages are taken after this.
  */
 export function canonicalOpen(list: OpportunityFull[]): OpportunityFull[] {
-  return canonicalize(list, (o) => ({ id: o.id, verification: o.verification, sourceId: o.sourceId, sourceRecordId: o.sourceRecordId, urls: [o.sourceUrl, o.externalUrl], fingerprint: o.contentFingerprint, title: o.title, organization: o.organizationName, locations: o.locations, workMode: o.workMode, description: o.description, deadline: o.deadline }));
+  return canonicalize(list, (o) => ({ id: o.id, verification: o.verification, sourceId: o.sourceId, sourceRecordId: o.sourceRecordId, urls: [o.sourceUrl, o.externalUrl], fingerprint: o.contentFingerprint, title: o.title, organization: o.organizationName, locations: o.locations, workMode: o.workMode, description: o.description, deadline: o.deadline, employmentType: o.employmentType }));
 }
 
 /** True when the student acted on this opening under any of its records (saved, dismissed, applied). */

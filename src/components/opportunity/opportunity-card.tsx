@@ -29,8 +29,18 @@ export interface CardMatch {
   reasons?: string[];
   gap?: string | null;
   domain?: MatchResult["domain"];
-  /** Under half of the score could be assessed (e.g. only location): no percentage is shown, it would overstate fit. */
+  /** Under half of the score could be assessed (e.g. only location): it says so instead of a fit label. */
   limited?: boolean;
+  /** Relevance tier (career-match RELEVANCE). Shown as words: the 0–100 score is a relative ordering, not calibrated. */
+  tier?: MatchResult["tier"];
+}
+
+/** Plain-language fit label. No percentage: the score orders listings but isn't a validated probability. */
+export function tierLabel(m: Pick<CardMatch, "tier" | "domain">): { text: string; tone: string; hint: string } {
+  if (m.tier === "strong") return { text: "Strong fit", tone: "bg-success-soft text-success", hint: "Your career goal's field, and your evidence covers skills it asks for." };
+  if (m.tier === "weak") return { text: "Different field", tone: "bg-surface text-muted", hint: "Outside your career direction, or only general skills in common." };
+  if (m.domain?.relation === "adjacent") return { text: "Nearby field", tone: "bg-purple-soft text-purple", hint: "A field next to your goal: a good way to widen your options." };
+  return { text: "Good fit", tone: "bg-purple-soft text-purple", hint: "In your direction, or your specific skills fit what it asks for." };
 }
 
 /** Career direction first, then skill evidence, then everything else; eligibility lines stay on the detail page. */
@@ -48,7 +58,7 @@ export function cardMatch(m: MatchResult): CardMatch {
     : (m.eligibility.status === "insufficient_information" || m.eligibility.status === "potentially_eligible") && m.eligibility.missingInformation[0]
       ? m.eligibility.missingInformation[0]
       : null;
-  return { score: m.score, eligibility: m.eligibility.status, reasons, gap, domain: m.domain, limited: m.completeness < 0.5 };
+  return { score: m.score, eligibility: m.eligibility.status, reasons, gap, domain: m.domain, limited: m.completeness < 0.5, tier: m.tier };
 }
 
 export function OpportunityCard({ o, match, saved, actions }: { o: OpportunityFull; match?: CardMatch | null; saved?: boolean; actions?: ReactNode }) {
@@ -96,8 +106,8 @@ export function OpportunityCard({ o, match, saved, actions }: { o: OpportunityFu
               {match!.limited ? (
                 <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted" title="Your profile or this listing has too few details for a reliable match score">Few details to compare</span>
               ) : (
-                <span className="rounded-full bg-purple-soft px-2 py-0.5 text-xs font-semibold text-purple">
-                  {match!.score}% match{match!.eligibility === "ineligible" ? " · not eligible" : ""}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tierLabel(match!).tone}`} title={tierLabel(match!).hint}>
+                  {tierLabel(match!).text}{match!.eligibility === "ineligible" ? " · not eligible" : ""}
                 </span>
               )}
             </p>

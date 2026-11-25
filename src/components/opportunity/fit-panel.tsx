@@ -5,6 +5,7 @@ import { Badge, buttonClass } from "@/components/ui";
 import { ELIGIBILITY_LABEL, type EligibilityResult } from "@/server/domain/eligibility";
 import type { MatchResult } from "@/server/domain/matching";
 import { StatusPill } from "@/components/career/status-pill";
+import { tierLabel } from "@/components/opportunity/opportunity-card";
 import type { SkillState } from "@/server/intelligence/evidence";
 
 const IMPORTANCE_LABEL = { required: "Required by the employer", preferred: "Nice to have (employer)", mentioned: "Mentioned in the description (worked out by Avsar)" } as const;
@@ -77,7 +78,7 @@ export function MatchPanel({ match }: { match: MatchResult }) {
     <section aria-labelledby="match-title" className="rounded-xl border border-line bg-surface p-5 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <h2 id="match-title" className="text-base font-semibold text-navy">Why this matches you</h2>
-        {match.score !== null && <span className="text-sm font-bold text-purple">{match.score}% match</span>}
+        {match.score !== null && match.tier && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tierLabel(match).tone}`} title={tierLabel(match).hint}>{tierLabel(match).text}</span>}
       </div>
       <p className="mt-1 text-xs text-muted">
         A relative guide from your profile, not a prediction. Based on {Math.round(match.completeness * 100)}% of the factors · evidence {match.evidence === "none" ? "not available" : match.evidence}.
@@ -106,8 +107,8 @@ export function MatchPanel({ match }: { match: MatchResult }) {
       )}
       {match.skillVerdicts && match.skillVerdicts.length > 0 && <SkillBreakdown verdicts={match.skillVerdicts} />}
       <details className="mt-3 text-sm">
-        <summary className="cursor-pointer font-semibold text-navy">How the score is calculated{match.version ? ` (${match.version})` : ""}</summary>
-        <p className="mt-1 text-xs text-muted">Skill fit 60%, target role 10%, your preferences 30%. Parts that can&apos;t be assessed are left out, not counted as zero. It is not a chance of being hired.</p>
+        <summary className="cursor-pointer font-semibold text-navy">How this is worked out{match.version ? ` (${match.version})` : ""}</summary>
+        <p className="mt-1 text-xs text-muted">First, relevance to your career goal: your field, a nearby field, or a different one (one shared general skill never makes a different field relevant). Then, within that, a relative order from skill fit (50%), target role and field (25%) and your preferences (25%). Parts that can&apos;t be assessed are left out, not counted as zero. Neither is a chance of being hired.</p>
         <ul className="mt-2 space-y-1 text-muted">
           {match.factors.map((f) => (
             <li key={f.factor} className="flex justify-between gap-2">
