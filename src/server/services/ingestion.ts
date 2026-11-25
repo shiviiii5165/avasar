@@ -179,9 +179,12 @@ async function upsertListing(db: Db, source: SourceRow, l: NormalizedListing, no
       const matchedBy = sameOpening(me, { sourceId: c.sourceId, sourceRecordId: c.sourceRecordId, urls: [c.sourceUrl, c.externalUrl], fingerprint: c.contentFingerprint, title: c.title, organization: c.organizationName, locations: c.locations, workMode: c.workMode, description: c.description, deadline: c.deadline, employmentType: c.employmentType });
       if (!matchedBy) continue;
       const [added] = await tx.insert(opportunitySourceRefs).values({ opportunityId: c.id, sourceId: source.id, sourceRecordId: l.sourceRecordId, sourceUrl: l.sourceUrl, contentFingerprint: l.fingerprint, matchedBy, firstSeenAt: now, lastSeenAt: now }).returning();
-      // The same role in another city: one listing that names every city, never a second card.
+      // The same role in another city: one listing that names every city, never a second card. Only for listings that
+      // came from a source feed: a listing an employer or admin posted on Avsar is never edited by a third-party feed
+      // (it just gains the source reference, as before).
       const locations = [...new Set([...c.locations, ...l.locations])];
-      await tx.update(opportunities).set({ lastCheckedAt: now, staleSince: null, ...(locations.length !== c.locations.length ? { locations } : {}) }).where(eq(opportunities.id, c.id));
+      const feedOwned = c.sourceId !== null && c.createdBy === null;
+      await tx.update(opportunities).set({ lastCheckedAt: now, staleSince: null, ...(feedOwned && locations.length !== c.locations.length ? { locations } : {}) }).where(eq(opportunities.id, c.id));
       return { kind: "duplicates", refId: added.id };
     }
 

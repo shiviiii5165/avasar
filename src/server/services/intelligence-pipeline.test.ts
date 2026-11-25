@@ -221,3 +221,18 @@ describe("ingestion safeguard: the same role posted once per city", () => {
     expect(refs.map((r) => r.matchedBy).sort()).toEqual(["created", "same_role", "same_role"]); // provenance kept per record
   });
 });
+
+describe("ingestion never edits a listing an employer posted on Avsar", () => {
+  it("a matching feed record only adds a source reference; the employer's cities stay as posted", async () => {
+    const ncs = await source("ncs");
+    const desc = "Plan weekly delivery routes, track fleet costs and report on-time performance to the regional head.";
+    const [own] = await db.insert(opportunities).values({ slug: "employer-own-logistics-lead", title: "Logistics Planning Lead", category: "job", organizationName: "Fleetwise", description: desc, workMode: "onsite", locations: ["Nagpur"], status: "published", publishedAt: NOW, createdBy: adminId, verification: "org_verified" }).returning();
+    const t = new Date(NOW.getTime() + 20 * 3600_000);
+    const run = await runIngestion(db, ncs.id, { trigger: "manual", env: ENV, now: t, deps: { collect: collect([rec("FW-1", { title: "Logistics Planning Lead", organization: "Fleetwise", description: desc, requiredSkills: [], locations: ["Indore"], deadline: null })], false) } });
+    expect(run.duplicates).toBe(1);
+    const [after] = await db.select().from(opportunities).where(eq(opportunities.id, own.id));
+    expect(after.locations).toEqual(["Nagpur"]);
+    const refs = await db.select().from(opportunitySourceRefs).where(eq(opportunitySourceRefs.opportunityId, own.id));
+    expect(refs.map((r) => r.matchedBy)).toEqual(["same_role"]);
+  });
+});
