@@ -23,7 +23,11 @@ describe("database pool options", () => {
 
   it("still uses TLS for hosted databases, plain for localhost, and strips sslmode from the URL", () => {
     const remote = pgPoolOptions(REMOTE, 10, {});
-    expect(remote.ssl).toEqual({ rejectUnauthorized: false });
+    // Certificate verification is never turned off (regression: rejectUnauthorized:false allowed impersonation).
+    expect(remote.ssl).toEqual({ rejectUnauthorized: true, servername: "aws-0-ap-south-1.pooler.example.com" });
+    const supa = pgPoolOptions("postgresql://u:p@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres", 10, {});
+    expect(supa.ssl).toMatchObject({ rejectUnauthorized: true, servername: "aws-0-ap-southeast-1.pooler.supabase.com" });
+    expect((supa.ssl as { ca?: string }).ca).toContain("BEGIN CERTIFICATE");
     expect(remote.connectionString).not.toContain("sslmode");
     expect(pgPoolOptions("postgres://u:p@localhost:5432/db", 10, {}).ssl).toBeUndefined();
     expect(pgPoolOptions(REMOTE, 10, { DATABASE_SSL: "0" }).ssl).toBeUndefined();

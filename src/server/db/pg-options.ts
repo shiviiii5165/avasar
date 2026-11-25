@@ -1,5 +1,23 @@
 import type { PoolConfig } from "pg";
 
+import { SUPABASE_ROOT_CA } from "./supabase-ca";
+
+/**
+ * Encrypted AND verified: the server certificate must chain to a trusted CA and match the host, so nobody on the
+ * network path can impersonate the database and capture its password. Supabase's CA is not in Node's default
+ * store, so it is pinned explicitly (same as AI Tathastu and Collaborate).
+ */
+function tlsFor(url: string): NonNullable<PoolConfig["ssl"]> {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // malformed URL: pg reports it; still never disable verification
+  }
+  if (/\.supabase\.(com|co)$/i.test(host)) return { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true, servername: host };
+  return { rejectUnauthorized: true, ...(host ? { servername: host } : {}) };
+}
+
 /**
  * How long an unused pooled connection is kept open. node-postgres closes idle connections after 10 s by default,
  * which is shorter than a person spends reading one page: almost every click then paid a new TCP + TLS + login
@@ -27,7 +45,7 @@ export function pgPoolOptions(url: string, max: number, env: Record<string, stri
   return {
     connectionString,
     max,
-    ssl: local || env.DATABASE_SSL === "0" ? undefined : { rejectUnauthorized: false },
+    ssl: local || env.DATABASE_SSL === "0" ? undefined : tlsFor(url),
     idleTimeoutMillis: env.DATABASE_POOL_IDLE_MS?.trim() && Number.isFinite(idle) && idle >= 0 ? idle : DEFAULT_POOL_IDLE_MS,
     // Long-lived idle sockets: let the OS detect dead peers (NAT/pooler drops) instead of failing the next query.
     keepAlive: true,
