@@ -43,12 +43,42 @@ export function recommend<T>(candidate: Scorer, items: Candidate<T>[], opts: { l
   const closed = (m: MatchResult) => m.eligibility.status === "unavailable" || m.eligibility.checks.some((c) => c.key === "deadline" && c.outcome === "fail");
   const open = scored.filter((r) => !closed(r.match));
   const coverage = open.length ? open.reduce((s, r) => s + r.match.completeness, 0) / open.length : 0;
-  const picks = scored
-    .filter((r) => !excluded(r.match) && !opts.exclude?.has(r.id))
-    .sort(compare)
-    .slice(0, opts.limit ?? 3)
-    .map(({ item, id, match }) => ({ item, id, match }));
+  const pool = scored.filter((r) => !excluded(r.match) && !opts.exclude?.has(r.id)).sort(compare);
+  const picks = diversify(pool, opts.limit ?? 3).map(({ item, id, match }) => ({ item, id, match }));
   return { picks, limited: coverage < LIMITED_DATA_THRESHOLD };
+}
+
+/** Within this many score points, a pick from another field may replace one more pick from an over-represented field. */
+export const DIVERSITY_MARGIN = 10;
+
+/**
+ * Score order, except that no field (match.domain.id) takes more than ⌈2/3⌉ of the picks while a listing from
+ * another field scores within DIVERSITY_MARGIN of the pick it would replace. Listings with an unknown field are
+ * never capped. Deterministic; with fewer than 3 picks it is plain score order.
+ */
+export function diversify<T extends { match: MatchResult }>(sorted: T[], limit: number): T[] {
+  if (limit < 3) return sorted.slice(0, limit);
+  const cap = Math.ceil((limit * 2) / 3);
+  const picks: T[] = [];
+  const count = new Map<string, number>();
+  const rest = [...sorted];
+  while (picks.length < limit && rest.length) {
+    const next = rest[0];
+    const field = next.match.domain?.id ?? null;
+    if (field && (count.get(field) ?? 0) >= cap) {
+      const alt = rest.findIndex((r) => (r.match.domain?.id ?? null) !== field && (count.get(r.match.domain?.id ?? "") ?? 0) < cap);
+      const close = alt > 0 && (next.match.score ?? -1) - (rest[alt].match.score ?? -1) <= DIVERSITY_MARGIN;
+      if (close) {
+        picks.push(rest.splice(alt, 1)[0]);
+        const f = picks.at(-1)!.match.domain?.id;
+        if (f) count.set(f, (count.get(f) ?? 0) + 1);
+        continue;
+      }
+    }
+    picks.push(rest.shift()!);
+    if (field) count.set(field, (count.get(field) ?? 0) + 1);
+  }
+  return picks;
 }
 
 /** Full personalized order for browsing: everything stays visible; only failed or closed listings sink. */

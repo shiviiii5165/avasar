@@ -77,14 +77,49 @@ organization" additionally needs the organization itself verified.
 * **Evidence** (`intelligence/evidence.ts`): every item keeps type, source, time, verification and result. Skill
   state by written rules: verified > demonstrated > practiced > learning > declared. Asking about a topic is
   *learning* at most. Improvement is reported only from two comparable assessment results.
-* **Matching** (`intelligence/career-match.ts`, `career-match/v1`): A eligibility (unknown ≠ fail; fail = excluded)
+* **Matching** (`intelligence/career-match.ts`, `career-match/v2`): A eligibility (unknown ≠ fail; fail = excluded)
   → B skill fit via registry (exact, specialization, labelled *related*) → C development (in progress / realistic
   next step / gap) → D stated preferences → E documented weights. A listing that names skills is unscored until
   skill fit is assessable. Inputs carry no institution, gender, caste, religion, disability, health or age.
+* **Career fields** (`intelligence/domains.ts`, added 2026-11, v2): 52 fields in 10 groups (technology, business,
+  finance, marketing, creative, people, sciences, engineering, law/policy/social, customer service). Every role in
+  the registry belongs to one field (57 roles, ~170 skill concepts). A listing's field comes from its title
+  (high confidence), else from its listed skills when ≥ 60% point one way (medium/low, shown as "from skills"),
+  else it is "Field not specified": never guessed. Role alignment (weight 0.25, was 0.1) credits the target
+  role 1, same field 0.8, a listed neighbouring field 0.5, same group 0.25, other 0; a listing with no stated field
+  gets 0.3 when the student has a target, so a vague listing can't win on generic skills. "Recommended for you"
+  caps one field at ⌈2/3⌉ of picks when another field scores within 10 points (`domain/recommend.ts` `diversify`).
+  Search understands role names ("BA internship", "ML intern") through the same registry (`searchIntent`).
+  Imported plain skill lists are stored as preferred, not required.
 * **Student control**: `/app/career` lets the student exclude evidence types or individual AI Tathastu events.
 
 ## 5. Evaluation
-`npm run eval:matching` (synthetic, hand-labelled; `intelligence/eval/`). Result at `career-match/v1`, K = 3:
+`npm run eval:matching` (synthetic, hand-labelled; `intelligence/eval/`). K = 3. Original set:
+
+| Metric | career-match/v2 | career-match/v1 | lexical baseline |
+|---|---|---|---|
+| NDCG@3 | 0.963 | 0.950 | 0.920 |
+| Precision@3 | 0.564 | 0.538 | 0.538 |
+| Recall@3 | 0.897 | 0.859 | 0.885 |
+
+Cross-domain set (`eval/domain-dataset.ts`, 2026-11): 8 students (ML, business analyst, marketing, finance, UI/UX,
+HR, mechanical, research) ranked against 38 listings, technical ones included:
+
+| Metric | career-match/v2 | lexical baseline |
+|---|---|---|
+| NDCG@3 | 0.939 | 0.877 |
+| Precision@3 | 0.792 | 0.792 |
+| Field classification accuracy (22 listings) | 1.0 | n/a |
+| Search-intent accuracy (9 phrases) | 1.0 | n/a |
+| Closed listings in top 5 | 0 | n/a |
+
+Every domain student's first result is in their own field. Known weaknesses on this set: a vague "Summer
+Internship" still reaches the top 3 of students with only 2–3 relevant listings in the pool, and the research
+student's #3 is a data-science listing. The tech share in non-technical students' top 5 (0.17) is mostly
+neighbouring-field listings (data analyst for the business analyst). The classifier and search cases were written
+alongside the registry, so their 1.0 shows coverage of those phrasings, not general accuracy.
+
+Earlier v1 table (kept for comparison):
 
 | Metric | career-match/v1 | lexical baseline |
 |---|---|---|

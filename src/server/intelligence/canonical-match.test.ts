@@ -39,7 +39,7 @@ describe("one canonical matcher", () => {
       const page = match(l.facts, NOW);
       expect(page.score, l.id).toBe(career.score);
       expect(page.eligibility.status, l.id).toBe(career.eligibility.status);
-      expect(page.version).toBe("career-match/v1");
+      expect(page.version).toBe("career-match/v2");
     }
   });
 

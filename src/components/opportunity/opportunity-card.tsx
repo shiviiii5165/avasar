@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { BadgeCheck, Briefcase, Clock3, ExternalLink, IndianRupee, MapPin } from "lucide-react";
+import { BadgeCheck, Briefcase, CalendarClock, Check, CircleDashed, ExternalLink, Hourglass, IndianRupee, MapPin } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui";
+import type { MatchResult } from "@/server/domain/matching";
+import { classifyOpportunity } from "@/server/intelligence/domains";
+import { registry } from "@/server/intelligence/registry";
 import type { OpportunityFull } from "@/server/services/opportunities";
 
-import { CATEGORY_LABEL, deadlineLabel, EMPLOYMENT_LABEL, formatComp, placeLabel } from "./format";
 import { cardHighlight } from "@/server/domain/categories";
+import { FieldChip, fieldStyle } from "./field";
+import { CATEGORY_LABEL, deadlineLabel, EMPLOYMENT_LABEL, formatComp, placeLabel } from "./format";
 
 export function VerificationBadge({ level }: { level: string }) {
   if (level === "org_verified") return <Badge tone="success"><BadgeCheck aria-hidden className="size-3.5" /> Verified organization</Badge>;
@@ -17,40 +22,109 @@ export function SampleBadge() {
   return <Badge tone="orange" className="uppercase tracking-wide">Sample listing</Badge>;
 }
 
-export function OpportunityCard({ o, match, saved }: { o: OpportunityFull; match?: { score: number | null; eligibility: string } | null; saved?: boolean }) {
+/** What a card shows about fit. Built from the canonical MatchResult with cardMatch(), so every page says the same. */
+export interface CardMatch {
+  score: number | null;
+  eligibility: string;
+  reasons?: string[];
+  gap?: string | null;
+  domain?: MatchResult["domain"];
+  /** Under half of the score could be assessed (e.g. only location): no percentage is shown, it would overstate fit. */
+  limited?: boolean;
+}
+
+/** Career direction first, then skill evidence, then everything else; eligibility lines stay on the detail page. */
+const REASON_ORDER = [/^Matches your target role/, /^In your field/, /^Your evidence covers/];
+export function cardMatch(m: MatchResult): CardMatch {
+  const rank = (r: string) => {
+    const i = REASON_ORDER.findIndex((re) => re.test(r));
+    return i === -1 ? REASON_ORDER.length : i;
+  };
+  const reasons = [...m.reasons].filter((r) => !/^(Education|Graduation year|Experience|Location eligibility|Certifications|Work authorization)\b/.test(r)).sort((a, b) => rank(a) - rank(b)).slice(0, 2);
+  const near = m.explanations?.find((e) => e.text.startsWith("Close to your field"))?.text;
+  if (reasons.length < 2 && near) reasons.push(near);
+  const gap = m.missingRequiredSkills.length
+    ? `Not yet on your profile: ${m.missingRequiredSkills.slice(0, 2).join(", ")}${m.missingRequiredSkills.length > 2 ? ` +${m.missingRequiredSkills.length - 2}` : ""}`
+    : (m.eligibility.status === "insufficient_information" || m.eligibility.status === "potentially_eligible") && m.eligibility.missingInformation[0]
+      ? m.eligibility.missingInformation[0]
+      : null;
+  return { score: m.score, eligibility: m.eligibility.status, reasons, gap, domain: m.domain, limited: m.completeness < 0.5 };
+}
+
+export function OpportunityCard({ o, match, saved, actions }: { o: OpportunityFull; match?: CardMatch | null; saved?: boolean; actions?: ReactNode }) {
   const deadline = deadlineLabel(o.deadline);
+  // The match carries the field the matcher used; listings shown without a match are classified the same way.
+  const field = match?.domain ?? (() => {
+    const c = classifyOpportunity(registry(), o);
+    return { id: c.domain, basis: c.basis };
+  })();
+  const { bar } = fieldStyle(field.id);
+  const pay = ["job", "internship", "gig"].includes(o.category) || o.compMin !== null || o.compMax !== null
+    ? formatComp(o)
+    : cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>);
+  const scored = match && match.score !== null;
+  const reasons = match?.reasons ?? [];
+
   return (
-    <article className="group relative flex h-full flex-col rounded-xl border border-line bg-surface p-5 shadow-card transition-shadow hover:shadow-lift">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="purple">{CATEGORY_LABEL[o.category]}</Badge>
-        {o.employmentType && <Badge>{EMPLOYMENT_LABEL[o.employmentType]}</Badge>}
-        {o.isSample && <SampleBadge />}
-        {saved && <Badge tone="orange">Saved</Badge>}
-      </div>
-      <h3 className="mt-3 text-lg font-semibold leading-snug text-navy">
-        <Link href={`/opportunities/${o.slug}`} className="after:absolute after:inset-0 focus-visible:outline-none">{o.title}</Link>
-      </h3>
-      <p className="mt-0.5 text-sm text-muted">{o.organizationName}</p>
-      {o.summary && <p className="mt-3 line-clamp-2 text-sm text-ink/80">{o.summary}</p>}
-      <dl className="mt-4 grid gap-1.5 text-sm text-navy-soft">
-        <div className="flex items-center gap-2"><MapPin aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Location</dt><dd>{placeLabel(o)}</dd></div>
-        {["job", "internship", "gig"].includes(o.category) || o.compMin !== null || o.compMax !== null ? (
-            <div className="flex items-center gap-2"><IndianRupee aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Compensation</dt><dd>{formatComp(o)}</dd></div>
-          ) : cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>) ? (
-            <div className="flex items-center gap-2"><IndianRupee aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Highlight</dt><dd>{cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>)}</dd></div>
-          ) : null}
-        <div className="flex items-center gap-2"><Clock3 aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Deadline</dt><dd className={deadline.urgent ? "font-semibold text-orange-deep" : ""}>{deadline.text}</dd></div>
-        <div className="flex items-center gap-2">
-          {o.applicationMethod === "external" ? <ExternalLink aria-hidden className="size-4 shrink-0 text-muted" /> : <Briefcase aria-hidden className="size-4 shrink-0 text-muted" />}
-          <dt className="sr-only">How to apply</dt>
-          <dd>{o.applicationMethod === "external" ? "Apply on the organization's site" : "Apply on Avsar"}</dd>
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card transition-shadow duration-150 hover:shadow-lift focus-within:ring-2 focus-within:ring-purple/40">
+      <div aria-hidden className={`h-1 ${bar}`} />
+      <div className="flex flex-1 flex-col p-5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <FieldChip domainId={field.id} inferred={field.basis === "skills"} />
+          <Badge>{CATEGORY_LABEL[o.category]}</Badge>
+          {o.employmentType && <Badge>{EMPLOYMENT_LABEL[o.employmentType]}</Badge>}
+          {o.isSample && <SampleBadge />}
+          {saved && <Badge tone="orange">Saved</Badge>}
         </div>
-      </dl>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-        <VerificationBadge level={o.verification} />
-        {match && match.score !== null && (
-          <span className="text-xs font-semibold text-purple">{match.score}% match{match.eligibility === "ineligible" ? " · not eligible" : ""}</span>
+
+        <h3 className="mt-3 text-lg font-semibold leading-snug text-navy">
+          <Link href={`/opportunities/${o.slug}`} className="after:absolute after:inset-0 focus-visible:outline-none">{o.title}</Link>
+        </h3>
+        <p className="mt-0.5 text-sm text-muted">{o.organizationName}</p>
+
+        <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-sm text-navy-soft sm:grid-cols-2">
+          <div className="flex items-center gap-2"><MapPin aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Location and work mode</dt><dd className="truncate">{placeLabel(o)}</dd></div>
+          {pay && <div className="flex items-center gap-2"><IndianRupee aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">{o.category === "internship" ? "Stipend" : "Pay"}</dt><dd className="truncate">{pay}</dd></div>}
+          {o.durationWeeks ? <div className="flex items-center gap-2"><Hourglass aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Duration</dt><dd>{o.durationWeeks} weeks</dd></div> : null}
+          <div className="flex items-center gap-2"><CalendarClock aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Deadline</dt><dd className={deadline.urgent ? "font-semibold text-orange-deep" : ""}>{deadline.text}</dd></div>
+        </dl>
+
+        {scored ? (
+          <div className="mt-4 rounded-lg border border-line bg-surface-muted/70 p-3">
+            <p className="flex items-center justify-between gap-2 text-sm">
+              <span className="font-semibold text-navy">Why it fits</span>
+              {match!.limited ? (
+                <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-muted" title="Your profile or this listing has too few details for a reliable match score">Few details to compare</span>
+              ) : (
+                <span className="rounded-full bg-purple-soft px-2 py-0.5 text-xs font-semibold text-purple">
+                  {match!.score}% match{match!.eligibility === "ineligible" ? " · not eligible" : ""}
+                </span>
+              )}
+            </p>
+            {reasons.length > 0 && (
+              <ul className="mt-1.5 space-y-1 text-xs text-ink/85">
+                {reasons.map((r) => (
+                  <li key={r} className="flex gap-1.5"><Check aria-hidden className="mt-0.5 size-3.5 shrink-0 text-success" /><span className="line-clamp-2">{r}</span></li>
+                ))}
+              </ul>
+            )}
+            {match!.gap && (
+              <p className="mt-1.5 flex gap-1.5 text-xs text-muted"><CircleDashed aria-hidden className="mt-0.5 size-3.5 shrink-0" /><span className="line-clamp-2">{match!.gap}</span></p>
+            )}
+          </div>
+        ) : (
+          o.summary && <p className="mt-3 line-clamp-2 text-sm text-ink/80">{o.summary}</p>
         )}
+
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4 text-xs text-muted">
+          <VerificationBadge level={o.verification} />
+          <span className="inline-flex items-center gap-1">
+            {o.applicationMethod === "external" ? <ExternalLink aria-hidden className="size-3.5" /> : <Briefcase aria-hidden className="size-3.5" />}
+            {o.applicationMethod === "external" ? "Apply on their site" : "Apply on Avsar"}
+          </span>
+        </div>
+        {/* Above the full-card link, so each control keeps its own click and focus. */}
+        {actions && <div className="relative z-10 mt-3 flex flex-wrap gap-2 border-t border-line pt-3">{actions}</div>}
       </div>
     </article>
   );

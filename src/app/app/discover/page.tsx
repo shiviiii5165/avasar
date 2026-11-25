@@ -2,7 +2,11 @@ import Link from "next/link";
 import { Search, SlidersHorizontal } from "lucide-react";
 
 import { FilterFields, ShowOnlyFields } from "@/components/opportunity/filters";
-import { OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { FieldChip } from "@/components/opportunity/field";
+import { cardMatch, OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { classifyOpportunity, DOMAIN_GROUPS, DOMAINS, domainDef, searchIntent, type DomainGroup } from "@/server/intelligence/domains";
+import { registry } from "@/server/intelligence/registry";
+import type { MatchResult } from "@/server/domain/matching";
 import { SyncStatusCard } from "@/components/profile/sync-status";
 import { buttonClass, inputClass, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
@@ -23,7 +27,9 @@ import { loadProfile } from "@/server/services/profiles";
 export const metadata = { title: "Opportunities for you" };
 
 /** Filters beyond search, category and sort. Their presence decides which empty state is honest. */
-const FILTER_KEYS = ["workMode", "location", "employmentType", "minComp", "maxExperience", "verified", "paid", "closingWithinDays"] as const;
+const FILTER_KEYS = ["field", "workMode", "location", "employmentType", "minComp", "maxExperience", "verified", "paid", "closingWithinDays"] as const;
+/** Listings per discovery section below "Recommended for you". */
+const SECTION_SIZE = 3;
 type SP = Promise<Record<string, string | undefined>>;
 
 /**
@@ -54,15 +60,34 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const byMatch = (facts: Matcher | null, list: OpportunityFull[]) => (facts ? rankForBrowse(facts, asCandidates(list)).map((r) => r.item) : list);
   const unfiltered = !query.q && !query.category && FILTER_KEYS.every((k) => query[k] === undefined);
 
+  // Career field of each listing (same classifier the matcher uses), memoised per request.
+  const reg = registry();
+  const fieldCache = new Map<string, string | null>();
+  const fieldOf = (o: OpportunityFull) => {
+    if (!fieldCache.has(o.id)) fieldCache.set(o.id, classifyOpportunity(reg, o).domain);
+    return fieldCache.get(o.id)!;
+  };
+  // "BA internship", "ML intern": a query naming a role searches that role's field, plus plain text matches.
+  const intent = query.q ? searchIntent(reg, query.q) : null;
+  const needle = query.q?.toLowerCase() ?? "";
+  const textHit = (o: OpportunityFull) => [o.title, o.organizationName, o.summary ?? "", ...o.skills.map((s) => s.name)].some((t) => t.toLowerCase().includes(needle));
+  const keep = query.field || intent
+    ? (o: OpportunityFull) => (!query.field || fieldOf(o) === query.field) && (!intent || fieldOf(o) === intent.domain || textHit(o))
+    : undefined;
+  const byDeadline = (list: OpportunityFull[]) => [...list].sort((a, b) => (a.deadline?.getTime() ?? Infinity) - (b.deadline?.getTime() ?? Infinity) || (a.id < b.id ? -1 : 1));
+
   // Everything starts at once (one database round trip per step, not one per loader). The profile is loaded once
   // and its matching facts derived from it, instead of loading the same profile a second time.
   const profileP = loadProfile(db, session.profileId);
   const factsP = profileP.then((p) => matcherForProfile(db, p ?? null));
   // Best match ranks the whole filtered set before paging; date sorts page in the database. With no search or
   // filters, the filtered set IS the open listings loaded below, so it isn't fetched a second time.
-  const searchP = uiSort === "match"
-    ? unfiltered ? null : searchOpportunitiesRanked(db, query, async (list) => byMatch(await factsP, list))
-    : searchOpportunities(db, query);
+  // Field and role-intent filters need each listing's classification, so they always take the ranked path.
+  const searchP = keep
+    ? searchOpportunitiesRanked(db, { ...query, q: intent ? undefined : query.q }, async (list) => (uiSort === "match" ? byMatch(await factsP, list) : uiSort === "deadline" ? byDeadline(list) : list), undefined, keep)
+    : uiSort === "match"
+      ? unfiltered ? null : searchOpportunitiesRanked(db, query, async (list) => byMatch(await factsP, list))
+      : searchOpportunities(db, query);
   searchP?.catch(() => undefined); // awaited below; this only stops an early failure elsewhere leaving it unhandled
   const [profile, open, saved, facts, live, dismissed] = await Promise.all([
     profileP,
@@ -87,6 +112,31 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const recommended = rec.picks.map((r) => r.item);
   const items = result.items;
 
+  // Discovery sections, only from real matches and only when they have something to show.
+  const shown = new Set(recommended.map((o) => o.id));
+  const pick = (want: (m: MatchResult) => boolean) =>
+    open
+      .filter((o) => !shown.has(o.id) && !dismissed.has(o.id))
+      .map((o) => ({ o, m: matches.get(o.id)! }))
+      .filter(({ m }) => m.eligibility.status !== "ineligible" && m.eligibility.status !== "unavailable" && want(m))
+      .sort((a, b) => (b.m.score ?? -1) - (a.m.score ?? -1) || (a.o.id < b.o.id ? -1 : 1))
+      .slice(0, SECTION_SIZE)
+      .map(({ o }) => o);
+  const inField = facts ? pick((m) => m.domain?.relation === "role" || m.domain?.relation === "same") : [];
+  for (const o of inField) shown.add(o.id);
+  const nearby = facts ? pick((m) => m.domain?.relation === "adjacent") : [];
+
+  // Field filter options: fields that open listings actually have, grouped, with counts.
+  const fieldCounts = new Map<string, number>();
+  for (const o of open) {
+    const f = fieldOf(o);
+    if (f) fieldCounts.set(f, (fieldCounts.get(f) ?? 0) + 1);
+  }
+  if (query.field && !fieldCounts.has(query.field)) fieldCounts.set(query.field, 0);
+  const fieldGroups = (Object.keys(DOMAIN_GROUPS) as DomainGroup[])
+    .map((g) => ({ g, label: DOMAIN_GROUPS[g].label, fields: DOMAINS.filter((d) => d.group === g && fieldCounts.has(d.id)) }))
+    .filter((x) => x.fields.length);
+
   const activeFilters = FILTER_KEYS.filter((k) => query[k] !== undefined);
   const current: Record<string, string | undefined> = {
     category: query.category,
@@ -103,6 +153,25 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const clearFilters = href({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, undefined])), page: undefined });
   const categoryLabel = query.category ? (categoryDef(query.category)?.plural ?? query.category).toLowerCase() : null;
   const p = profile?.profile;
+
+  /** One card, with working actions: open, save, and (on recommendations) "Not for me". Apply is on the details page, after eligibility. */
+  const card = (o: OpportunityFull, dismissable: boolean) => {
+    const m = matches.get(o.id);
+    return (
+      <OpportunityCard
+        o={o}
+        saved={saved.has(o.id)}
+        match={m ? cardMatch(m) : null}
+        actions={
+          <>
+            <Link href={`/opportunities/${o.slug}`} className={buttonClass("primary", "sm")}>View details</Link>
+            <SaveButton opportunityId={o.id} saved={saved.has(o.id)} path="/app/discover" />
+            {dismissable && <DismissButton opportunityId={o.id} title={o.title} />}
+          </>
+        }
+      />
+    );
+  };
 
   // Exactly one honest empty state, chosen by why the list is empty.
   const emptyState = () => {
@@ -137,19 +206,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             )}
             {recommended.length ? (
               <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
-                {recommended.map((o) => {
-                  const m = matches.get(o.id)!;
-                  return (
-                    <li key={o.id} className="flex flex-col gap-2">
-                      <OpportunityCard o={o} saved={saved.has(o.id)} match={{ score: m.score, eligibility: m.eligibility.status }} />
-                      {m.reasons[0] && <p className="px-1 text-xs text-muted"><span className="font-semibold text-navy-soft">Why it fits:</span> {m.reasons.slice(0, 2).join(" · ")}</p>}
-                      <div className="flex flex-wrap gap-2">
-                        <SaveButton opportunityId={o.id} saved={saved.has(o.id)} path="/app/discover" />
-                        <DismissButton opportunityId={o.id} title={o.title} />
-                      </div>
-                    </li>
-                  );
-                })}
+                {recommended.map((o) => <li key={o.id}>{card(o, true)}</li>)}
               </ul>
             ) : (
               <p className="mt-2 text-sm text-muted">None of the open listings fit your profile closely yet. Browse them all below.</p>
@@ -169,6 +226,26 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             )}
           </section>
 
+          {inField.length > 0 && (
+            <section aria-labelledby="field-title">
+              <h2 id="field-title" className="text-xl font-semibold text-navy">More in your field</h2>
+              <p className="mt-1 text-sm text-muted">Listings in the field of your target role, ranked by fit.</p>
+              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
+                {inField.map((o) => <li key={o.id}>{card(o, true)}</li>)}
+              </ul>
+            </section>
+          )}
+
+          {nearby.length > 0 && (
+            <section aria-labelledby="nearby-title">
+              <h2 id="nearby-title" className="text-xl font-semibold text-navy">Explore nearby fields</h2>
+              <p className="mt-1 text-sm text-muted">Close to your direction and worth a look if you want to widen your options.</p>
+              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
+                {nearby.map((o) => <li key={o.id}>{card(o, true)}</li>)}
+              </ul>
+            </section>
+          )}
+
           <section aria-labelledby="all-title" className="space-y-4">
             <h2 id="all-title" className="text-xl font-semibold text-navy">Browse all</h2>
             <nav aria-label="Categories" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
@@ -184,6 +261,19 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             <form method="get" action="/app/discover" role="search" aria-label="Search opportunities" className="space-y-3 rounded-xl border border-line bg-surface p-4 shadow-card">
               {query.category && <input type="hidden" name="category" value={query.category} />}
               <div className="flex flex-wrap items-end gap-3">
+                {fieldGroups.length > 0 && (
+                  <div className="flex min-w-0 flex-[0_1_15rem] flex-col gap-1">
+                    <label htmlFor="dfield" className="text-sm font-semibold text-navy">Field</label>
+                    <select id="dfield" name="field" defaultValue={query.field ?? ""} className={inputClass}>
+                      <option value="">All fields</option>
+                      {fieldGroups.map(({ g, label, fields }) => (
+                        <optgroup key={g} label={label}>
+                          {fields.map((d) => <option key={d.id} value={d.id}>{d.label} ({fieldCounts.get(d.id)})</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="relative min-w-0 flex-[1_1_16rem]">
                   <label htmlFor="dq" className="sr-only">Search by role, skill or organization</label>
                   <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
@@ -217,15 +307,14 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             <p className="text-sm text-muted" aria-live="polite">
               {result.total} {result.total === 1 ? "opportunity" : "opportunities"}
               {query.q ? <> for “{query.q}”</> : null}
+              {intent ? <> (searching the {domainDef(intent.domain)?.label ?? intent.label} field too)</> : null}
+              {query.field ? <> in <FieldChip domainId={query.field} /></> : null}
               {categoryLabel ? <> in {categoryLabel}</> : null}
               {activeFilters.length ? <> · {activeFilters.length} filter{activeFilters.length > 1 ? "s" : ""}</> : null}
             </p>
             {items.length === 0 ? emptyState() : (
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
-                {items.map((o) => {
-                  const m = matches.get(o.id)!;
-                  return <li key={o.id}><OpportunityCard o={o} saved={saved.has(o.id)} match={{ score: m.score, eligibility: m.eligibility.status }} /></li>;
-                })}
+                {items.map((o) => <li key={o.id}>{card(o, false)}</li>)}
               </ul>
             )}
             {result.pageCount > 1 && (

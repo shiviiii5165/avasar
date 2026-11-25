@@ -18,6 +18,7 @@
 import { evaluateEligibility, type EligibilityResult } from "../domain/eligibility";
 import { matchOpportunity } from "../domain/matching";
 import type { CandidateFacts, OpportunityFacts } from "../domain/types";
+import { classifyOpportunity, domainDef, domainRelation, type Classification, type DomainRelation } from "./domains";
 import type { SkillProfileEntry, SkillState } from "./evidence";
 import type { Relation, SkillRegistry } from "./registry";
 
@@ -26,16 +27,27 @@ import type { Relation, SkillRegistry } from "./registry";
  * offline evaluation (intelligence/eval), not learned or validated values. Change = new version string.
  */
 export const SCORING = {
-  version: "career-match/v1",
+  version: "career-match/v2",
   /** Strength of a skill state when it supports a requirement. Ordinal: verified > demonstrated > practiced > declared > learning. */
   stateStrength: { verified: 1, demonstrated: 0.85, practiced: 0.6, declared: 0.5, learning: 0.25 } satisfies Record<SkillState, number>,
   /** How much a relation counts. Related skills are partial and always labelled "related"; never full credit. */
   relationCredit: { exact: 1, specialization: 0.9, related: 0.4, none: 0 } satisfies Record<Relation, number>,
   /** Requirement weights: required counts twice a preferred one (same convention as domain/matching.ts); a skill only mentioned in the description counts half. */
   requirementWeight: { required: 2, preferred: 1, mentioned: 0.5 },
-  /** Feature weights. Skills dominate because they are what the listing asks for; preferences matter but should not outrank ability. */
-  featureWeight: { skillFit: 0.6, roleAlignment: 0.1, personalFit: 0.3 },
-  rationale: "Skill evidence decides most of the order; stated preferences break ties among similarly qualified listings; role alignment rewards listings for the student's chosen target role.",
+  /**
+   * Feature weights. v2 (2026-11): role alignment 0.1 → 0.25, so the student's chosen career direction counts and a
+   * listing in another field can't win on a few shared generic skills; skills still decide most of the order.
+   */
+  featureWeight: { skillFit: 0.5, roleAlignment: 0.25, personalFit: 0.25 },
+  /** Role alignment by how the listing's field relates to the student's target (domains.ts). Unknown field → not assessed. */
+  domainCredit: { role: 1, same: 0.8, adjacent: 0.5, group: 0.25, none: 0 },
+  /**
+   * The student has a target but the listing states no recognisable field. Not "not assessed": dropping it would let a
+   * vague listing ("Summer Internship", Excel + English) outrank one clearly in the student's field on generic skills.
+   * Not zero either: it may still fit. Found by the cross-domain evaluation (eval/domain-dataset.ts).
+   */
+  unknownFieldCredit: 0.3,
+  rationale: "Skill evidence decides most of the order; the student's target role and field come next, with partial credit for neighbouring fields so they can explore; stated preferences break ties.",
 } as const;
 
 export type Provenance = "observed" | "inferred" | "unknown";
@@ -65,6 +77,8 @@ export interface CareerMatch {
   features: { skillFit: number | null; roleAlignment: number | null; personalFit: number | null };
   skills: SkillVerdict[];
   role: { id: string; title: string } | null;
+  /** The listing's field and how it relates to the student's target fields. */
+  domain: { id: string | null; label: string | null; basis: Classification["basis"]; confidence: Classification["confidence"]; relation: DomainRelation | "role" | null };
   explanations: Explanation[];
   learnNext: string[];
 }
@@ -140,11 +154,25 @@ export function careerMatch(
   if (!opp.skills.length) explanations.push({ kind: "unknown", text: "This listing names no skills, so skill fit can't be assessed" });
   else if (!profile.length) explanations.push({ kind: "unknown", text: "Your profile has no skills yet, so skill fit can't be assessed. That says nothing about your ability." });
 
-  // Role alignment: listing title vs the student's chosen target roles (explicit preference only).
-  const role = reg.roleFor(opp.title);
-  const targets = (opts.targetRoles ?? []).map((t) => reg.roleFor(t)?.id).filter(Boolean);
-  const roleAlignment = role && targets.length ? (targets.includes(role.id) ? 1 : 0) : null;
-  if (roleAlignment === 1) explanations.push({ kind: "observed", text: `Matches your target role (${role!.title})` });
+  // Role alignment: the listing's role and field vs the student's chosen target roles (explicit preference only).
+  // The field comes from the title, or from the listed skills when the title names no known role (domains.ts).
+  const cls = classifyOpportunity(reg, opp);
+  const role = cls.roleId ? reg.roles.find((r) => r.id === cls.roleId) ?? null : null;
+  const targets = (opts.targetRoles ?? []).map((t) => reg.roleFor(t)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  let relation: DomainRelation | "role" | null = null;
+  if (targets.length && cls.domain) {
+    relation = role && targets.some((t) => t.id === role.id) ? "role" : "none";
+    if (relation !== "role") {
+      const order: DomainRelation[] = ["same", "adjacent", "group"];
+      for (const r of order) if (relation === "none" && targets.some((t) => domainRelation(t.domain, cls.domain) === r)) relation = r;
+    }
+  }
+  const roleAlignment = relation !== null ? SCORING.domainCredit[relation] : targets.length ? SCORING.unknownFieldCredit : null;
+  const fieldLabel = domainDef(cls.domain)?.label ?? null;
+  if (targets.length && !cls.domain) explanations.push({ kind: "unknown", text: "The listing doesn't say which field it is in, so we can't tell if it fits your direction" });
+  if (relation === "role") explanations.push({ kind: "observed", text: `Matches your target role (${role!.title})` });
+  else if (relation === "same") explanations.push({ kind: cls.basis === "title" ? "observed" : "inferred", text: `In your field: ${fieldLabel}` });
+  else if (relation === "adjacent") explanations.push({ kind: "inferred", text: `Close to your field: ${fieldLabel}, a good way to explore` });
 
   // D — personal fit from the existing preference factors (location, work mode, category/role/pay).
   const base = matchOpportunity(candidate, opp, undefined, now);
@@ -181,6 +209,7 @@ export function careerMatch(
     features: { skillFit: skillFit === null ? null : Math.round(skillFit * 100) / 100, roleAlignment, personalFit: personalFit === null ? null : Math.round(personalFit * 100) / 100 },
     skills: verdicts,
     role: role ? { id: role.id, title: role.title } : null,
+    domain: { id: cls.domain, label: fieldLabel, basis: cls.basis, confidence: cls.confidence, relation },
     explanations,
     learnNext,
   };

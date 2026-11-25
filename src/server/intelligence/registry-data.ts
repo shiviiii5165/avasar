@@ -9,12 +9,14 @@
  *  - `textExtractable: false` marks names too ambiguous to find in free text ("Go", "R", "C", "Excel" in
  *    "excellent"...): they are matched only when a source lists them as a skill.
  */
-export const REGISTRY_VERSION = "avsar-skills/2026-11";
+export const REGISTRY_VERSION = "avsar-skills/2026-11b";
 
 export interface ConceptDef {
   id: string;
   name: string;
-  category: "programming" | "web" | "data" | "ai" | "cloud" | "design" | "business" | "finance" | "marketing" | "communication" | "trade" | "engineering" | "office";
+  category:
+    | "programming" | "web" | "data" | "ai" | "cloud" | "security" | "design" | "creative" | "business" | "finance" | "marketing"
+    | "communication" | "people" | "research" | "science" | "legal" | "society" | "trade" | "engineering" | "office";
   aliases?: string[];
   parent?: string;
   textExtractable?: boolean;
@@ -101,6 +103,90 @@ export const CONCEPTS: ConceptDef[] = [
   { id: "cnc", name: "CNC operation", category: "trade", aliases: ["cnc", "cnc operator", "cnc programming", "vmc"] },
   { id: "electronics", name: "Electronics", category: "engineering", aliases: ["electronics mechanic", "circuit design"] },
   { id: "quality_control", name: "Quality control", category: "engineering", aliases: ["qc", "quality assurance", "quality inspection"] },
+
+  // ── Added 2026-11 for domain-aware discovery: every academic and career domain, not only technical ones. ──
+  // Words common in unrelated listings ("operations", "audit", "compliance", "onboarding") are textExtractable: false,
+  // so a description that merely uses them never gains a "mentioned" skill.
+  // Technology beyond development
+  { id: "cybersecurity", name: "Cybersecurity", category: "security", aliases: ["cyber security", "information security", "network security", "ethical hacking", "penetration testing", "vapt"] },
+  { id: "networking", name: "Computer networking", category: "security", aliases: ["computer networks", "ccna", "tcp/ip", "networking"], textExtractable: false },
+  { id: "manual_testing", name: "Software testing", category: "programming", aliases: ["manual testing", "software testing", "test cases", "qa testing"] },
+  { id: "selenium", name: "Test automation (Selenium)", category: "programming", aliases: ["selenium", "test automation", "automation testing"] },
+  { id: "it_support", name: "IT support", category: "office", aliases: ["technical support", "desktop support", "troubleshooting", "helpdesk"], textExtractable: false },
+  { id: "flutter", name: "Flutter", category: "web", aliases: ["dart"] },
+  { id: "react_native", name: "React Native", category: "web", aliases: ["react native"] },
+  { id: "swift", name: "iOS development", category: "web", aliases: ["swift", "ios development", "swiftui"] },
+  // Business and management
+  { id: "business_analysis", name: "Business analysis", category: "business", aliases: ["business process analysis", "process mapping", "gap analysis"] },
+  { id: "requirements_gathering", name: "Requirements gathering", category: "business", aliases: ["requirement gathering", "requirements analysis", "business requirements", "brd", "user stories"] },
+  { id: "problem_solving", name: "Problem solving", category: "business", aliases: ["analytical thinking", "analytical skills", "critical thinking"], textExtractable: false },
+  { id: "stakeholder_management", name: "Stakeholder management", category: "business", aliases: ["stakeholder communication"] },
+  { id: "business_development", name: "Business development", category: "business", aliases: ["bizdev", "lead generation", "b2b sales"] },
+  { id: "operations_management", name: "Operations management", category: "business", aliases: ["operations", "supply chain", "logistics", "process improvement"], textExtractable: false },
+  { id: "product_management", name: "Product management", category: "business", aliases: ["product roadmap", "product strategy"] },
+  { id: "agile", name: "Agile / Scrum", category: "business", aliases: ["scrum", "agile methodology", "jira"] },
+  { id: "business_strategy", name: "Business strategy", category: "business", aliases: ["strategy", "strategic planning", "case solving"], textExtractable: false },
+  { id: "presentation", name: "Presentation skills", category: "communication", aliases: ["presentation skills", "public speaking", "presentations"], textExtractable: false },
+  { id: "negotiation", name: "Negotiation", category: "business", aliases: ["negotiation skills"] },
+  { id: "crm", name: "CRM tools", category: "business", aliases: ["crm", "salesforce", "hubspot", "zoho crm"] },
+  { id: "entrepreneurship", name: "Entrepreneurship", category: "business", aliases: ["startup experience", "venture building"] },
+  // Finance and commerce
+  { id: "financial_analysis", name: "Financial analysis", category: "finance", aliases: ["financial statement analysis", "ratio analysis", "financial reporting"] },
+  { id: "financial_modeling", name: "Financial modelling", category: "finance", aliases: ["financial modeling", "dcf", "valuation"] },
+  { id: "investment_research", name: "Investment research", category: "finance", aliases: ["equity research", "stock research", "investment analysis"] },
+  { id: "banking_operations", name: "Banking operations", category: "finance", aliases: ["banking", "kyc"], textExtractable: false },
+  { id: "risk_management", name: "Risk and compliance", category: "finance", aliases: ["risk analysis", "compliance", "aml", "regulatory compliance"], textExtractable: false },
+  { id: "taxation", name: "Taxation", category: "finance", aliases: ["income tax", "tds", "direct tax"] },
+  { id: "auditing", name: "Auditing", category: "finance", aliases: ["audit", "internal audit", "statutory audit"], textExtractable: false },
+  // Marketing and communication
+  { id: "market_research", name: "Market research", category: "marketing", aliases: ["market analysis", "competitor analysis", "consumer research", "consumer insights"] },
+  { id: "social_media", name: "Social media management", category: "marketing", aliases: ["social media management", "instagram marketing", "community management", "social media"] },
+  { id: "brand_management", name: "Brand management", category: "marketing", aliases: ["branding", "brand strategy"], textExtractable: false },
+  { id: "public_relations", name: "Public relations", category: "communication", aliases: ["pr", "media relations", "corporate communication", "communications"], textExtractable: false },
+  { id: "campaign_analytics", name: "Campaign analytics", category: "marketing", aliases: ["google analytics", "campaign analysis", "marketing analytics"] },
+  { id: "performance_marketing", name: "Performance marketing", category: "marketing", aliases: ["google ads", "facebook ads", "meta ads", "sem", "ppc"] },
+  { id: "email_marketing", name: "Email marketing", category: "marketing", aliases: ["newsletters", "mailchimp"] },
+  // Creative and design
+  { id: "graphic_design", name: "Graphic design", category: "creative", aliases: ["graphic designing", "visual design"] },
+  { id: "photoshop", name: "Adobe Photoshop", category: "creative", aliases: ["photoshop", "adobe photoshop"], parent: "graphic_design" },
+  { id: "illustrator", name: "Adobe Illustrator", category: "creative", aliases: ["illustrator", "adobe illustrator"], parent: "graphic_design" },
+  { id: "canva", name: "Canva", category: "creative", parent: "graphic_design" },
+  { id: "video_editing", name: "Video editing", category: "creative", aliases: ["premiere pro", "adobe premiere", "final cut", "capcut", "davinci resolve"] },
+  { id: "animation", name: "Animation", category: "creative", aliases: ["motion graphics", "after effects", "2d animation", "3d animation", "blender"] },
+  { id: "photography", name: "Photography", category: "creative", aliases: ["photo editing", "lightroom"] },
+  { id: "creative_writing", name: "Creative writing", category: "creative", aliases: ["storytelling", "scriptwriting", "script writing"] },
+  { id: "user_research", name: "User research", category: "design", aliases: ["usability testing", "user interviews"] },
+  { id: "prototyping", name: "Wireframing and prototyping", category: "design", aliases: ["wireframing", "wireframes", "prototyping"] },
+  // People, education, psychology
+  { id: "recruitment", name: "Recruitment", category: "people", aliases: ["talent acquisition", "recruiting", "sourcing candidates"] },
+  { id: "hr_operations", name: "HR operations", category: "people", aliases: ["hr operations", "onboarding", "payroll", "employee engagement"], textExtractable: false },
+  { id: "psychology", name: "Psychology", category: "people", aliases: ["counselling", "counseling", "psychological assessment"] },
+  { id: "teaching", name: "Teaching", category: "people", aliases: ["tutoring", "lesson planning", "curriculum design", "pedagogy"], textExtractable: false },
+  // Research and sciences
+  { id: "research_methods", name: "Research methods", category: "research", aliases: ["research methodology", "literature review", "survey design", "qualitative research", "quantitative research"] },
+  { id: "academic_writing", name: "Academic and report writing", category: "research", aliases: ["scientific writing", "report writing", "technical writing"] },
+  { id: "spss", name: "SPSS / Stata", category: "research", aliases: ["spss", "stata"] },
+  { id: "r_lang", name: "R", category: "data", aliases: ["r programming", "r language"], textExtractable: false },
+  { id: "lab_techniques", name: "Laboratory techniques", category: "science", aliases: ["laboratory techniques", "pcr", "cell culture", "wet lab"] },
+  { id: "bioinformatics", name: "Bioinformatics", category: "science" },
+  { id: "gis", name: "GIS", category: "science", aliases: ["arcgis", "qgis", "geographic information systems", "remote sensing"] },
+  { id: "environmental_assessment", name: "Environmental assessment", category: "science", aliases: ["environmental impact assessment", "eia", "sustainability"], textExtractable: false },
+  { id: "agronomy", name: "Agronomy", category: "science", aliases: ["crop science", "soil science"] },
+  { id: "healthcare_admin", name: "Healthcare administration", category: "science", aliases: ["hospital administration", "medical records", "healthcare management"] },
+  // Law, policy, social impact
+  { id: "legal_research", name: "Legal research and drafting", category: "legal", aliases: ["legal drafting", "contract drafting", "case law research", "legal research"] },
+  { id: "policy_analysis", name: "Policy analysis", category: "society", aliases: ["public policy", "policy research"] },
+  { id: "community_engagement", name: "Community engagement", category: "society", aliases: ["fieldwork", "field work", "community outreach"], textExtractable: false },
+  // Core engineering and architecture
+  { id: "staad_pro", name: "STAAD.Pro", category: "engineering", aliases: ["staad", "staad pro", "staad.pro"] },
+  { id: "structural_analysis", name: "Structural analysis", category: "engineering", aliases: ["structural design"] },
+  { id: "revit", name: "Revit / BIM", category: "engineering", aliases: ["revit", "autodesk revit", "bim"] },
+  { id: "matlab", name: "MATLAB", category: "engineering", aliases: ["simulink"] },
+  { id: "plc", name: "PLC / SCADA", category: "engineering", aliases: ["plc", "plc programming", "scada"] },
+  { id: "catia", name: "CATIA", category: "engineering", aliases: ["catia v5"] },
+  { id: "manufacturing", name: "Manufacturing processes", category: "engineering", aliases: ["production planning", "lean manufacturing", "six sigma"] },
+  { id: "power_systems", name: "Power systems", category: "engineering", aliases: ["electrical design", "power distribution"] },
+  { id: "architectural_design", name: "Architectural design", category: "engineering", aliases: ["sketchup", "3ds max", "architectural drawing", "interior design"] },
 ];
 
 /** related: overlapping ability (partial, labelled credit). prerequisite: [from] is usually learned before [to]. */
@@ -154,26 +240,144 @@ export const RELATIONS: [string, string, "related" | "prerequisite"][] = [
   ["fitter", "turner", "related"],
   ["turner", "cnc", "prerequisite"],
   ["electrician", "electronics", "related"],
+  // Added 2026-11 (domain-aware discovery)
+  ["data_analysis", "business_analysis", "related"],
+  ["requirements_gathering", "business_analysis", "related"],
+  ["excel", "financial_analysis", "prerequisite"],
+  ["accounting", "financial_analysis", "prerequisite"],
+  ["financial_analysis", "financial_modeling", "prerequisite"],
+  ["financial_analysis", "investment_research", "related"],
+  ["accounting", "auditing", "related"],
+  ["accounting", "taxation", "related"],
+  ["risk_management", "banking_operations", "related"],
+  ["market_research", "data_analysis", "related"],
+  ["market_research", "digital_marketing", "related"],
+  ["campaign_analytics", "digital_marketing", "related"],
+  ["performance_marketing", "digital_marketing", "related"],
+  ["email_marketing", "digital_marketing", "related"],
+  ["social_media", "digital_marketing", "related"],
+  ["social_media", "content_writing", "related"],
+  ["brand_management", "public_relations", "related"],
+  ["content_writing", "creative_writing", "related"],
+  ["ux_design", "user_research", "related"],
+  ["ux_design", "prototyping", "related"],
+  ["figma", "prototyping", "related"],
+  ["graphic_design", "ux_design", "related"],
+  ["graphic_design", "video_editing", "related"],
+  ["video_editing", "animation", "related"],
+  ["photography", "video_editing", "related"],
+  ["recruitment", "hr_operations", "related"],
+  ["psychology", "research_methods", "related"],
+  ["research_methods", "statistics", "related"],
+  ["research_methods", "academic_writing", "related"],
+  ["spss", "statistics", "related"],
+  ["r_lang", "statistics", "related"],
+  ["lab_techniques", "bioinformatics", "related"],
+  ["python", "bioinformatics", "prerequisite"],
+  ["gis", "environmental_assessment", "related"],
+  ["agronomy", "environmental_assessment", "related"],
+  ["policy_analysis", "research_methods", "related"],
+  ["community_engagement", "policy_analysis", "related"],
+  ["legal_research", "academic_writing", "related"],
+  ["autocad", "staad_pro", "related"],
+  ["structural_analysis", "staad_pro", "related"],
+  ["autocad", "revit", "related"],
+  ["revit", "architectural_design", "related"],
+  ["autocad", "architectural_design", "related"],
+  ["solidworks", "catia", "related"],
+  ["manufacturing", "quality_control", "related"],
+  ["plc", "electronics", "related"],
+  ["power_systems", "electrician", "related"],
+  ["matlab", "python", "related"],
+  ["cybersecurity", "networking", "related"],
+  ["linux", "cybersecurity", "prerequisite"],
+  ["manual_testing", "selenium", "prerequisite"],
+  ["it_support", "networking", "related"],
+  ["flutter", "react_native", "related"],
+  ["react", "react_native", "prerequisite"],
+  ["product_management", "agile", "related"],
+  ["project_management", "agile", "related"],
+  ["operations_management", "project_management", "related"],
+  ["business_development", "sales", "related"],
+  ["crm", "sales", "related"],
+  ["negotiation", "sales", "related"],
+  ["business_strategy", "market_research", "related"],
+  ["teaching", "presentation", "related"],
 ];
 
-export interface RoleDef { id: string; title: string; aliases: string[]; essential: string[]; optional: string[] }
+/**
+ * Roles, each in exactly one domain (intelligence/domains.ts lists the domains; a test checks every id exists).
+ * Aliases are lowercase role titles as listings write them. roleFor() also strips "intern", "trainee", "junior"
+ * and similar words, so "Business Analyst Intern" finds business_analyst without listing every variant.
+ * Role ids from before 2026-11 are unchanged, so stored target roles keep resolving.
+ */
+export interface RoleDef { id: string; title: string; domain: string; aliases: string[]; essential: string[]; optional: string[] }
 
 export const ROLES: RoleDef[] = [
-  { id: "frontend_developer", title: "Frontend developer", aliases: ["frontend developer", "front end developer", "front-end developer", "react developer", "ui developer", "web developer"], essential: ["html", "css", "javascript"], optional: ["react", "typescript", "git", "nextjs"] },
-  { id: "backend_developer", title: "Backend developer", aliases: ["backend developer", "back end developer", "back-end developer", "node developer", "java developer", "python developer", "api developer"], essential: ["sql", "rest_api"], optional: ["nodejs", "java", "python", "spring", "django", "docker", "git"] },
-  { id: "full_stack_developer", title: "Full-stack developer", aliases: ["full stack developer", "full-stack developer", "fullstack developer", "mern developer", "software developer", "software engineer", "sde"], essential: ["javascript", "html", "css", "sql"], optional: ["react", "nodejs", "git", "rest_api", "typescript"] },
-  { id: "data_analyst", title: "Data analyst", aliases: ["data analyst", "business analyst", "mis executive", "mis analyst", "reporting analyst"], essential: ["sql", "excel", "data_analysis"], optional: ["powerbi", "tableau", "python", "statistics", "data_visualization"] },
-  { id: "data_scientist", title: "Data scientist", aliases: ["data scientist", "data science"], essential: ["python", "statistics", "machine_learning"], optional: ["sql", "pandas", "numpy", "deep_learning"] },
-  { id: "ml_engineer", title: "Machine learning engineer", aliases: ["machine learning engineer", "ml engineer", "ai engineer", "ai/ml engineer"], essential: ["python", "machine_learning"], optional: ["deep_learning", "pytorch", "tensorflow", "docker", "aws", "nlp"] },
-  { id: "devops_engineer", title: "DevOps engineer", aliases: ["devops engineer", "cloud engineer", "site reliability engineer", "sre"], essential: ["linux", "docker", "ci_cd"], optional: ["kubernetes", "aws", "azure", "gcp", "git"] },
-  { id: "android_developer", title: "Android developer", aliases: ["android developer", "mobile developer", "app developer"], essential: ["android"], optional: ["kotlin", "java", "git", "rest_api"] },
-  { id: "ux_designer", title: "UI/UX designer", aliases: ["ux designer", "ui designer", "ui/ux designer", "product designer"], essential: ["ux_design", "figma"], optional: ["html", "css"] },
-  { id: "accountant", title: "Accountant", aliases: ["accountant", "accounts executive", "accounts assistant", "junior accountant", "accounts trainee"], essential: ["accounting", "tally"], optional: ["gst", "excel", "ms_office"] },
-  { id: "digital_marketer", title: "Digital marketing executive", aliases: ["digital marketing executive", "digital marketer", "social media executive", "seo executive", "marketing intern"], essential: ["digital_marketing"], optional: ["seo", "content_writing", "english_communication"] },
-  { id: "customer_support_exec", title: "Customer support executive", aliases: ["customer support executive", "customer care executive", "telecaller", "bpo executive", "customer service representative"], essential: ["english_communication", "customer_support"], optional: ["hindi", "ms_office", "data_entry"] },
-  { id: "data_entry_operator", title: "Data entry operator", aliases: ["data entry operator", "computer operator", "back office executive"], essential: ["data_entry", "ms_office"], optional: ["excel", "english_communication"] },
-  { id: "fitter_apprentice", title: "Fitter apprentice", aliases: ["fitter apprentice", "apprentice fitter", "trade apprentice fitter"], essential: ["fitter"], optional: ["quality_control", "turner"] },
-  { id: "electrician_apprentice", title: "Electrician apprentice", aliases: ["electrician apprentice", "apprentice electrician", "trade apprentice electrician"], essential: ["electrician"], optional: ["electronics", "quality_control"] },
-  { id: "cnc_operator", title: "CNC operator", aliases: ["cnc operator", "vmc operator", "machine operator"], essential: ["cnc"], optional: ["turner", "quality_control", "autocad"] },
-  { id: "mechanical_trainee", title: "Mechanical engineer trainee", aliases: ["graduate engineer trainee mechanical", "mechanical engineer trainee", "get mechanical", "design engineer"], essential: ["autocad"], optional: ["solidworks", "quality_control"] },
+  // Technology
+  { id: "frontend_developer", title: "Frontend developer", domain: "web_development", aliases: ["frontend developer", "front end developer", "front-end developer", "react developer", "ui developer", "web developer", "web development", "frontend development", "frontend engineer", "front end engineer", "front-end engineer"], essential: ["html", "css", "javascript"], optional: ["react", "typescript", "git", "nextjs"] },
+  { id: "backend_developer", title: "Backend developer", domain: "software_engineering", aliases: ["backend developer", "back end developer", "back-end developer", "node developer", "java developer", "python developer", "api developer", "backend development", "backend engineer", "back end engineer", "back-end engineer"], essential: ["sql", "rest_api"], optional: ["nodejs", "java", "python", "spring", "django", "docker", "git"] },
+  { id: "full_stack_developer", title: "Full-stack developer", domain: "software_engineering", aliases: ["full stack developer", "full-stack developer", "fullstack developer", "mern developer", "software developer", "software engineer", "sde", "software development", "software engineering", "full stack development"], essential: ["javascript", "html", "css", "sql"], optional: ["react", "nodejs", "git", "rest_api", "typescript"] },
+  { id: "android_developer", title: "Android developer", domain: "mobile_development", aliases: ["android developer", "android development", "mobile developer", "app developer", "mobile app development"], essential: ["android"], optional: ["kotlin", "java", "git", "rest_api"] },
+  { id: "cross_platform_developer", title: "Cross-platform app developer", domain: "mobile_development", aliases: ["flutter developer", "react native developer", "ios developer", "flutter development"], essential: [], optional: ["flutter", "react_native", "swift", "git", "rest_api"] },
+  { id: "ml_engineer", title: "Machine learning engineer", domain: "ai_ml", aliases: ["machine learning engineer", "ml engineer", "ai engineer", "ai/ml engineer", "machine learning", "artificial intelligence", "ai/ml", "ai ml", "ml", "ai", "deep learning", "nlp engineer", "computer vision engineer", "generative ai"], essential: ["python", "machine_learning"], optional: ["deep_learning", "pytorch", "tensorflow", "docker", "aws", "nlp", "statistics"] },
+  { id: "data_scientist", title: "Data scientist", domain: "data_science", aliases: ["data scientist", "data science"], essential: ["python", "statistics", "machine_learning"], optional: ["sql", "pandas", "numpy", "deep_learning"] },
+  { id: "data_analyst", title: "Data analyst", domain: "data_analytics", aliases: ["data analyst", "data analytics", "mis executive", "mis analyst", "reporting analyst", "data analysis", "bi analyst", "business intelligence analyst"], essential: ["sql", "excel", "data_analysis"], optional: ["powerbi", "tableau", "python", "statistics", "data_visualization"] },
+  { id: "cybersecurity_analyst", title: "Cybersecurity analyst", domain: "cybersecurity", aliases: ["cybersecurity analyst", "cyber security analyst", "security analyst", "soc analyst", "penetration tester", "information security", "cybersecurity", "cyber security"], essential: ["cybersecurity", "networking"], optional: ["linux", "python"] },
+  { id: "devops_engineer", title: "DevOps engineer", domain: "cloud_devops", aliases: ["devops engineer", "cloud engineer", "site reliability engineer", "sre", "devops", "cloud computing"], essential: ["linux", "docker", "ci_cd"], optional: ["kubernetes", "aws", "azure", "gcp", "git"] },
+  { id: "qa_engineer", title: "QA / test engineer", domain: "qa_testing", aliases: ["qa engineer", "software tester", "test engineer", "qa analyst", "quality assurance engineer", "software testing", "qa"], essential: ["manual_testing"], optional: ["selenium", "sql", "git"] },
+  { id: "it_support_exec", title: "IT support executive", domain: "it_support", aliases: ["it support", "it support executive", "desktop support engineer", "technical support engineer", "helpdesk", "it helpdesk"], essential: ["it_support"], optional: ["networking", "linux", "ms_office"] },
+  // Business and management
+  { id: "business_analyst", title: "Business analyst", domain: "business_analysis", aliases: ["business analyst", "ba", "business analysis", "business systems analyst", "functional analyst", "functional consultant"], essential: ["requirements_gathering", "excel", "problem_solving"], optional: ["business_analysis", "sql", "powerbi", "stakeholder_management", "english_communication", "agile"] },
+  { id: "business_development_exec", title: "Business development executive", domain: "business_development", aliases: ["business development executive", "business development associate", "business development", "bde", "bd associate", "partnerships associate"], essential: ["business_development", "english_communication"], optional: ["crm", "negotiation", "sales", "ms_office"] },
+  { id: "operations_associate", title: "Operations associate", domain: "operations", aliases: ["operations associate", "operations executive", "operations analyst", "operations", "supply chain analyst", "logistics coordinator", "supply chain", "back office executive"], essential: ["operations_management", "excel"], optional: ["problem_solving", "ms_office", "project_management", "data_entry"] },
+  { id: "product_manager", title: "Product manager", domain: "product_management", aliases: ["product manager", "associate product manager", "apm", "product management", "product analyst"], essential: ["product_management"], optional: ["user_research", "agile", "sql", "data_analysis", "english_communication"] },
+  { id: "project_coordinator", title: "Project coordinator", domain: "project_management", aliases: ["project coordinator", "project manager", "project management", "project associate", "pmo analyst"], essential: ["project_management"], optional: ["agile", "ms_office", "stakeholder_management"] },
+  { id: "strategy_analyst", title: "Strategy / consulting analyst", domain: "strategy_consulting", aliases: ["strategy analyst", "business strategy", "management consultant", "consulting analyst", "consultant", "consulting", "strategy"], essential: ["problem_solving", "business_strategy"], optional: ["excel", "market_research", "presentation", "financial_analysis"] },
+  { id: "founders_office", title: "Founder's office / startup generalist", domain: "entrepreneurship", aliases: ["founder's office", "founders office", "founder office", "startup generalist", "entrepreneur in residence", "entrepreneurship"], essential: [], optional: ["business_strategy", "problem_solving", "entrepreneurship", "presentation", "operations_management"] },
+  // Finance and commerce
+  { id: "financial_analyst", title: "Financial analyst", domain: "finance", aliases: ["financial analyst", "finance analyst", "finance executive", "finance", "fp&a analyst", "financial analysis", "corporate finance"], essential: ["financial_analysis", "excel"], optional: ["financial_modeling", "accounting", "powerbi"] },
+  { id: "accountant", title: "Accountant", domain: "accounting", aliases: ["accountant", "accounts executive", "accounts assistant", "junior accountant", "accounts trainee", "accounting", "accounts", "commerce", "audit assistant", "articleship", "tax assistant"], essential: ["accounting", "tally"], optional: ["gst", "excel", "ms_office", "auditing", "taxation"] },
+  { id: "banking_associate", title: "Banking associate", domain: "banking", aliases: ["banking associate", "bank intern", "relationship manager", "banking operations", "banking"], essential: ["banking_operations"], optional: ["english_communication", "ms_office", "risk_management", "sales"] },
+  { id: "equity_research_analyst", title: "Investment research analyst", domain: "investment_research", aliases: ["equity research analyst", "equity research", "investment analyst", "investment research", "investment banking analyst", "investment banking"], essential: ["financial_analysis", "financial_modeling"], optional: ["investment_research", "excel", "accounting"] },
+  { id: "risk_analyst", title: "Risk and compliance analyst", domain: "risk_compliance", aliases: ["risk analyst", "compliance analyst", "kyc analyst", "aml analyst", "risk and compliance", "compliance"], essential: ["risk_management"], optional: ["banking_operations", "excel", "english_communication"] },
+  // Marketing and communication
+  { id: "digital_marketer", title: "Digital marketing executive", domain: "digital_marketing", aliases: ["digital marketing executive", "digital marketer", "seo executive", "digital marketing", "marketing", "marketing executive", "performance marketing"], essential: ["digital_marketing"], optional: ["seo", "content_writing", "english_communication", "campaign_analytics", "performance_marketing"] },
+  { id: "social_media_exec", title: "Social media executive", domain: "social_media", aliases: ["social media executive", "social media manager", "social media marketing", "social media", "community manager"], essential: ["social_media"], optional: ["content_writing", "graphic_design", "video_editing", "campaign_analytics"] },
+  { id: "content_writer", title: "Content writer", domain: "content_marketing", aliases: ["content writer", "content writing", "content marketing", "copywriter", "content strategist", "content creator"], essential: ["content_writing"], optional: ["seo", "social_media", "english_communication"] },
+  { id: "brand_associate", title: "Brand associate", domain: "brand_management", aliases: ["brand manager", "brand associate", "brand management", "brand marketing"], essential: ["brand_management"], optional: ["market_research", "social_media", "presentation"] },
+  { id: "market_research_analyst", title: "Market research analyst", domain: "market_research", aliases: ["market research analyst", "market research", "consumer insights"], essential: ["market_research"], optional: ["excel", "data_analysis", "spss", "presentation"] },
+  { id: "pr_exec", title: "PR and communications associate", domain: "public_relations", aliases: ["public relations", "pr executive", "pr", "communications associate", "corporate communications", "communication", "communications", "media relations"], essential: ["public_relations", "english_communication"], optional: ["content_writing", "social_media"] },
+  { id: "sales_exec", title: "Sales executive", domain: "sales", aliases: ["sales executive", "sales associate", "inside sales", "field sales executive", "sales"], essential: ["sales", "english_communication"], optional: ["crm", "negotiation", "hindi"] },
+  // Creative and design
+  { id: "ux_designer", title: "UI/UX designer", domain: "ux_design", aliases: ["ux designer", "ui designer", "ui/ux designer", "product designer", "ui/ux", "ui ux", "ux design", "ui/ux design"], essential: ["ux_design", "figma"], optional: ["prototyping", "user_research", "html", "css"] },
+  { id: "graphic_designer", title: "Graphic designer", domain: "graphic_design", aliases: ["graphic designer", "graphic design", "visual designer", "visual design", "creative designer"], essential: ["graphic_design"], optional: ["photoshop", "illustrator", "canva", "figma"] },
+  { id: "video_editor", title: "Video editor / animator", domain: "video_animation", aliases: ["video editor", "video editing", "motion graphics designer", "animator", "animation", "2d animator", "3d animator"], essential: ["video_editing"], optional: ["animation", "graphic_design"] },
+  { id: "photographer", title: "Photographer", domain: "photography", aliases: ["photographer", "photography", "photo editor"], essential: ["photography"], optional: ["video_editing", "photoshop"] },
+  { id: "creative_writer", title: "Creative writer", domain: "creative_writing", aliases: ["creative writer", "creative writing", "scriptwriter", "script writer", "story writer"], essential: ["creative_writing"], optional: ["content_writing", "english_communication"] },
+  // People, education, psychology
+  { id: "hr_recruiter", title: "HR / talent acquisition associate", domain: "human_resources", aliases: ["hr", "hr executive", "human resources", "human resource", "talent acquisition", "recruiter", "hr generalist", "hr associate", "recruitment"], essential: ["recruitment"], optional: ["hr_operations", "english_communication", "ms_office"] },
+  { id: "psychology_associate", title: "Psychology associate", domain: "psychology", aliases: ["psychologist", "counsellor", "counselor", "counselling psychologist", "clinical psychology", "psychology"], essential: ["psychology"], optional: ["research_methods", "spss", "english_communication"] },
+  { id: "teacher", title: "Teacher / teaching assistant", domain: "education", aliases: ["teacher", "teaching assistant", "tutor", "educator", "academic counsellor", "curriculum developer", "teaching", "education"], essential: ["teaching"], optional: ["english_communication", "content_writing", "presentation"] },
+  // Research and sciences
+  { id: "research_assistant", title: "Research assistant", domain: "research", aliases: ["research assistant", "research associate", "research fellow", "junior research fellow", "jrf", "research"], essential: ["research_methods"], optional: ["academic_writing", "statistics", "python", "spss", "r_lang"] },
+  { id: "healthcare_administrator", title: "Healthcare administration associate", domain: "healthcare_admin", aliases: ["healthcare administration", "hospital administration", "healthcare administrator", "hospital operations", "healthcare management"], essential: ["healthcare_admin"], optional: ["ms_office", "english_communication"] },
+  { id: "biotech_associate", title: "Biotechnology associate", domain: "biotechnology", aliases: ["biotechnology", "biotech", "lab assistant", "laboratory assistant", "bioinformatics"], essential: ["lab_techniques"], optional: ["bioinformatics", "research_methods", "academic_writing"] },
+  { id: "environmental_analyst", title: "Environment and sustainability analyst", domain: "environmental", aliases: ["sustainability analyst", "environmental engineer", "environmental consultant", "environmental studies", "esg analyst", "sustainability", "environmental"], essential: ["environmental_assessment"], optional: ["gis", "research_methods", "academic_writing"] },
+  { id: "agriculture_associate", title: "Agriculture associate", domain: "agriculture", aliases: ["agriculture", "agronomist", "agri business", "agricultural officer", "agritech"], essential: ["agronomy"], optional: ["market_research", "gis"] },
+  // Core engineering, architecture, trades
+  { id: "civil_engineer", title: "Civil / site engineer", domain: "civil_engineering", aliases: ["civil engineer", "civil engineering", "site engineer", "structural engineer", "quantity surveyor", "civil"], essential: ["autocad"], optional: ["staad_pro", "structural_analysis", "revit"] },
+  { id: "mechanical_trainee", title: "Mechanical engineer trainee", domain: "mechanical_engineering", aliases: ["graduate engineer trainee mechanical", "mechanical engineer trainee", "get mechanical", "design engineer", "mechanical engineer", "mechanical engineering", "production engineer", "mechanical"], essential: ["autocad"], optional: ["solidworks", "catia", "manufacturing", "quality_control"] },
+  { id: "electrical_engineer", title: "Electrical / electronics engineer", domain: "electrical_engineering", aliases: ["electrical engineer", "electrical engineering", "electronics engineer", "embedded engineer", "embedded systems", "electrical", "electronics"], essential: ["electronics"], optional: ["plc", "power_systems", "matlab"] },
+  { id: "architect", title: "Architectural assistant", domain: "architecture", aliases: ["architect", "architecture", "architectural assistant", "interior designer", "interior design"], essential: ["architectural_design"], optional: ["autocad", "revit"] },
+  { id: "fitter_apprentice", title: "Fitter apprentice", domain: "skilled_trades", aliases: ["fitter apprentice", "apprentice fitter", "trade apprentice fitter"], essential: ["fitter"], optional: ["quality_control", "turner"] },
+  { id: "electrician_apprentice", title: "Electrician apprentice", domain: "skilled_trades", aliases: ["electrician apprentice", "apprentice electrician", "trade apprentice electrician"], essential: ["electrician"], optional: ["electronics", "quality_control"] },
+  { id: "cnc_operator", title: "CNC operator", domain: "skilled_trades", aliases: ["cnc operator", "vmc operator", "machine operator"], essential: ["cnc"], optional: ["turner", "quality_control", "autocad"] },
+  // Law, policy, social impact
+  { id: "legal_associate", title: "Legal associate", domain: "legal", aliases: ["legal associate", "law intern", "paralegal", "legal", "legal researcher", "corporate law", "litigation", "law"], essential: ["legal_research"], optional: ["academic_writing", "english_communication"] },
+  { id: "policy_analyst", title: "Policy analyst", domain: "public_policy", aliases: ["policy analyst", "public policy", "policy research", "governance fellow", "policy associate", "policy"], essential: ["policy_analysis"], optional: ["research_methods", "academic_writing", "data_analysis"] },
+  { id: "social_impact_associate", title: "Social impact / programme associate", domain: "social_impact", aliases: ["social impact", "development sector", "program associate", "programme associate", "community mobilizer", "csr associate", "social work", "social worker", "field coordinator", "ngo"], essential: ["community_engagement"], optional: ["english_communication", "hindi", "project_management", "research_methods"] },
+  // Customer service and office
+  { id: "customer_support_exec", title: "Customer support executive", domain: "customer_support", aliases: ["customer support executive", "customer care executive", "telecaller", "bpo executive", "customer service representative", "customer support", "customer service"], essential: ["english_communication", "customer_support"], optional: ["hindi", "ms_office", "data_entry"] },
+  { id: "data_entry_operator", title: "Data entry operator", domain: "operations", aliases: ["data entry operator", "computer operator", "data entry"], essential: ["data_entry", "ms_office"], optional: ["excel", "english_communication"] },
 ];

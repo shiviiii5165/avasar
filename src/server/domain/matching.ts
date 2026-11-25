@@ -37,6 +37,8 @@ export interface MatchResult {
   version?: string;
   skillVerdicts?: { requirement: string; importance: "required" | "preferred" | "mentioned"; supportedBy: { name: string; state: string; relation: string } | null; development: string }[];
   explanations?: { kind: "observed" | "inferred" | "unknown"; text: string }[];
+  /** The listing's field (intelligence/domains.ts) and how it relates to the student's target; null fields = unknown. */
+  domain?: { id: string | null; label: string | null; basis: "title" | "skills" | "unknown"; confidence: "high" | "medium" | "low" | "none"; relation: "role" | "same" | "adjacent" | "group" | "none" | null };
 }
 
 const lc = (s: string) => s.trim().toLowerCase();

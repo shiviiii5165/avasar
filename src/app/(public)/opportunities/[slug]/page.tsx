@@ -5,6 +5,9 @@ import { ArrowLeft, ExternalLink, Info } from "lucide-react";
 
 import { SaveButton } from "@/components/forms/buttons";
 import { EligibilityPanel, MatchPanel, SignInToSeeFit } from "@/components/opportunity/fit-panel";
+import { FieldChip } from "@/components/opportunity/field";
+import { classifyOpportunity } from "@/server/intelligence/domains";
+import { registry } from "@/server/intelligence/registry";
 import { CATEGORY_LABEL, deadlineLabel, EMPLOYMENT_LABEL, formatComp, placeLabel } from "@/components/opportunity/format";
 import { OpportunityCard, SampleBadge, VerificationBadge } from "@/components/opportunity/opportunity-card";
 import { ReportForm } from "@/components/opportunity/report-form";
@@ -51,6 +54,8 @@ export default async function OpportunityPage({ params, searchParams }: { params
   const deadline = deadlineLabel(o.deadline);
   const categoryDetails = describeDetails(o.category, o.details as Record<string, unknown>);
   const jobLike = ["job", "internship", "gig"].includes(o.category);
+  // The matcher's classification when signed in (same as the cards); otherwise the same classifier directly.
+  const field = match?.domain ? { domain: match.domain.id, basis: match.domain.basis } : classifyOpportunity(registry(), o);
 
   // Structured data for search engines: only real (non-sample) published listings.
   const jsonLd = !o.isSample && jobLike && {
@@ -74,6 +79,7 @@ export default async function OpportunityPage({ params, searchParams }: { params
       <div className="mt-4 grid gap-8 lg:grid-cols-[1fr_360px]">
         <article>
           <div className="flex flex-wrap gap-2">
+            <FieldChip domainId={field.domain} inferred={field.basis === "skills"} />
             <Badge tone="purple">{CATEGORY_LABEL[o.category]}</Badge>
             {o.employmentType && <Badge>{EMPLOYMENT_LABEL[o.employmentType]}</Badge>}
             <VerificationBadge level={o.verification} />

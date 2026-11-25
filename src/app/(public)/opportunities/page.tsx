@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { OpportunityFilters } from "@/components/opportunity/filters";
-import { OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { cardMatch, OpportunityCard } from "@/components/opportunity/opportunity-card";
 import { OfficialPortalLinks } from "@/components/opportunity/portal-links";
 import { discoveryLinks } from "@/server/ingestion/discovery";
 import { discoveryFamilies } from "@/server/services/ingestion";
@@ -81,7 +81,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
                 const m = matches.get(o.id);
                 return (
                   <li key={o.id}>
-                    <OpportunityCard o={o} saved={saved.has(o.id)} match={m ? { score: m.score, eligibility: m.eligibility.status } : null} />
+                    <OpportunityCard o={o} saved={saved.has(o.id)} match={m ? cardMatch(m) : null} />
                   </li>
                 );
               })}

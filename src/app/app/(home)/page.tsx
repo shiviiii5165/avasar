@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarClock, Sparkles } from "lucide-react";
 
-import { OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { cardMatch, OpportunityCard } from "@/components/opportunity/opportunity-card";
 import { Badge, Card, StateMessage } from "@/components/ui";
 import { SyncStatusCard } from "@/components/profile/sync-status";
 import { requireCandidate } from "@/server/auth/session";
@@ -79,7 +79,7 @@ export default async function CandidateHome() {
               const m = matches.get(o.id)!;
               return (
                 <li key={o.id} className="flex flex-col gap-2">
-                  <OpportunityCard o={o} match={{ score: m.score, eligibility: m.eligibility.status }} />
+                  <OpportunityCard o={o} match={cardMatch(m)} />
                   <div><DismissButton opportunityId={o.id} title={o.title} /></div>
                 </li>
               );

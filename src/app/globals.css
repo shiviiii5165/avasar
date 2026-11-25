@@ -33,6 +33,28 @@
   --color-danger-soft: #fdeceb;
   --color-surface: #ffffff;
   --color-surface-muted: #f7f5f2;
+  /* Career-field accents (components/opportunity/field.tsx). Each ink colour is ≥ 4.5:1 on its soft tint and on
+     white. Colour is never the only signal: every field chip also has an icon and a text label. */
+  --color-field-tech: #4338ca;
+  --color-field-tech-soft: #eef0ff;
+  --color-field-business: #1d4ed8;
+  --color-field-business-soft: #e8f0ff;
+  --color-field-finance: #047857;
+  --color-field-finance-soft: #e3f6ee;
+  --color-field-marketing: #c2410c;
+  --color-field-marketing-soft: #fff0e6;
+  --color-field-creative: #be185d;
+  --color-field-creative-soft: #fdebf3;
+  --color-field-people: #92400e;
+  --color-field-people-soft: #fdf3dc;
+  --color-field-science: #0f766e;
+  --color-field-science-soft: #e0f5f2;
+  --color-field-engineering: #334155;
+  --color-field-engineering-soft: #eaeef3;
+  --color-field-society: #9f1239;
+  --color-field-society-soft: #fdecef;
+  --color-field-service: #0e7490;
+  --color-field-service-soft: #e2f4f8;
 
   /* Type */
   --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif;

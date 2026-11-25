@@ -1,6 +1,6 @@
 /**
  * THE matching function for every student-facing surface (Discover, search "best match", listing detail, Apply,
- * home, insights and the career page). It is career-match/v1 (evidence-aware, registry-based) presented in the
+ * home, insights and the career page). It is career-match/v2 (evidence-aware, registry-based, domain-aware) presented in the
  * MatchResult shape the UI components read, so one listing has one score everywhere.
  *
  * domain/matching.ts is no longer called by pages: it remains only as the personal-fit component inside
@@ -23,7 +23,7 @@ export type Matcher = (opp: OpportunityFacts, now?: Date) => MatchResult;
 
 const FEATURE_NOTE: Record<CanonicalFeature, string> = {
   skillFit: "Listed skills against your evidence",
-  roleAlignment: "Listing title against your target role",
+  roleAlignment: "Listing role and field against your target role",
   personalFit: "Location, work mode and stated preferences",
 };
 
@@ -66,6 +66,7 @@ export function toMatchResult(cm: CareerMatch): MatchResult {
     version: cm.version,
     skillVerdicts: cm.skills.map(({ requirement, importance, supportedBy, development }) => ({ requirement, importance, supportedBy, development })),
     explanations: cm.explanations,
+    domain: cm.domain,
   };
 }
 

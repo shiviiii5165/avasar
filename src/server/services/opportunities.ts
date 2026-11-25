@@ -33,6 +33,8 @@ export const searchSchema = z.object({
   verified: z.enum(["1"]).optional(),
   paid: z.enum(["1"]).optional(),
   closingWithinDays: z.coerce.number().int().min(1).max(365).optional(),
+  /** Career field (intelligence/domains.ts). Not a column: applied after classification, see searchOpportunitiesRanked. */
+  field: z.string().regex(/^[a-z_]{2,40}$/).optional(),
   sort: z.enum(["relevance", "newest", "deadline"]).default("newest"),
   page: z.coerce.number().int().min(1).max(500).default(1),
 });
@@ -85,17 +87,27 @@ export const RANK_LIMIT = 5000;
  * still comes first. Matching runs in TypeScript (eligibility rules, skills, education), so it can't be a
  * SQL ORDER BY; ranking is done on the server and only one page leaves it.
  */
-export async function searchOpportunitiesRanked(db: Db, input: SearchInput, rank: (items: OpportunityFull[]) => OpportunityFull[] | Promise<OpportunityFull[]>, now = new Date()) {
+export async function searchOpportunitiesRanked(
+  db: Db,
+  input: SearchInput,
+  rank: (items: OpportunityFull[]) => OpportunityFull[] | Promise<OpportunityFull[]>,
+  now = new Date(),
+  /** Optional keep-filter over the loaded listings (career field, search intent), applied before ranking and counting. */
+  keep?: (o: OpportunityFull) => boolean,
+) {
   const filter = searchFilter(db, input, now);
-  const [rows, [{ total }]] = await Promise.all([
+  const [rows, [{ total: dbTotal }]] = await Promise.all([
     db.select().from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
     db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
   ]);
+  const loaded = await withDetails(db, rows);
+  const kept = keep ? loaded.filter(keep) : loaded;
+  const total = keep ? kept.length : dbTotal;
   // `rank` may await data loaded in parallel (e.g. the candidate's profile), so the search never waits for it to start.
-  const ranked = await rank(await withDetails(db, rows));
+  const ranked = await rank(kept);
   const start = (input.page - 1) * PAGE_SIZE;
   const ranks = Math.min(total, RANK_LIMIT);
-  return { items: ranked.slice(start, start + PAGE_SIZE), total, page: input.page, pageCount: Math.max(1, Math.ceil(ranks / PAGE_SIZE)), truncated: total > RANK_LIMIT };
+  return { items: ranked.slice(start, start + PAGE_SIZE), total, page: input.page, pageCount: Math.max(1, Math.ceil(ranks / PAGE_SIZE)), truncated: dbTotal > RANK_LIMIT };
 }
 
 /**
@@ -422,8 +434,10 @@ export async function importBatch(db: Db, sourceId: string, items: unknown[], ac
         locations: it.location ? [it.location.trim()] : [], deadline, applicationMethod: it.applyUrl ? "external" : "internal", externalUrl: it.applyUrl ?? null,
         status: "in_review", sourceId, sourceUrl: it.sourceUrl ?? null, sourceProvider: source.name, importedAt: now, createdBy: actorId,
       }).returning();
+      // A source's plain skill list says what the role involves, not what is mandatory: imported as preferred, so
+      // a missing one never reads as "required". A reviewer can mark skills required when the source says so.
       const skills = [...new Set((it.skills ?? []).map((s) => s.trim()).filter(Boolean))].slice(0, 20);
-      if (skills.length) await tx.insert(opportunitySkills).values(skills.map((name) => ({ opportunityId: row.id, name, normalized: normalizeSkill(name), required: true }))).onConflictDoNothing();
+      if (skills.length) await tx.insert(opportunitySkills).values(skills.map((name) => ({ opportunityId: row.id, name, normalized: normalizeSkill(name), required: false }))).onConflictDoNothing();
       await tx.insert(importRecords).values({ sourceId, rawPayload: raw as object, normalized, dedupeKey: key, status: "queued", opportunityId: row.id });
       await snapshot(tx, row, actorId);
     });

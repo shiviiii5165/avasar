@@ -6,7 +6,10 @@ import { normalizeSkill } from "../domain/skills";
 import { CONCEPTS, RELATIONS, ROLES, type ConceptDef, type RoleDef } from "./registry-data";
 
 export interface Concept { id: string; name: string; category: string; parentId: string | null; textExtractable: boolean }
-export interface Role { id: string; title: string; aliases: string[]; essential: string[]; optional: string[] }
+export interface Role { id: string; title: string; domain: string; aliases: string[]; essential: string[]; optional: string[] }
+
+/** Words that say what KIND of position it is, not which role: "Business Analyst Intern" is a business analyst role. */
+const SENIORITY_WORDS = /\b(intern|interns|internship|internships|trainee|trainees|summer|winter|junior|jr|associate|graduate|fresher|freshers|apprentice|apprenticeship|entry level|entry-level|remote|part time|part-time|full time|full-time|paid|unpaid|stipend|opening|role|position|program|programme|\d{4})\b/g;
 
 /** Aliases that are ordinary English words or surnames ("the rest of", "spring internship", "Mr Turner"): never matched in free text. */
 const AMBIGUOUS_IN_TEXT = new Set(["rest", "spring", "nodejs", "node", "accounts", "sales", "typing", "turner", "fitter", "android", "containers", "accounting"]);
@@ -107,12 +110,24 @@ export class SkillRegistry {
 
   /** Target role for a free-text role or job title: exact alias first, then an alias contained in the title. */
   roleFor(title: string): Role | null {
-    const t = title.toLowerCase().replace(/[^a-z0-9/+ -]+/g, " ").replace(/\s+/g, " ").trim();
+    const t = title.toLowerCase().replace(/[^a-z0-9/+&' -]+/g, " ").replace(/[–—-]/g, " ").replace(/\s+/g, " ").trim();
     if (!t) return null;
-    const exact = this.roles.find((r) => r.aliases.includes(t) || r.title.toLowerCase() === t);
-    if (exact) return exact;
+    // As written first (so "trade apprentice fitter" keeps its word), then without seniority/position words.
+    const stripped = t.replace(SENIORITY_WORDS, " ").replace(/\s+/g, " ").trim();
+    for (const s of stripped && stripped !== t ? [t, stripped] : [t]) {
+      const exact = this.roles.find((r) => r.aliases.includes(s) || r.title.toLowerCase() === s);
+      if (exact) return exact;
+    }
+    // Longest alias contained as whole words. Short aliases (ml, ba, pr, hr) only count as whole words too.
     let best: { role: Role; len: number } | null = null;
-    for (const r of this.roles) for (const a of r.aliases) if (a.length >= 6 && t.includes(a) && (!best || a.length > best.len)) best = { role: r, len: a.length };
+    const hay = ` ${t} `;
+    for (const r of this.roles) {
+      for (const a of r.aliases) {
+        if (a.length < 2 || !hay.includes(` ${a} `)) continue;
+        if (a.length < 6 && !` ${stripped} `.includes(` ${a} `)) continue;
+        if (!best || a.length > best.len) best = { role: r, len: a.length };
+      }
+    }
     return best?.role ?? null;
   }
 

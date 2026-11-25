@@ -7,9 +7,11 @@ import { compareListings } from "../../ingestion/dedupe";
 import { normalizeListing } from "../../ingestion/normalize";
 import { injectionFlags } from "../../ingestion/sanitize";
 import { careerMatch, rankCareerMatches, SCORING } from "../career-match";
+import { classifyOpportunity, domainDef, searchIntent } from "../domains";
 import { buildSkillProfile } from "../evidence";
 import { curatedRegistry } from "../registry";
 import { DUPLICATE_PAIRS, EVAL_NOW, EXTRACTION_CASES, LISTINGS, STUDENTS, type EvalStudent } from "./dataset";
+import { DOMAIN_LISTINGS, DOMAIN_POOL, DOMAIN_STUDENTS, SEARCH_CASES, type DomainStudent } from "./domain-dataset";
 
 export const K = 3;
 
@@ -65,6 +67,61 @@ function rankingMetrics(rank: (s: EvalStudent) => string[]) {
     intraListEmployerDiversity: mean(top.filter((t) => t.length).map((t) => new Set(t.map((id) => LISTINGS.find((l) => l.id === id)!.employer)).size / t.length)),
     closedListingsRecommended: top.flat().filter((id) => closedIds.includes(id)).length,
     ineligibleRecommended: STUDENTS.reduce((n, s) => n + rankings.get(s.id)!.slice(0, K).filter((id) => s.labels[id] === 0 && id === "L06" && s.id === "S06").length, 0),
+  };
+}
+
+/** Cross-domain evaluation (domain-dataset.ts): does each student see their own field, and do tech listings crowd out others? */
+export function evaluateDomains() {
+  const pool = DOMAIN_POOL;
+  const groupOf = (id: string) => {
+    const l = pool.find((x) => x.id === id)!;
+    const d = classifyOpportunity(reg, l.facts).domain;
+    return domainDef(d)?.group ?? null;
+  };
+  const rank = (s: DomainStudent) => {
+    const profile = buildSkillProfile(s.evidence, reg, { now: EVAL_NOW });
+    const scored = pool.map((l) => ({ id: l.id, deadline: l.facts.deadline, match: careerMatch(reg, s.facts, profile, l.facts, { targetRoles: s.targetRoles, now: EVAL_NOW }) }));
+    return rankCareerMatches(scored, pool.length).map((x) => x.id);
+  };
+  const lexical = (s: DomainStudent) => {
+    const words = new Set(s.evidence.flatMap((x) => x.skillName.toLowerCase().split(/[^a-z0-9+#]+/)).filter((w) => w.length > 1));
+    return pool
+      .map((l) => ({ id: l.id, n: `${l.facts.title} ${l.facts.skills.map((x) => x.name).join(" ")}`.toLowerCase().split(/[^a-z0-9+#]+/).filter((w) => words.has(w)).length }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n || (a.id < b.id ? -1 : 1))
+      .map((x) => x.id);
+  };
+  const closed = pool.filter((l) => l.facts.deadline && l.facts.deadline <= EVAL_NOW).map((l) => l.id);
+  const perStudent = DOMAIN_STUDENTS.map((s) => {
+    const r = rank(s);
+    const top5 = r.slice(0, 5);
+    return {
+      student: s.id,
+      field: s.domain,
+      [`precision@${K}`]: Math.round(precisionAtK(r, s.labels) * 1000) / 1000,
+      [`ndcg@${K}`]: ndcgAtK(r, s.labels) === null ? null : Math.round(ndcgAtK(r, s.labels)! * 1000) / 1000,
+      techShareTop5: s.technical ? null : Math.round((top5.filter((id) => groupOf(id) === "technology").length / Math.max(1, top5.length)) * 100) / 100,
+      closedInTop5: top5.filter((id) => closed.includes(id)).length,
+      top3: r.slice(0, 3).map((id) => pool.find((l) => l.id === id)!.facts.title),
+    };
+  });
+  const lex = DOMAIN_STUDENTS.map((s) => ({ p: precisionAtK(lexical(s), s.labels), n: ndcgAtK(lexical(s), s.labels), tech: s.technical ? null : lexical(s).slice(0, 5).filter((id) => groupOf(id) === "technology").length / 5 }));
+  const nonTech = perStudent.filter((p) => p.techShareTop5 !== null);
+
+  const classified = DOMAIN_LISTINGS.map((l) => ({ id: l.id, want: l.domain, got: classifyOpportunity(reg, l.facts).domain }));
+  const search = SEARCH_CASES.map((c) => ({ q: c.q, want: c.roleId, got: searchIntent(reg, c.q)?.roleId ?? null }));
+  return {
+    note: "Synthetic, hand-labelled cross-domain cases (8 students, 38 listings). Describes ranking behaviour only; not placement evidence.",
+    summary: {
+      [`precision@${K}`]: mean(perStudent.map((p) => p[`precision@${K}`] as number)),
+      [`ndcg@${K}`]: mean(perStudent.map((p) => p[`ndcg@${K}`] as number | null)),
+      nonTechnicalStudentsTechShareTop5: mean(nonTech.map((p) => p.techShareTop5)),
+      closedInTop5: perStudent.reduce((n, p) => n + p.closedInTop5, 0),
+    },
+    lexicalBaseline: { [`precision@${K}`]: mean(lex.map((x) => x.p)), [`ndcg@${K}`]: mean(lex.map((x) => x.n)), nonTechnicalStudentsTechShareTop5: mean(lex.map((x) => x.tech)) },
+    perStudent,
+    classification: { accuracy: Math.round((classified.filter((c) => c.want === c.got).length / classified.length) * 1000) / 1000, errors: classified.filter((c) => c.want !== c.got) },
+    searchIntent: { accuracy: Math.round((search.filter((c) => c.want === c.got).length / search.length) * 1000) / 1000, errors: search.filter((c) => c.want !== c.got) },
   };
 }
 
@@ -137,6 +194,7 @@ export function evaluate() {
     fairness: { exposureGroupA: exposure("A"), exposureGroupB: exposure("B"), institutionTwinsRankIdentically: twinsIdentical, protectedAttributesUsed: [] as string[] },
     skillExtraction: { precision: tp + fp ? Math.round((tp / (tp + fp)) * 1000) / 1000 : null, recall: tp + fn ? Math.round((tp / (tp + fn)) * 1000) / 1000 : null },
     deduplication: { precision: dtp + dfp ? dtp / (dtp + dfp) : null, recall: dtp + dfn ? dtp / (dtp + dfn) : null, pairs: DUPLICATE_PAIRS.length },
+    domains: evaluateDomains(),
     ingestion: { records: raws.length, rejected: results.filter((r) => !r.ok).length, failureRate: Math.round((results.filter((r) => !r.ok).length / raws.length) * 100) / 100, maliciousFlagged: malicious, injectionDetectorOnClean: injectionFlags(String(raws[0].description)).length },
   };
 }
