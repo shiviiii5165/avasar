@@ -3,7 +3,7 @@
  * route compiles it and can reload an already-open page mid-click; warming the routes removes that flake.
  */
 const ROUTES = [
-  "/sign-in", "/app", "/app/discover", "/app/applications", "/app/saved", "/app/profile", "/app/insights",
+  "/sign-in", "/app", "/app/discover", "/app/applications", "/app/saved", "/app/profile", "/app/insights", "/app/career",
   "/app/notifications", "/app/settings", "/app/help", "/opportunities", "/api/auth/login", "/api/auth/tathastu/callback",
 ];
 

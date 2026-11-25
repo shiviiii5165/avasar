@@ -55,6 +55,8 @@ export interface SkillProfileEntry {
   state: SkillState;
   /** Why the state is what it is, in one sentence. */
   basis: string;
+  /** The type of the evidence item that decided the state (null when only old learning activity remains). */
+  basisType: EvidenceType | null;
   evidence: EvidenceItem[];
   lastEvidenceAt: Date | null;
   /** Comparable assessment results, newest first, and what they show. */
@@ -65,13 +67,29 @@ export interface SkillProfileEntry {
 }
 
 export const STATE_ORDER: SkillState[] = ["verified", "demonstrated", "practiced", "learning", "declared"];
-export const STATE_LABEL: Record<SkillState, string> = {
-  verified: "Verified",
-  demonstrated: "Demonstrated",
-  practiced: "Practiced",
-  learning: "Learning",
-  declared: "Declared, not yet evidenced",
+
+/**
+ * Student-facing vocabulary: the ONE place the words for each status live (skill explorer, career goal, cards,
+ * listing detail). Two statuses are not skill states: "not_shown" (nothing on the profile supports a skill) and
+ * "related" (only a related skill does, which is partial support, never proof).
+ */
+export type SkillStatusKey = SkillState | "not_shown" | "related";
+export const STATUS: Record<SkillStatusKey, { label: string; explain: string }> = {
+  verified: { label: "Verified", explain: "Confirmed by an authorised check, such as an AI Tathastu verification or a verified assessment." },
+  demonstrated: { label: "Shown in your work", explain: "A project, job or passed assessment on your profile uses this skill. Nobody has verified it yet." },
+  practiced: { label: "Practising", explain: "You've practised it or tried an assessment on AI Tathastu. It isn't shown in a project yet." },
+  learning: { label: "Learning", explain: "You've been studying it on AI Tathastu recently. Studying a topic isn't proof of the skill yet." },
+  declared: { label: "Added to profile", explain: "You listed it (or it came from your resume or AI Tathastu profile). Nothing on your profile backs it up yet." },
+  not_shown: { label: "Not shown yet", explain: "Nothing on your profile shows this skill yet. That isn't the same as not having it." },
+  related: { label: "Related skill", explain: "You have a related skill. It helps a little, but it isn't proof of this one." },
 };
+export const STATE_LABEL: Record<SkillState, string> = Object.fromEntries(STATE_ORDER.map((s) => [s, STATUS[s].label])) as Record<SkillState, string>;
+
+/** Precise words for a skill "shown in your work": says WHICH kind of work, so a job is never called a project. */
+const SHOWN_BY: Partial<Record<EvidenceType, string>> = { project: "Shown in project", ait_project: "Shown in project", work_experience: "Used in a job", assessment: "Passed an assessment" };
+export function statusLabel(e: Pick<SkillProfileEntry, "state" | "basisType">): string {
+  return (e.state === "demonstrated" && e.basisType && SHOWN_BY[e.basisType]) || STATUS[e.state].label;
+}
 export const EVIDENCE_LABEL: Record<EvidenceType, string> = {
   declared: "You listed it",
   imported_profile: "On your AI Tathastu profile",
@@ -90,18 +108,18 @@ export const LEARNING_RECENT_DAYS = 90;
 export const STALE_AFTER_DAYS = 730;
 const DAY = 86_400_000;
 
-function stateOf(items: EvidenceItem[], now: Date): { state: SkillState; basis: string } {
+function stateOf(items: EvidenceItem[], now: Date): { state: SkillState; basis: string; basisType: EvidenceType | null } {
   const has = (pred: (e: EvidenceItem) => boolean) => items.find(pred);
   const v = has((e) => e.verification === "verified");
-  if (v) return { state: "verified", basis: `${EVIDENCE_LABEL[v.type]} (verified)` };
+  if (v) return { state: "verified", basis: `${EVIDENCE_LABEL[v.type]} (verified)`, basisType: v.type };
   const d = has((e) => (e.type === "assessment" && e.result?.passed === true) || e.type === "project" || e.type === "work_experience" || e.type === "ait_project");
-  if (d) return { state: "demonstrated", basis: `${EVIDENCE_LABEL[d.type]}: ${d.label}` };
+  if (d) return { state: "demonstrated", basis: `${EVIDENCE_LABEL[d.type]}: ${d.label}`, basisType: d.type };
   const p = has((e) => e.type === "ait_practice" || (e.type === "assessment" && e.result?.passed !== true));
-  if (p) return { state: "practiced", basis: `${EVIDENCE_LABEL[p.type]}: ${p.label}` };
+  if (p) return { state: "practiced", basis: `${EVIDENCE_LABEL[p.type]}: ${p.label}`, basisType: p.type };
   const l = has((e) => e.type === "ait_learning" && e.observedAt !== null && now.getTime() - e.observedAt.getTime() <= LEARNING_RECENT_DAYS * DAY);
-  if (l) return { state: "learning", basis: "You've been studying this on AI Tathastu recently (no practice or result yet)" };
+  if (l) return { state: "learning", basis: "You've been studying this on AI Tathastu recently (no practice or result yet)", basisType: l.type };
   const decl = has((e) => ["declared", "imported_profile", "resume_extracted", "certification"].includes(e.type));
-  return { state: "declared", basis: decl ? `${EVIDENCE_LABEL[decl.type]}, with no project, assessment or practice behind it yet` : "Older learning activity only" };
+  return { state: "declared", basis: decl ? `${EVIDENCE_LABEL[decl.type]}, with no project, assessment or practice behind it yet` : "Older learning activity only", basisType: decl?.type ?? null };
 }
 
 function trajectoryOf(items: EvidenceItem[]): SkillProfileEntry["trajectory"] {
@@ -119,8 +137,8 @@ function nextActionFor(state: SkillState, name: string): string {
   switch (state) {
     case "declared": return `Add a project that uses ${name}, or practise it on AI Tathastu, so it has evidence behind it`;
     case "learning": return `Practise ${name} with a hands-on task on AI Tathastu`;
-    case "practiced": return `Take an assessment or build a small project to demonstrate ${name}`;
-    case "demonstrated": return `Keep the project link current; a verified assessment would confirm ${name}`;
+    case "practiced": return `Build a small project with ${name}, or pass an assessment, so it shows in your work`;
+    case "demonstrated": return `Keep this work up to date; a verified assessment would confirm ${name}`;
     case "verified": return `Nothing needed; keep it current`;
   }
 }
@@ -139,7 +157,7 @@ export function buildSkillProfile(items: EvidenceItem[], reg: SkillRegistry, opt
   }
   const out: SkillProfileEntry[] = [];
   for (const [key, g] of groups) {
-    const { state, basis } = stateOf(g.items, now);
+    const { state, basis, basisType } = stateOf(g.items, now);
     const dates = g.items.map((e) => e.observedAt?.getTime()).filter((t): t is number => typeof t === "number");
     const last = dates.length ? new Date(Math.max(...dates)) : null;
     out.push({
@@ -148,6 +166,7 @@ export function buildSkillProfile(items: EvidenceItem[], reg: SkillRegistry, opt
       conceptId: key.startsWith("text:") ? null : key,
       state,
       basis,
+      basisType,
       evidence: [...g.items].sort((a, b) => (b.observedAt?.getTime() ?? 0) - (a.observedAt?.getTime() ?? 0)),
       lastEvidenceAt: last,
       trajectory: trajectoryOf(g.items),

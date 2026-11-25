@@ -1,25 +1,25 @@
 import Link from "next/link";
+import { ArrowRight, Sparkles } from "lucide-react";
 
 import { evidencePreferencesAction, toggleLearningEvidenceAction } from "@/app/actions/career";
-import { CATEGORY_LABEL } from "@/components/opportunity/format";
-import { VerificationBadge } from "@/components/opportunity/opportunity-card";
+import { GoalSkills } from "@/components/career/goal-skills";
+import { RecommendationCard } from "@/components/career/recommendation-card";
+import { SkillExplorer } from "@/components/career/skill-explorer";
+import { skillLinks, skillViews } from "@/components/career/skill-view";
 import { OfficialPortalLinks } from "@/components/opportunity/portal-links";
 import { discoveryLinks } from "@/server/ingestion/discovery";
 import { discoveryFamilies } from "@/server/services/ingestion";
-import { Badge, buttonClass, Card, PageHeader, StateMessage } from "@/components/ui";
+import { buttonClass, PageHeader, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
-import { ELIGIBILITY_LABEL } from "@/server/domain/eligibility";
-import { EVIDENCE_LABEL, STATE_LABEL, type SkillState } from "@/server/intelligence/evidence";
-import { DismissButton, SaveButton } from "@/components/forms/buttons";
+import { registry } from "@/server/intelligence/registry";
 import { careerIntelligence, CONTROLLABLE_EVIDENCE } from "@/server/services/career";
 import { dismissedIds, savedIds } from "@/server/services/engagement";
 
 export const metadata = { title: "Career intelligence" };
 
-const STATE_TONE: Record<SkillState, "success" | "purple" | "orange" | "warning" | "neutral"> = { verified: "success", demonstrated: "purple", practiced: "orange", learning: "warning", declared: "neutral" };
-const KIND_LABEL = { observed: "From your profile", inferred: "Inferred (related skill)", unknown: "Not known yet" } as const;
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "unknown");
+const LEARNING_KIND: Record<string, string> = { asked: "Studied", practiced: "Practised", task_completed: "Completed a task", assessment_attempted: "Tried an assessment", assessment_passed: "Passed an assessment", project_demonstrated: "Shown in a project" };
 
 /**
  * Evidence-based career intelligence for the signed-in student only. Every statement here comes from the
@@ -32,144 +32,52 @@ export default async function CareerPage() {
   const data = await careerIntelligence(db, session.profileId, new Date(), { exclude: dismissed });
   if (!data) return <StateMessage kind="error" title="Profile not found" />;
   const { skills, readiness, recommendations, roadmap, learning, excluded } = data;
-  const families = await discoveryFamilies(await getDb()).catch(() => new Set<string>());
+  const families = await discoveryFamilies(db).catch(() => new Set<string>());
   const portalLinks = discoveryLinks({ query: data.targetRoles[0] ?? skills.find((s) => s.state === "demonstrated" || s.state === "verified")?.name, families });
-  const groups: { title: string; states: SkillState[] }[] = [
-    { title: "Verified", states: ["verified"] },
-    { title: "Demonstrated", states: ["demonstrated"] },
-    { title: "Learning and practising", states: ["practiced", "learning"] },
-    { title: "Declared, not yet evidenced", states: ["declared"] },
-  ];
+  const reg = registry();
+  const domains = Object.fromEntries(readiness.map((r) => [r.role.id, reg.roles.find((x) => x.id === r.role.id)?.domain ?? null]));
+  const byName = new Map(skills.map((s) => [s.name, s]));
+  const views = skillViews(skills, readiness[0] ? { title: readiness[0].role.title, skills: readiness[0].skills } : null);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Career intelligence" description="What your evidence shows, how it fits open opportunities, and what to learn next. Recomputed on every visit from your own profile; no score here is a prediction of getting a job." />
+      <PageHeader title="Career intelligence" description="Your skills, how they're backed up, what to build next for your goal, and openings that fit. Worked out fresh from your own profile on every visit; nothing here predicts getting a job." />
 
-      <Card>
-        <h2 className="text-lg font-semibold text-navy">My skill profile</h2>
-        <p className="mt-1 text-xs text-muted">Each skill&apos;s state comes from the evidence behind it: listing a skill is not the same as showing it. Asking AI Tathastu about a topic counts as learning, never as proficiency.</p>
-        {skills.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">No skills yet. <Link href="/app/profile" className="font-semibold text-purple hover:underline">Add skills or a project</Link>; an empty profile says nothing about your ability.</p>
-        ) : (
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {groups.map((g) => {
-              const list = skills.filter((s) => g.states.includes(s.state));
-              if (!list.length) return null;
-              return (
-                <section key={g.title}>
-                  <h3 className="text-sm font-semibold text-navy">{g.title}</h3>
-                  <ul className="mt-2 space-y-2">
-                    {list.map((s) => (
-                      <li key={s.key} className="rounded-lg border border-line p-3 text-sm">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-navy">{s.name}</span>
-                          <Badge tone={STATE_TONE[s.state]}>{STATE_LABEL[s.state]}</Badge>
-                          {s.stale && <Badge tone="warning">Evidence over 2 years old</Badge>}
-                        </div>
-                        <p className="mt-1 text-xs text-muted">{s.basis}. Last evidence: {fmt(s.lastEvidenceAt)}.</p>
-                        <p className="mt-1 text-xs text-muted">Sources: {[...new Set(s.evidence.map((e) => EVIDENCE_LABEL[e.type]))].join(" · ")}</p>
-                        {s.trajectory.change !== "not_comparable" && (
-                          <p className="mt-1 text-xs text-navy">Assessments: {s.trajectory.previous}% → {s.trajectory.latest}% ({s.trajectory.change})</p>
-                        )}
-                        <p className="mt-1 text-xs text-purple">Next: {s.nextAction}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+      {skills.length === 0 ? (
+        <section className="flex flex-col items-start gap-2 rounded-2xl border border-dashed border-line bg-surface p-6" data-testid="skill-explorer-empty">
+          <Sparkles aria-hidden className="size-6 text-purple" />
+          <h2 className="text-xl font-semibold text-navy">Your skills will appear here</h2>
+          <p className="max-w-xl text-sm text-muted">Add skills or a project to your profile and they&apos;ll show up as a map of what you can do, with what backs each one up. An empty profile says nothing about your ability.</p>
+          <Link href="/app/profile" className={buttonClass("primary", "sm", "mt-2")}>
+            Add skills or a project <ArrowRight aria-hidden className="size-4" />
+          </Link>
+        </section>
+      ) : (
+        <SkillExplorer skills={views} links={skillLinks(skills)} aitLearnUrl={data.aitLearnUrl} />
+      )}
 
-      <Card>
-        <h2 className="text-lg font-semibold text-navy">Career readiness</h2>
-        {readiness.length === 0 ? (
-          <p className="mt-2 text-sm text-muted">Set a target role in <Link href="/app/profile" className="font-semibold text-purple hover:underline">your preferred roles</Link> (for example &ldquo;Data analyst&rdquo; or &ldquo;Fitter apprentice&rdquo;) to see what it needs.</p>
-        ) : (
-          <div className="mt-3 space-y-5">
-            {readiness.map((r) => (
-              <section key={r.role.id}>
-                <h3 className="font-semibold text-navy">{r.role.title}</h3>
-                <p className="text-xs text-muted">{r.essentialEvidenced} of {r.essentialTotal} essential skills demonstrated or verified. This is a count of evidence, not a readiness score.</p>
-                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {r.skills.map((s) => (
-                    <li key={s.conceptId} className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="text-navy">{s.name}</span>
-                      <Badge>{s.importance}</Badge>
-                      {s.supportedBy ? (
-                        <Badge tone={STATE_TONE[s.supportedBy.state]}>{s.supportedBy.relation === "related" ? `related: ${s.supportedBy.name}` : STATE_LABEL[s.supportedBy.state]}</Badge>
-                      ) : (
-                        <Badge tone="danger">not yet shown</Badge>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-      </Card>
+      <GoalSkills readiness={readiness} skills={skills} roadmap={roadmap} domains={domains} aitLearnUrl={data.aitLearnUrl} />
 
-      <Card>
-        <h2 className="text-lg font-semibold text-navy">Recommended opportunities</h2>
-        <p className="mt-1 text-xs text-muted">Ranked by documented rules (skills first, then your stated preferences). Listings whose stated requirements you don&apos;t meet are left out; unknown eligibility is shown, not held against you.</p>
+      <section aria-labelledby="recs-title" className="rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-6">
+        <h2 id="recs-title" className="text-xl font-semibold text-navy">Openings that fit you</h2>
+        <p className="mt-0.5 text-sm text-muted">Ordered by your skills first, then your career goal, then your preferences. Listings whose stated requirements you don&apos;t meet are left out; unknown details are never held against you. Each listing appears once, even when several sources carry it.</p>
         {recommendations.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">No open listings to recommend right now.</p>
+          <p className="mt-4 rounded-xl border border-dashed border-line p-5 text-sm text-muted">No open listings to recommend right now. Check back soon, or search the official portals below.</p>
         ) : (
-          <ul className="mt-4 space-y-4">
+          <ul className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="recommendations">
             {recommendations.map(({ o, match }) => (
-              <li key={o.id} className="rounded-xl border border-line p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="purple">{CATEGORY_LABEL[o.category] ?? o.category}</Badge>
-                  <VerificationBadge level={o.verification} />
-                  <Badge>{ELIGIBILITY_LABEL[match.eligibility.status]}</Badge>
-                  {match.score === null && <Badge tone="warning">Not ranked: add skills to compare</Badge>}
-                </div>
-                <h3 className="mt-2 font-semibold text-navy"><Link href={`/opportunities/${o.slug}`} className="hover:underline">{o.title}</Link></h3>
-                <p className="text-sm text-muted">{o.organizationName}</p>
-                <ul className="mt-2 space-y-1 text-sm">
-                  {match.explanations.slice(0, 6).map((e, i) => (
-                    <li key={i}><span className="text-xs font-semibold text-muted">{KIND_LABEL[e.kind]}:</span> <span className="text-navy">{e.text}</span></li>
-                  ))}
-                </ul>
-                {match.learnNext.length > 0 && <p className="mt-2 text-sm text-purple">Learn next: {match.learnNext.join(", ")}</p>}
-                <p className="mt-2 text-xs text-muted">
-                  Source: {o.sourceProvider ?? "Posted on Avsar"}
-                  {o.sourceUrl && <> · <a href={o.sourceUrl} rel="noopener noreferrer nofollow" target="_blank" className="hover:underline">original listing</a></>}
-                  {" · "}Last checked: {fmt(o.lastCheckedAt ?? o.lastVerifiedAt ?? o.updatedAt)}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <SaveButton opportunityId={o.id} saved={saved.has(o.id)} path="/app/career" />
-                  <DismissButton opportunityId={o.id} title={o.title} />
-                </div>
+              <li key={o.id} className="min-w-0">
+                <RecommendationCard o={o} match={match} saved={saved.has(o.id)} byName={byName} />
               </li>
             ))}
           </ul>
         )}
         <OfficialPortalLinks links={portalLinks} title={data.targetRoles[0] ? `Search official portals for ${data.targetRoles[0]}` : "Search official portals"} />
-      </Card>
+      </section>
 
-      {roadmap.length > 0 && (
-        <Card>
-          <h2 className="text-lg font-semibold text-navy">Skill gap roadmap{readiness[0] ? ` toward ${readiness[0].role.title}` : ""}</h2>
-          <ol className="mt-3 space-y-3">
-            {roadmap.map((r, i) => (
-              <li key={r.conceptId} className="text-sm">
-                <p className="font-semibold text-navy">{i + 1}. {r.skill} <span className="font-normal text-muted">({r.why}{r.openListings ? `; asked for by ${r.openListings} open listing${r.openListings === 1 ? "" : "s"}` : ""})</span></p>
-                {r.buildsOn && <p className="text-muted">Builds on your {r.buildsOn}.</p>}
-              </li>
-            ))}
-          </ol>
-          <p className="mt-3 text-xs text-muted">
-            Practise these on {data.aitLearnUrl ? <a href={data.aitLearnUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-purple hover:underline">AI Tathastu Learning</a> : "AI Tathastu"}, then add the project here so it counts as evidence. Completing a roadmap doesn&apos;t guarantee an interview or a job.
-          </p>
-        </Card>
-      )}
-
-      <Card>
-        <h2 className="text-lg font-semibold text-navy">What counts toward your career profile</h2>
-        <p className="mt-1 text-xs text-muted">You decide which evidence is used. Unticked types are ignored everywhere on this page and in your recommendations.</p>
+      <section aria-labelledby="evidence-title" className="rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-6">
+        <h2 id="evidence-title" className="text-lg font-semibold text-navy">What counts toward your career profile</h2>
+        <p className="mt-1 text-sm text-muted">You decide which evidence is used. Unticked types are ignored everywhere on this page and in your recommendations.</p>
         <form action={evidencePreferencesAction} className="mt-3 space-y-2">
           {CONTROLLABLE_EVIDENCE.map((c) => (
             <label key={c.key} className="flex items-center gap-2 text-sm">
@@ -186,7 +94,7 @@ export default async function CareerPage() {
             <ul className="mt-2 divide-y divide-line text-sm">
               {learning.slice(0, 30).map((e) => (
                 <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span className={e.includedInProfile ? "text-navy" : "text-muted line-through"}>{e.skillName}: {e.kind.replace(/_/g, " ")}{e.title ? ` (${e.title})` : ""}{e.score !== null && e.maxScore ? `, ${e.score}/${e.maxScore}` : ""} · {fmt(e.occurredAt)}</span>
+                  <span className={e.includedInProfile ? "text-navy" : "text-muted line-through"}>{e.skillName}: {LEARNING_KIND[e.kind] ?? e.kind}{e.title ? ` (${e.title})` : ""}{e.score !== null && e.maxScore ? `, ${e.score}/${e.maxScore}` : ""} · {fmt(e.occurredAt)}</span>
                   <form action={toggleLearningEvidenceAction.bind(null, e.id, !e.includedInProfile)}>
                     <button className={buttonClass("ghost", "sm")}>{e.includedInProfile ? "Exclude" : "Include"}</button>
                   </form>
@@ -195,7 +103,7 @@ export default async function CareerPage() {
             </ul>
           </>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

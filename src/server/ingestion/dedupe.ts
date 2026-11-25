@@ -69,3 +69,22 @@ export function compareListings(a: Comparable, b: Comparable): DuplicateDecision
   const multi = signals.sameEmployer && signals.sameTitle && signals.locationsCompatible && (signals.descriptionSimilarity >= DESCRIPTION_THRESHOLD || signals.sameDeadline);
   return { duplicate: multi, matchedBy: multi ? "multi_signal" : null, signals };
 }
+
+/**
+ * Keeps the first of each set of duplicates in an already-ordered list, up to `limit` items. For display only:
+ * nothing is merged or deleted. Stricter than ingestion on one signal: a shared URL alone (an employer's generic
+ * careers page) does not make two differently titled roles the same listing.
+ */
+export function distinctListings<T>(ordered: T[], comparable: (x: T) => Comparable, limit = Infinity): T[] {
+  const kept: { item: T; c: Comparable }[] = [];
+  for (const item of ordered) {
+    if (kept.length >= limit) break;
+    const c = comparable(item);
+    const dup = kept.some((k) => {
+      const d = compareListings(k.c, c);
+      return d.duplicate && (d.matchedBy !== "url" || d.signals.sameTitle);
+    });
+    if (!dup) kept.push({ item, c });
+  }
+  return kept.map((k) => k.item);
+}

@@ -19,7 +19,7 @@ import { evaluateEligibility, type EligibilityResult } from "../domain/eligibili
 import { matchOpportunity } from "../domain/matching";
 import type { CandidateFacts, OpportunityFacts } from "../domain/types";
 import { classifyOpportunity, domainDef, domainRelation, type Classification, type DomainRelation } from "./domains";
-import type { SkillProfileEntry, SkillState } from "./evidence";
+import { STATE_LABEL, type SkillProfileEntry, type SkillState } from "./evidence";
 import type { Relation, SkillRegistry } from "./registry";
 
 /**
@@ -145,7 +145,7 @@ export function careerMatch(
   const skillFit = opp.skills.length && profile.length ? earned / possible : null;
 
   const met = verdicts.filter((v) => v.supportedBy && (v.supportedBy.relation === "exact" || v.supportedBy.relation === "specialization"));
-  if (met.length) explanations.push({ kind: "observed", text: `Your evidence covers ${met.slice(0, 4).map((v) => `${v.requirement} (${v.supportedBy!.state})`).join(", ")}${met.length > 4 ? ` and ${met.length - 4} more` : ""}` });
+  if (met.length) explanations.push({ kind: "observed", text: `Your evidence covers ${met.slice(0, 4).map((v) => `${v.requirement} (${STATE_LABEL[v.supportedBy!.state].toLowerCase()})`).join(", ")}${met.length > 4 ? ` and ${met.length - 4} more` : ""}` });
   for (const v of verdicts.filter((x) => x.supportedBy?.relation === "related").slice(0, 2)) {
     explanations.push({ kind: "inferred", text: `${v.requirement} is not on your profile; your ${v.supportedBy!.name} is a related skill, so it counts only partly` });
   }

@@ -17,7 +17,7 @@ export const APP = `http://localhost:${APP_PORT}`;
 export const MOCK = `http://localhost:${MOCK_PORT}`;
 // Outside the project: the dev server's file watcher reloads open pages when files inside it change.
 // CI points AVSAR_E2E_OUT at the runner's temp folder so reports can be uploaded (folder name must stay "avsar-playwright").
-const OUT = process.env.AVSAR_E2E_OUT || path.join(os.tmpdir(), "avsar-playwright");
+export const OUT = process.env.AVSAR_E2E_OUT || path.join(os.tmpdir(), "avsar-playwright");
 export const AUTH_STATE = path.join(OUT, "auth", "candidate.json");
 
 export default defineConfig({
@@ -35,6 +35,8 @@ export default defineConfig({
     { name: "setup", testMatch: /auth\.setup\.ts/ },
     { name: "desktop", testMatch: /dashboard\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     { name: "responsive", testMatch: /responsive\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE } },
+    // Edits the development student's profile and restores it at the end; runs after the specs that read it.
+    { name: "career", testMatch: /career\.spec\.ts/, dependencies: ["setup", "desktop", "responsive"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     { name: "profile-import-mock", testMatch: /profile-import\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } },
   ],
   webServer: [

@@ -4,12 +4,12 @@ import { CheckCircle2, CircleHelp, Lightbulb, XCircle } from "lucide-react";
 import { Badge, buttonClass } from "@/components/ui";
 import { ELIGIBILITY_LABEL, type EligibilityResult } from "@/server/domain/eligibility";
 import type { MatchResult } from "@/server/domain/matching";
-import { STATE_LABEL, type SkillState } from "@/server/intelligence/evidence";
+import { StatusPill } from "@/components/career/status-pill";
+import type { SkillState } from "@/server/intelligence/evidence";
 
-const IMPORTANCE_LABEL = { required: "Required by the employer", preferred: "Nice to have (employer)", mentioned: "Mentioned in the description (inferred by Avsar)" } as const;
-const KIND_LABEL = { observed: "From your profile", inferred: "Inferred", unknown: "Not known yet" } as const;
+const IMPORTANCE_LABEL = { required: "Required by the employer", preferred: "Nice to have (employer)", mentioned: "Mentioned in the description (worked out by Avsar)" } as const;
+const KIND_LABEL = { observed: "From your profile", inferred: "Worked out by Avsar", unknown: "Not known yet" } as const;
 const STRONG: ReadonlySet<string> = new Set(["verified", "demonstrated"]);
-const STATE_TONE: Record<string, "success" | "purple" | "orange" | "warning" | "neutral"> = { verified: "success", demonstrated: "purple", practiced: "orange", learning: "warning", declared: "neutral" };
 
 /** Per-requirement breakdown: who stated the requirement, which of the student's skills covers it, and how well evidenced. */
 function SkillBreakdown({ verdicts }: { verdicts: NonNullable<MatchResult["skillVerdicts"]> }) {
@@ -23,7 +23,7 @@ function SkillBreakdown({ verdicts }: { verdicts: NonNullable<MatchResult["skill
             <li key={`${v.importance}:${v.requirement}`} className="rounded-lg border border-line p-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium text-navy">{v.requirement}</span>
-                {s ? <Badge tone={STATE_TONE[s.state] ?? "neutral"}>{STATE_LABEL[s.state as SkillState] ?? s.state}</Badge> : <Badge tone="neutral">Not on your profile yet</Badge>}
+                <StatusPill state={!s ? "not_shown" : s.relation === "related" ? "related" : (s.state as SkillState)} />
               </div>
               <p className="mt-0.5 text-xs text-muted">
                 {IMPORTANCE_LABEL[v.importance]}
@@ -32,7 +32,7 @@ function SkillBreakdown({ verdicts }: { verdicts: NonNullable<MatchResult["skill
                   : s.relation === "specialization"
                     ? ` · covered by your ${s.name} (a specialization)`
                     : "")}
-                {s && !STRONG.has(s.state) && " · self-reported or not yet shown in a project, role or assessment"}
+                {s && s.relation !== "related" && !STRONG.has(s.state) && " · on your profile, but not yet shown in a project, job or assessment"}
               </p>
             </li>
           );

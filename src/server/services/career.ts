@@ -6,6 +6,7 @@ import { z } from "zod";
 import { audit } from "../audit";
 import type { Db } from "../db/client";
 import { candidateProfiles, candidateSkills, experiences, learningEvidence, skillEvidence } from "../db/schema";
+import { distinctListings } from "../ingestion/dedupe";
 import { careerMatch, rankCareerMatches, roleReadiness, type CareerMatch } from "../intelligence/career-match";
 import { buildSkillProfile, collectEvidence, type EvidenceType, type SkillProfileEntry } from "../intelligence/evidence";
 import { matcherFor, type Matcher, type MatchInput } from "../intelligence/canonical-match";
@@ -93,7 +94,9 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
   const { facts, profile: skills, targetRoles } = input;
 
   const scored = open.map((o) => ({ id: o.id, deadline: o.deadline, o, match: careerMatch(reg, facts, skills, { ...toFacts(o), skills: o.skills.map((s) => ({ name: s.name, required: s.required, origin: s.origin })) }, { targetRoles, now }) }));
-  const recommendations = rankCareerMatches(scored.filter((x) => !opts.exclude?.has(x.id)), 8).map(({ o, match }) => ({ o, match }));
+  // Ranking is unchanged; the same listing reached through two feeds (or posted twice) is then shown once, in its best-ranked position.
+  const ranked = rankCareerMatches(scored.filter((x) => !opts.exclude?.has(x.id)), scored.length);
+  const recommendations = distinctListings(ranked, ({ o }) => ({ sourceId: o.sourceId, sourceRecordId: o.sourceRecordId, urls: [o.sourceUrl, o.externalUrl], fingerprint: o.contentFingerprint, title: o.title, organization: o.organizationName, locations: o.locations, workMode: o.workMode, description: o.description, deadline: o.deadline }), 8).map(({ o, match }) => ({ o, match }));
 
   const roleIds = [...new Set(targetRoles.map((t) => reg.roleFor(t)?.id).filter((x): x is string => Boolean(x)))].slice(0, 3);
   const readiness = roleIds.map((id) => roleReadiness(reg, id, skills)).filter((r): r is NonNullable<typeof r> => r !== null);
