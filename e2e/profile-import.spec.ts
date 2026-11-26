@@ -34,7 +34,8 @@ test("mock provider: successful, partial and failed imports, reconnect, and Avsa
     await expect(page.getByText(/Profile imported from AI Tathastu/)).toBeVisible(); // compact status line
     await page.goto("/app/profile");
     await expect(page.getByText(/^Profile imported from AI Tathastu/)).toBeVisible();
-    await expect(page.locator('ul[aria-label="Skills from AI Tathastu"]')).toContainText("React · advanced · verified");
+    await expect(page.locator('ul[aria-label="Skills from AI Tathastu"]')).toContainText("React · advanced");
+    await expect(page.locator('ul[aria-label="Skills from AI Tathastu"]')).not.toContainText("verified"); // no verification labels for now
     // Education and experience shared by AI Tathastu are imported with their details, marked as AI Tathastu-owned.
     const edu = page.getByTestId("education-item");
     await expect(edu).toHaveCount(1);

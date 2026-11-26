@@ -9,7 +9,7 @@ import { FieldChip } from "@/components/opportunity/field";
 import { classifyOpportunity } from "@/server/intelligence/domains";
 import { registry } from "@/server/intelligence/registry";
 import { CATEGORY_LABEL, deadlineLabel, EMPLOYMENT_LABEL, formatComp, placeLabel } from "@/components/opportunity/format";
-import { OpportunityCard, SampleBadge, VerificationBadge } from "@/components/opportunity/opportunity-card";
+import { OpportunityCard, SampleBadge } from "@/components/opportunity/opportunity-card";
 import { ReportForm } from "@/components/opportunity/report-form";
 import { Badge, buttonClass } from "@/components/ui";
 import { getSession } from "@/server/auth/session";
@@ -82,7 +82,6 @@ export default async function OpportunityPage({ params, searchParams }: { params
             <FieldChip domainId={field.domain} inferred={field.basis === "skills"} />
             <Badge tone="purple">{CATEGORY_LABEL[o.category]}</Badge>
             {o.employmentType && <Badge>{EMPLOYMENT_LABEL[o.employmentType]}</Badge>}
-            <VerificationBadge level={o.verification} />
             {o.isSample && <SampleBadge />}
           </div>
           <h1 className="mt-3 font-serif text-4xl leading-tight text-navy">{o.title}</h1>

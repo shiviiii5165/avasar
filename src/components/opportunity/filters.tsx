@@ -64,7 +64,6 @@ export function ShowOnlyFields({ value }: { value: Partial<SearchInput> }) {
   return (
     <fieldset className="space-y-2">
       <legend className="text-xs font-semibold text-navy">Show only</legend>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="verified" value="1" defaultChecked={value.verified === "1"} className="size-4 accent-purple" /> Verified or source-checked</label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="paid" value="1" defaultChecked={value.paid === "1"} className="size-4 accent-purple" /> Paid opportunities</label>
     </fieldset>
   );

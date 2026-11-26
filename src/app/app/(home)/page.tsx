@@ -43,7 +43,7 @@ export default async function CandidateHome() {
     <div className="space-y-6">
       <div>
         <h1 className="font-serif text-3xl text-navy sm:text-4xl">Hello, {firstName}.</h1>
-        <p className="mt-1 text-sm text-muted">Your skills, your career goal and the openings that fit, from the profile you share from AI Tathastu.</p>
+        <p className="mt-1 text-sm text-muted">Your career goal, your skills and openings that fit you.</p>
       </div>
 
       <SyncStatusCard status={p.aitSyncStatus} syncedAt={p.aitSyncedAt} error={p.aitSyncError} provider={session.identity.provider} />

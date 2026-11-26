@@ -10,7 +10,6 @@ import { GoalSkills } from "./goal-skills";
 import { RecommendationCard } from "./recommendation-card";
 import { SkillExplorer } from "./skill-explorer";
 import { skillLinks, skillViews } from "./skill-view";
-import { STATUS_STYLE } from "./status-style";
 
 /**
  * The career intelligence experience (skills map, goal skills and next steps, openings that fit), shown on Home.
@@ -21,7 +20,6 @@ export function CareerDashboard({ data, saved, path = "/app" }: { data: CareerIn
   const { skills, readiness, recommendations, roadmap } = data;
   const reg = registry();
   const domains = Object.fromEntries(readiness.map((r) => [r.role.id, reg.roles.find((x) => x.id === r.role.id)?.domain ?? null]));
-  const byName = new Map(skills.map((s) => [s.name, s]));
   const views = skillViews(skills, readiness[0] ? { title: readiness[0].role.title, skills: readiness[0].skills } : null);
 
   return (
@@ -41,7 +39,7 @@ export function CareerDashboard({ data, saved, path = "/app" }: { data: CareerIn
         <SkillExplorer skills={views} links={skillLinks(skills)} aitLearnUrl={data.aitLearnUrl} />
       )}
 
-      <GoalSkills readiness={readiness} skills={skills} roadmap={roadmap} domains={domains} aitLearnUrl={data.aitLearnUrl} inferred={data.targetSource === "inferred"} />
+      <GoalSkills readiness={readiness} roadmap={roadmap} domains={domains} aitLearnUrl={data.aitLearnUrl} inferred={data.targetSource === "inferred"} />
 
       <section aria-labelledby="recs-title" className="rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-2">
@@ -59,7 +57,7 @@ export function CareerDashboard({ data, saved, path = "/app" }: { data: CareerIn
           <ul className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="recommendations">
             {recommendations.map(({ o, match }) => (
               <li key={o.id} className="min-w-0">
-                <RecommendationCard o={o} match={match} saved={hasAnyId(saved, o)} savedRecordId={recordIdIn(saved, o)} byName={byName} path={path} />
+                <RecommendationCard o={o} match={match} saved={hasAnyId(saved, o)} savedRecordId={recordIdIn(saved, o)} path={path} />
               </li>
             ))}
           </ul>
@@ -70,78 +68,36 @@ export function CareerDashboard({ data, saved, path = "/app" }: { data: CareerIn
 }
 
 /**
- * "Where you stand": a short, factual summary at the top of Home. Built from the same data as the sections below
- * (counts, the goal and its essential skills, the first next step, how many openings fit), never from a language
- * model, so it can't state anything the profile doesn't show.
+ * The top of Home: the career goal and one way forward. Deliberately no counts, scores or generated sentences; the
+ * sections below carry the detail.
  */
 function CareerSummary({ data }: { data: CareerIntelligence }) {
-  const { skills, readiness, roadmap, recommendations } = data;
-  const count = (states: string[]) => skills.filter((s) => states.includes(s.state)).length;
-  const verified = count(["verified"]);
-  const shown = count(["demonstrated"]);
-  const listed = count(["declared", "practiced", "learning"]);
-  const goal = readiness[0];
-  const strong = recommendations.filter((r) => r.match.tier === "strong").length;
-  const tiles = [
-    { label: "Verified", value: verified, dot: STATUS_STYLE.verified.dot },
-    { label: "Shown in your work", value: shown, dot: STATUS_STYLE.demonstrated.dot },
-    { label: "Added to profile", value: listed, dot: STATUS_STYLE.declared.dot },
-  ];
+  const goal = data.readiness[0];
   return (
-    <section aria-labelledby="summary-title" className="relative overflow-hidden rounded-2xl border border-purple/15 bg-gradient-to-br from-purple-soft via-surface to-peach-soft p-5 shadow-card motion-safe:animate-[dialog-in_240ms_ease-out] sm:p-6" data-testid="career-summary">
-      <h2 id="summary-title" className="sr-only">Where you stand</h2>
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr] lg:items-center">
-        <div className="min-w-0 space-y-3">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-navy-soft">
-            <Target aria-hidden className="size-4 text-purple" />
-            {goal ? (
-              <>
-                {data.targetSource === "inferred" ? "Suggested goal from your skills:" : "Your career goal:"}
-                <span className="font-semibold text-navy">{goal.role.title}</span>
-              </>
-            ) : (
-              <>
-                No career goal yet. <Link href="/app/profile#preferences" className="font-semibold text-purple underline-offset-4 hover:underline">Add one</Link> to see what it needs.
-              </>
-            )}
-          </p>
-          <ul className="space-y-1.5 text-sm text-navy">
-            {goal && (
-              <li>
-                <span className="font-semibold">{goal.essentialEvidenced} of {goal.essentialTotal}</span> essential skills for this goal are backed by a project, job, assessment or verification.
-              </li>
-            )}
-            {roadmap[0] && (
-              <li>
-                Next step: <span className="font-semibold">{roadmap[0].skill}</span>
-                {roadmap[0].buildsOn ? <span className="text-muted"> (builds on your {roadmap[0].buildsOn})</span> : null}.
-              </li>
-            )}
-            <li>
-              {recommendations.length ? (
-                <>
-                  <span className="font-semibold">{recommendations.length}</span> open {recommendations.length === 1 ? "listing fits" : "listings fit"} your profile{strong ? <>, <span className="font-semibold">{strong}</span> of them in your goal&apos;s field</> : null}.
-                </>
-              ) : (
-                <>No open listing fits your profile right now.</>
-              )}
-            </li>
-          </ul>
-          <Link href="/app/discover" className={buttonClass("primary", "sm")}>
-            <Compass aria-hidden className="size-4" /> Explore opportunities
-          </Link>
+    <section aria-labelledby="summary-title" className="overflow-hidden rounded-2xl border border-purple/15 bg-gradient-to-br from-purple-soft via-surface to-peach-soft p-5 shadow-card motion-safe:animate-[dialog-in_240ms_ease-out] sm:p-6" data-testid="career-summary">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          {goal ? (
+            <>
+              <p id="summary-title" className="flex items-center gap-1.5 text-sm text-navy-soft">
+                <Target aria-hidden className="size-4 text-purple" />
+                {data.targetSource === "inferred" ? "Suggested career goal" : "Your career goal"}
+              </p>
+              <p className="mt-0.5 font-serif text-2xl text-navy sm:text-3xl">{goal.role.title}</p>
+            </>
+          ) : (
+            <>
+              <p id="summary-title" className="font-serif text-2xl text-navy sm:text-3xl">Set your career goal</p>
+              <p className="mt-0.5 text-sm text-navy-soft">
+                <Link href="/app/profile#preferences" className="font-semibold text-purple underline-offset-4 hover:underline">Add the role you&apos;re aiming for</Link> to see the skills and openings that fit it.
+              </p>
+            </>
+          )}
+          <p className="mt-2 text-sm text-navy-soft">Explore opportunities that match your interests and experience.</p>
         </div>
-        <dl className="grid grid-cols-3 gap-2 sm:gap-3">
-          {tiles.map((t) => (
-            <div key={t.label} className="flex flex-col-reverse rounded-xl border border-line bg-surface/80 p-3 text-center backdrop-blur-sm">
-              <dt className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-muted">
-                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: t.dot }} />
-                <span className="leading-tight">{t.label}</span>
-              </dt>
-              <dd className="text-2xl font-semibold tabular-nums text-navy sm:text-3xl">{t.value}</dd>
-            </div>
-          ))}
-        </dl>
+        <Link href="/app/discover" className={buttonClass("primary", "md")}>
+          <Compass aria-hidden className="size-4" /> Explore opportunities
+        </Link>
       </div>
     </section>
   );

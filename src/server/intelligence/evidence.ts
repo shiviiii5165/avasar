@@ -72,16 +72,20 @@ export const STATE_ORDER: SkillState[] = ["verified", "demonstrated", "practiced
  * Student-facing vocabulary: the ONE place the words for each status live (skill explorer, career goal, cards,
  * listing detail). Two statuses are not skill states: "not_shown" (nothing on the profile supports a skill) and
  * "related" (only a related skill does, which is partial support, never proof).
+ *
+ * No "Verified" wording is shown to students (2026-11-26, owner decision): a formal assessment-based verification
+ * (ERIS) doesn't exist yet, so the strongest state reads "Shown in your work", like work shown in a project. The
+ * underlying states and evidence are unchanged; only these words are.
  */
 export type SkillStatusKey = SkillState | "not_shown" | "related";
 export const STATUS: Record<SkillStatusKey, { label: string; explain: string }> = {
-  verified: { label: "Verified", explain: "Confirmed by an authorised check, such as an AI Tathastu verification or a verified assessment." },
-  demonstrated: { label: "Shown in your work", explain: "A project, job or passed assessment on your profile uses this skill. Nobody has verified it yet." },
+  verified: { label: "Shown in your work", explain: "Your work on AI Tathastu (such as GitHub projects or assessments) shows this skill." },
+  demonstrated: { label: "Shown in your work", explain: "A project, a job or a passed assessment on your profile uses this skill." },
   practiced: { label: "Practising", explain: "You've practised it or tried an assessment on AI Tathastu. It isn't shown in a project yet." },
   learning: { label: "Learning", explain: "You've been studying it on AI Tathastu recently. Studying a topic isn't proof of the skill yet." },
-  declared: { label: "Added to profile", explain: "You listed it (or it came from your resume or AI Tathastu profile). Nothing on your profile backs it up yet." },
-  not_shown: { label: "Not shown yet", explain: "Nothing on your profile shows this skill yet. That isn't the same as not having it." },
-  related: { label: "Related skill", explain: "You have a related skill. It helps a little, but it isn't proof of this one." },
+  declared: { label: "On your profile", explain: "You listed it, or it came from your resume or AI Tathastu profile. A project that uses it would show it in action." },
+  not_shown: { label: "Not on your profile yet", explain: "Your profile doesn't mention this skill yet. That isn't the same as not having it." },
+  related: { label: "Related skill", explain: "You have a closely related skill." },
 };
 export const STATE_LABEL: Record<SkillState, string> = Object.fromEntries(STATE_ORDER.map((s) => [s, STATUS[s].label])) as Record<SkillState, string>;
 
@@ -96,12 +100,12 @@ export const EVIDENCE_LABEL: Record<EvidenceType, string> = {
   resume_extracted: "From your resume",
   project: "Project",
   work_experience: "Work experience",
-  certification: "Certificate (not verified by Avsar)",
+  certification: "Certificate",
   assessment: "Assessment",
   ait_learning: "Studied on AI Tathastu",
   ait_practice: "Practiced on AI Tathastu",
   ait_project: "Project on AI Tathastu",
-  ait_verified_skill: "Verified by AI Tathastu",
+  ait_verified_skill: "Your work on AI Tathastu",
 };
 
 export const LEARNING_RECENT_DAYS = 90;
@@ -111,7 +115,7 @@ const DAY = 86_400_000;
 function stateOf(items: EvidenceItem[], now: Date): { state: SkillState; basis: string; basisType: EvidenceType | null } {
   const has = (pred: (e: EvidenceItem) => boolean) => items.find(pred);
   const v = has((e) => e.verification === "verified");
-  if (v) return { state: "verified", basis: `${EVIDENCE_LABEL[v.type]} (verified)`, basisType: v.type };
+  if (v) return { state: "verified", basis: EVIDENCE_LABEL[v.type], basisType: v.type };
   const d = has((e) => (e.type === "assessment" && e.result?.passed === true) || e.type === "project" || e.type === "work_experience" || e.type === "ait_project");
   if (d) return { state: "demonstrated", basis: `${EVIDENCE_LABEL[d.type]}: ${d.label}`, basisType: d.type };
   const p = has((e) => e.type === "ait_practice" || (e.type === "assessment" && e.result?.passed !== true));
@@ -138,7 +142,7 @@ function nextActionFor(state: SkillState, name: string): string {
     case "declared": return `Add a project that uses ${name}, or practise it on AI Tathastu, so it has evidence behind it`;
     case "learning": return `Practise ${name} with a hands-on task on AI Tathastu`;
     case "practiced": return `Build a small project with ${name}, or pass an assessment, so it shows in your work`;
-    case "demonstrated": return `Keep this work up to date; a verified assessment would confirm ${name}`;
+    case "demonstrated": return `Keep this work up to date and add new projects that use ${name}`;
     case "verified": return `Nothing needed; keep it current`;
   }
 }

@@ -36,7 +36,7 @@ test("empty profile: friendly empty states instead of a blank graph", async ({ p
   await page.goto("/app");
   await expect(page.getByRole("heading", { level: 1, name: /^Hello,/ })).toBeVisible();
   await expect(page.getByTestId("skill-explorer-empty")).toBeVisible();
-  await expect(page.getByText("You haven't set a career goal yet")).toBeVisible();
+  await expect(page.getByTestId("goal-skills").getByText("Add a career goal")).toBeVisible();
 });
 
 test("set up a Machine learning engineer profile", async ({ page }) => {
@@ -56,11 +56,14 @@ test.describe("with a profile", () => {
     await expect(page.getByTestId("skill-network").locator("svg")).toBeVisible();
     for (const name of ["Python", "Machine learning", "Statistics"]) await expect(bubble(page, name)).toBeVisible();
     await expect(bubble(page, "Python")).toHaveAttribute("aria-label", /Shown in project/);
-    await expect(bubble(page, "Statistics")).toHaveAttribute("aria-label", /Added to profile/);
+    await expect(bubble(page, "Statistics")).toHaveAttribute("aria-label", /On your profile/);
     const text = await page.locator("main").innerText();
-    expect(text).not.toMatch(/Demonstrated|Declared, not yet evidenced|Inferred \(related skill\)|\d+% match/);
-    await expect(page.getByTestId("goal-skills").getByText("Build next")).toBeVisible();
-    await expect(page.getByTestId("next-steps")).toBeVisible();
+    expect(text).not.toMatch(/Demonstrated|Declared, not yet evidenced|Inferred \(related skill\)|\d+% match|Verified|Unverified|Source checked|Bigger = more evidence|backed by a project/);
+    const goal = page.getByTestId("goal-skills");
+    for (const group of ["In your work", "On your profile", "Worth exploring"]) await expect(goal.getByRole("heading", { name: group })).toBeVisible();
+    await expect(goal.getByRole("list", { name: "In your work" })).toContainText("Python");
+    await expect(goal.getByRole("list", { name: "Worth exploring" })).toContainText(/Deep learning|Natural language processing|PyTorch/);
+    await expect(goal).not.toContainText(/ESSENTIAL|OPTIONAL|essential skills/i);
     expect(errors).toEqual([]);
   });
 
@@ -72,7 +75,7 @@ test.describe("with a profile", () => {
     await expect(detail.getByRole("heading", { name: "Python" })).toBeVisible();
     await expect(detail).toContainText("Shown in project");
     await expect(detail).toContainText("Sentiment classifier");
-    await expect(detail).toContainText("Essential for Machine learning engineer");
+    await expect(detail).toContainText("Important for Machine learning engineer");
     await expect(detail).toContainText("What you can do next");
     await expect(detail).toContainText("Used together with");
     // A linked skill opens from the details.
@@ -83,7 +86,7 @@ test.describe("with a profile", () => {
 
     await bubble(page, "Statistics").focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("skill-detail")).toContainText("Added to profile");
+    await expect(page.getByTestId("skill-detail")).toContainText("On your profile");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("skill-detail")).toBeHidden();
     await expect(bubble(page, "Statistics")).toBeFocused();
@@ -91,7 +94,7 @@ test.describe("with a profile", () => {
 
   test("filters and the list view show the same skills as text", async ({ page }) => {
     await page.goto("/app");
-    await page.getByRole("group", { name: "Filter skills by evidence" }).getByRole("button", { name: /Added to profile/ }).click();
+    await page.getByRole("group", { name: "Filter skills" }).getByRole("button", { name: /On your profile/ }).click();
     await expect(bubble(page, "Statistics")).toBeVisible();
     await expect(bubble(page, "Python")).toHaveCount(0);
     await page.getByRole("button", { name: "All", exact: false }).first().click();
@@ -111,7 +114,12 @@ test.describe("with a profile", () => {
     expect(new Set(keys).size).toBe(keys.length);
     const first = cards.first();
     const title = (await first.locator("h3").innerText()).trim();
-    await expect(first).toContainText("Why this fits you");
+    // "Why it fits" is collapsed, then opens with short reasons from the profile.
+    const why = first.getByTestId("why-it-fits");
+    await expect(why.locator("li").first()).toBeHidden();
+    await why.locator("summary").click();
+    await expect(why.locator("li").first()).toBeVisible();
+    await expect(first.getByRole("link", { name: "View and apply" })).toHaveAttribute("href", /^\/opportunities\//);
 
     const save = first.getByRole("button", { name: "Save" });
     await save.click();

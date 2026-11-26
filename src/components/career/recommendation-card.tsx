@@ -1,46 +1,42 @@
 import Link from "next/link";
-import { CalendarClock, Check, Hourglass, IndianRupee, MapPin, Sprout } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Hourglass, IndianRupee, MapPin } from "lucide-react";
 
 import { DismissButton, SaveButton } from "@/components/forms/buttons";
+import { buttonClass } from "@/components/ui";
 import { FieldChip, fieldStyle } from "@/components/opportunity/field";
 import { CATEGORY_LABEL, deadlineLabel, formatComp, placeLabel } from "@/components/opportunity/format";
-import { SampleBadge, VerificationBadge } from "@/components/opportunity/opportunity-card";
+import { SampleBadge, tierLabel } from "@/components/opportunity/opportunity-card";
 import { cardHighlight } from "@/server/domain/categories";
-import { ELIGIBILITY_LABEL } from "@/server/domain/eligibility";
 import type { CareerMatch } from "@/server/intelligence/career-match";
-import { STATE_LABEL, statusLabel, type SkillProfileEntry } from "@/server/intelligence/evidence";
 import type { OpportunityFull } from "@/server/services/opportunities";
 
-import { STATUS_STYLE } from "./status-style";
-
-const KIND_LABEL = { observed: "From your profile", inferred: "Worked out by Avsar", unknown: "Not known yet" } as const;
-const IMPORTANCE = { required: "required", preferred: "nice to have", mentioned: "mentioned in the description" } as const;
-const fmt = (d: Date | null) => (d ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "unknown");
-
 /**
- * One recommended listing on the career page. Everything shown comes from the listing and the existing match
- * (career-match/v2): its field, the student's skills that cover it, and the one skill most worth building.
- * No percentage or probability is shown; the full explanation stays one tap away.
+ * One "Openings that fit you" card: a clean summary (role, organization, place, pay, duration, deadline), and
+ * "Why it fits" one tap away with at most three short reasons, all from the existing match (career-match): the
+ * goal/field match, the student's skills it uses, and one listed skill worth learning. No percentages, no
+ * verification labels. "View and apply" opens the listing, where the original application link and flow live.
  */
-export function RecommendationCard({ o, match, saved, savedRecordId, byName, path = "/app" }: { o: OpportunityFull; match: CareerMatch; saved: boolean; savedRecordId?: string; byName: Map<string, SkillProfileEntry>; path?: string }) {
+export function RecommendationCard({ o, match, saved, savedRecordId, path = "/app" }: { o: OpportunityFull; match: CareerMatch; saved: boolean; savedRecordId?: string; path?: string }) {
   const { bar } = fieldStyle(match.domain.id);
   const deadline = deadlineLabel(o.deadline);
   const pay = ["job", "internship", "gig"].includes(o.category) || o.compMin !== null || o.compMax !== null ? formatComp(o) : cardHighlight(o.category, (o.details ?? {}) as Record<string, unknown>);
-  const met = match.skills.filter((v) => v.supportedBy && v.supportedBy.relation !== "related");
-  const related = match.skills.filter((v) => v.supportedBy?.relation === "related");
-  const strengthen = match.learnNext[0] ? match.skills.find((v) => v.requirement === match.learnNext[0]) : undefined;
+  const usesYour = match.skills.filter((v) => v.supportedBy && v.supportedBy.relation !== "related").map((v) => v.requirement);
+  // Only a skill the listing itself asks for (required or preferred), never one merely mentioned in its description.
+  const learn = match.learnNext.map((n) => match.skills.find((v) => v.requirement === n)).find((v) => v && v.importance !== "mentioned");
   const direction =
-    match.domain.relation === "role" && match.role ? `Matches your goal: ${match.role.title}`
-    : match.domain.relation === "same" && match.domain.label ? `In your field: ${match.domain.label}`
-    : match.domain.relation === "adjacent" && match.domain.label ? `Close to your field: ${match.domain.label}, a good way to explore`
+    match.domain.relation === "role" && match.role ? `It matches your goal: ${match.role.title}.`
+    : match.domain.relation === "same" && match.domain.label ? `It's in your field: ${match.domain.label}.`
+    : match.domain.relation === "adjacent" && match.domain.label ? `It's close to your field (${match.domain.label}), a good way to widen your options.`
     : null;
-  const labelFor = (v: (typeof match.skills)[number]) => {
-    const e = byName.get(v.supportedBy!.name);
-    return e ? statusLabel(e) : STATE_LABEL[v.supportedBy!.state];
-  };
+  const reasons = [
+    direction,
+    usesYour.length ? `It uses your ${list(usesYour.slice(0, 4))}${usesYour.length > 4 ? " and more" : ""}.` : null,
+    learn ? `${learn.requirement} is worth learning for it${learn.importance === "required" ? " (the employer asks for it)" : ""}.` : null,
+  ].filter((r): r is string => Boolean(r));
+  const fit = match.tier ? tierLabel({ tier: match.tier, domain: match.domain }) : null;
 
   return (
-    <article className="relative flex h-full flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card transition-shadow duration-150 hover:shadow-lift" data-testid="recommendation">
+    <article className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-card transition-[box-shadow,transform] duration-150 hover:shadow-lift motion-safe:hover:-translate-y-0.5" data-testid="recommendation">
       <div aria-hidden className={`h-1.5 ${bar}`} />
       <div className="flex flex-1 flex-col p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -60,73 +56,34 @@ export function RecommendationCard({ o, match, saved, savedRecordId, byName, pat
           <div className="flex items-center gap-2"><CalendarClock aria-hidden className="size-4 shrink-0 text-muted" /><dt className="sr-only">Deadline</dt><dd className={deadline.urgent ? "font-semibold text-orange-deep" : ""}>{deadline.text}</dd></div>
         </dl>
 
-        <div className="mt-4 rounded-lg bg-surface-muted/70 p-3">
-          <p className="text-sm font-semibold text-navy">Why this fits you</p>
-          <ul className="mt-1.5 space-y-1.5 text-sm text-navy-soft">
-            {direction && <li className="flex gap-1.5"><Check aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />{direction}</li>}
-            {met.length > 0 && (
-              <li className="flex gap-1.5">
-                <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />
-                <span className="min-w-0">
-                  You have
-                  <span className="mt-1 flex flex-wrap gap-1.5">
-                    {met.slice(0, 4).map((v) => (
-                      <span key={v.requirement} className="inline-flex max-w-full items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-xs ring-1 ring-line" title={labelFor(v)}>
-                        <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: STATUS_STYLE[v.supportedBy!.state].dot }} />
-                        <span className="truncate font-semibold text-navy">{v.requirement}</span>
-                        <span className="shrink-0 text-muted">· {labelFor(v)}</span>
-                      </span>
-                    ))}
-                    {met.length > 4 && <span className="self-center text-xs text-muted">and {met.length - 4} more</span>}
-                  </span>
-                </span>
-              </li>
-            )}
-            {related.slice(0, 1).map((v) => (
-              <li key={v.requirement} className="flex gap-1.5 text-muted">
-                <Check aria-hidden className="mt-0.5 size-4 shrink-0 opacity-60" />
-                Your {v.supportedBy!.name} is related to {v.requirement}, so it counts only partly
-              </li>
-            ))}
-            {!direction && !met.length && !related.length && <li className="text-muted">{match.score === null ? "Add skills to your profile so this listing can be compared with them." : "Your preferences (place, work mode, type) fit this listing."}</li>}
-          </ul>
-          {strengthen && (
-            <p className="mt-2 flex gap-1.5 border-t border-line pt-2 text-sm">
-              <Sprout aria-hidden className="mt-0.5 size-4 shrink-0 text-orange-deep" />
-              <span>
-                <span className="font-semibold text-navy">Skill to strengthen: {strengthen.requirement}</span>
-                <span className="text-muted"> · {IMPORTANCE[strengthen.importance]}{strengthen.via ? ` · builds on your ${strengthen.via}` : ""}</span>
-              </span>
-            </p>
-          )}
-        </div>
+        {reasons.length > 0 && (
+          <details className="group mt-4 rounded-xl bg-surface-muted/70" data-testid="why-it-fits">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 text-sm font-semibold text-navy focus-visible:outline-2 focus-visible:outline-purple [&::-webkit-details-marker]:hidden">
+              Why it fits
+              {fit && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${fit.tone}`}>{fit.text}</span>}
+              <ChevronDown aria-hidden className="ml-auto size-4 text-muted motion-safe:transition-transform motion-safe:duration-150 group-open:rotate-180" />
+            </summary>
+            <ul className="space-y-1.5 px-3 pb-3 text-sm text-navy-soft">
+              {reasons.map((r) => (
+                <li key={r} className="flex gap-1.5"><Check aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />{r}</li>
+              ))}
+            </ul>
+          </details>
+        )}
 
-        <details className="group mt-2 text-sm">
-          <summary className="inline-flex min-h-9 cursor-pointer list-none items-center font-semibold text-purple underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-purple [&::-webkit-details-marker]:hidden">
-            <span className="group-open:hidden">Full explanation</span>
-            <span className="hidden group-open:inline">Hide explanation</span>
-          </summary>
-          <p className="text-xs text-muted">Eligibility: {ELIGIBILITY_LABEL[match.eligibility.status]}. Unknown details are never held against you.</p>
-          <ul className="mt-1.5 space-y-1 text-xs">
-            {match.explanations.map((e, i) => (
-              <li key={i}><span className="font-semibold text-muted">{KIND_LABEL[e.kind]}:</span> <span className="text-navy-soft">{e.text}</span></li>
-            ))}
-          </ul>
-          <p className="mt-1.5 text-xs text-muted">
-            Source: {o.sourceProvider ?? "Posted on Avsar"}
-            {o.sourceUrl && <> · <a href={o.sourceUrl} rel="noopener noreferrer nofollow" target="_blank" className="underline-offset-4 hover:underline">original listing<span className="sr-only"> (opens in a new tab)</span></a></>}
-            {" · "}Last checked: {fmt(o.lastCheckedAt ?? o.lastVerifiedAt ?? o.updatedAt)}
-          </p>
-        </details>
-
-        <div className="mt-auto pt-3">
+        <div className="mt-auto pt-4">
           <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+            <Link href={`/opportunities/${o.slug}`} className={buttonClass("primary", "sm")}>View and apply</Link>
             <SaveButton opportunityId={savedRecordId ?? o.id} saved={saved} path={path} />
             <DismissButton opportunityId={o.id} title={o.title} />
-            <span className="ml-auto"><VerificationBadge level={o.verification} /></span>
           </div>
         </div>
       </div>
     </article>
   );
+}
+
+/** "a", "a and b", "a, b and c". */
+function list(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }

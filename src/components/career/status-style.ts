@@ -8,7 +8,8 @@ import type { SkillStatusKey } from "@/server/intelligence/evidence";
 export interface StatusStyle { light: string; deep: string; chip: string; dot: string; outlined?: boolean }
 
 export const STATUS_STYLE: Record<SkillStatusKey, StatusStyle> = {
-  verified: { light: "#10b981", deep: "#065f46", dot: "#059669", chip: "bg-[#e6f6ee] text-[#05603f] ring-[#a7e3c6]" },
+  // Shown to students exactly like "demonstrated" (no separate "Verified" look until formal verification exists).
+  verified: { light: "#8b5cf6", deep: "#5b21b6", dot: "#7c3aed", chip: "bg-[#f1ebfe] text-[#5b21b6] ring-[#d5c6fb]" },
   demonstrated: { light: "#8b5cf6", deep: "#5b21b6", dot: "#7c3aed", chip: "bg-[#f1ebfe] text-[#5b21b6] ring-[#d5c6fb]" },
   practiced: { light: "#06b6d4", deep: "#155e75", dot: "#0891b2", chip: "bg-[#e4f5f9] text-[#155e75] ring-[#b4e2ee]" },
   learning: { light: "#fb923c", deep: "#9a3412", dot: "#ea580c", chip: "bg-[#fff0e6] text-[#9a3412] ring-[#fcd2b4]" },

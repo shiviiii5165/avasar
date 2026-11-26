@@ -12,12 +12,17 @@
 export type LayoutInput = { id: string; name: string; evidenceCount: number };
 export type LayoutEdge = { source: string; target: string };
 export type PlacedNode = { id: string; x: number; y: number; r: number; lines: string[] };
-export type NetworkLayout = { width: number; height: number; nodes: Map<string, PlacedNode> };
+export type NetworkLayout = { width: number; height: number; nodes: Map<string, PlacedNode>; labelPx: number };
 
-export const LABEL_PX = 11;
-const CHAR_W = 6.6; // average glyph width at 11px bold
-const LINE_H = 12.5;
-const LINE_CHARS = 13;
+/** Text metrics and sizing for the available width: larger labels and circles on wide screens, compact on phones. */
+export interface Metrics { labelPx: number; charW: number; lineH: number; chars: number; scale: number }
+export function metricsFor(width: number): Metrics {
+  if (width >= 900) return { labelPx: 13, charW: 7.6, lineH: 15, chars: 16, scale: 1.2 };
+  if (width >= 640) return { labelPx: 12, charW: 7.1, lineH: 14, chars: 14, scale: 1.1 };
+  return { labelPx: 11.5, charW: 6.9, lineH: 13.5, chars: 13, scale: 1 };
+}
+const COMPACT = metricsFor(0);
+
 const MAX_LINES = 3;
 const GAP = 10;
 const EDGE_MARGIN = 8;
@@ -25,12 +30,12 @@ const EDGE_MARGIN = 8;
 const COUNT_CAP = 8;
 
 /** The name as drawn inside the circle: wrapped at spaces into up to three short lines. The full name is in the tooltip and details. */
-export function labelLines(name: string): string[] {
-  const clip = (s: string) => (s.length > LINE_CHARS ? `${s.slice(0, LINE_CHARS - 1).trimEnd()}…` : s);
+export function labelLines(name: string, chars = COMPACT.chars): string[] {
+  const clip = (s: string) => (s.length > chars ? `${s.slice(0, chars - 1).trimEnd()}…` : s);
   const lines: string[] = [];
   for (const word of name.trim().split(/\s+/)) {
     const last = lines[lines.length - 1];
-    if (last !== undefined && `${last} ${word}`.length <= LINE_CHARS) lines[lines.length - 1] = `${last} ${word}`;
+    if (last !== undefined && `${last} ${word}`.length <= chars) lines[lines.length - 1] = `${last} ${word}`;
     else lines.push(word);
   }
   if (lines.length > MAX_LINES) lines.splice(MAX_LINES - 1, lines.length, `${lines[MAX_LINES - 1]}…`);
@@ -42,27 +47,26 @@ export function roomFor(count: number): number {
   return count <= 4 ? 1.45 : count <= 10 ? 1.15 : 1;
 }
 
-/** Smallest circle that holds this name and the evidence line under it. */
-function labelFloor(name: string): number {
-  const lines = labelLines(name);
-  const w = Math.max(...lines.map((l) => l.length * CHAR_W));
-  const h = (lines.length + 1) * LINE_H;
-  return Math.hypot(w / 2, h / 2) + 4;
+/** Smallest circle that holds this name. */
+function labelFloor(name: string, m: Metrics): number {
+  const lines = labelLines(name, m.chars);
+  const w = Math.max(...lines.map((l) => l.length * m.charW));
+  const h = lines.length * m.lineH;
+  return Math.hypot(w / 2, h / 2) + 6;
 }
 
 /**
  * One base size for every circle in the picture, big enough for the longest name, so a long name never makes a
  * skill look better evidenced. Only the evidence count adds to it.
  */
-export function baseRadius(input: { name: string }[], scale = 1): number {
-  return Math.max(26 * scale, ...input.map((n) => labelFloor(n.name)));
+export function baseRadius(input: { name: string }[], scale = 1, m: Metrics = COMPACT): number {
+  return Math.max(28 * scale, ...input.map((n) => labelFloor(n.name, m)));
 }
 
 export function nodeRadius(evidenceCount: number, base: number, scale = 1): number {
   const extra = (Math.min(Math.max(evidenceCount, 1), COUNT_CAP) - 1) / (COUNT_CAP - 1);
-  return Math.round(base + 20 * scale * extra);
-}
-/** Pairs of circles closer than the minimum gap. Exported for tests. */
+  return Math.round(base + 22 * scale * extra);
+}/** Pairs of circles closer than the minimum gap. Exported for tests. */
 export function overlaps(layout: NetworkLayout): [string, string][] {
   const list = [...layout.nodes.values()];
   const out: [string, string][] = [];
@@ -80,8 +84,9 @@ export function outOfBounds(layout: NetworkLayout): string[] {
 }
 
 function attempt(input: LayoutInput[], edges: LayoutEdge[], width: number, height: number): NetworkLayout {
-  const scale = roomFor(input.length);
-  const base = baseRadius(input, scale);
+  const m = metricsFor(width);
+  const scale = roomFor(input.length) * m.scale;
+  const base = baseRadius(input, scale, m);
   const cx = width / 2, cy = height / 2;
   const order = input.map((n, i) => ({ n, i })).sort((a, b) => b.n.evidenceCount - a.n.evidenceCount || a.i - b.i);
   const nodes: PlacedNode[] = [];
@@ -95,7 +100,7 @@ function attempt(input: LayoutInput[], edges: LayoutEdge[], width: number, heigh
     }
     const angle = ring === 0 ? 0 : -Math.PI / 2 + (2 * Math.PI * placedInRing) / ringCapacity + ring * 0.5;
     const s = Math.max(width, height);
-    nodes.push({ id: n.id, x: cx + ringRadius * Math.cos(angle) * (width / s), y: cy + ringRadius * Math.sin(angle) * (height / s), r: nodeRadius(n.evidenceCount, base, scale), lines: labelLines(n.name) });
+    nodes.push({ id: n.id, x: cx + ringRadius * Math.cos(angle) * (width / s), y: cy + ringRadius * Math.sin(angle) * (height / s), r: nodeRadius(n.evidenceCount, base, scale), lines: labelLines(n.name, m.chars) });
     placedInRing++;
   }
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -129,14 +134,15 @@ function attempt(input: LayoutInput[], edges: LayoutEdge[], width: number, heigh
       n.y = Math.min(height - n.r - EDGE_MARGIN, Math.max(n.r + EDGE_MARGIN, n.y));
     }
   }
-  return { width, height, nodes: byId };
+  return { width, height, nodes: byId, labelPx: m.labelPx };
 }
 
 /** Lays the network out at the given pixel width, growing the height until no circles touch or are clipped. */
 export function layoutSkillNetwork(input: LayoutInput[], edges: LayoutEdge[], width: number): NetworkLayout {
   const w = Math.max(260, Math.floor(width));
-  const scale = roomFor(input.length);
-  const base = baseRadius(input, scale);
+  const m = metricsFor(w);
+  const scale = roomFor(input.length) * m.scale;
+  const base = baseRadius(input, scale, m);
   const area = input.reduce((s, n) => s + (2 * nodeRadius(n.evidenceCount, base, scale) + GAP) ** 2, 0);
   let height = Math.round(Math.min(1600, Math.max(w < 480 ? 320 : 300, Math.min(w * 0.6, 480), (area * 1.4) / w)));
   let layout = attempt(input, edges, w, height);
@@ -155,5 +161,5 @@ function crop(layout: NetworkLayout, margin = 14): NetworkLayout {
   const bottom = Math.max(...list.map((n) => n.y + n.r));
   const height = Math.max(200, Math.ceil(bottom - top + 2 * margin));
   const shift = margin - top + (height - (bottom - top + 2 * margin)) / 2;
-  return { width: layout.width, height, nodes: new Map(list.map((n) => [n.id, { ...n, y: n.y + shift }])) };
+  return { width: layout.width, height, nodes: new Map(list.map((n) => [n.id, { ...n, y: n.y + shift }])), labelPx: layout.labelPx };
 }

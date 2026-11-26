@@ -14,7 +14,6 @@ import { Badge, buttonClass, PageHeader } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { CATEGORIES } from "@/server/domain/categories";
-import { normalizeSkill } from "@/server/domain/skills";
 import { aitLearnUrl, matchInputFor } from "@/server/services/career";
 import { signedDocumentUrl } from "@/server/services/documents";
 import { experienceSkillLinks, loadProfile } from "@/server/services/profiles";
@@ -38,8 +37,6 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const { sync, synced, resume_applied } = await searchParams;
   const ownSkills = p.skills.filter((s) => s.source === "avsar");
   const importedSkills = p.skills.filter((s) => s.source === "ai_tathastu");
-  // Skills AI Tathastu verified from evidence (GitHub, assessments), as shared at the last sync.
-  const verified = new Set((pr.aitInsights.skills ?? []).filter((x) => x.verified).map((x) => normalizeSkill(x.name)));
   // The same canonical, evidence-based skill profile Career intelligence uses (one source of truth).
   const [{ input }, links] = await Promise.all([matchInputFor(db, p), experienceSkillLinks(db, pr.id)]);
   const skillProfile = input.profile;
@@ -111,8 +108,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
                 <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Skills from AI Tathastu">
                   {importedSkills.map((s) => (
                     <li key={s.id}>
-                      <Badge tone={verified.has(s.normalized) ? "success" : "purple"}>
-                        {s.name}{s.level ? ` · ${s.level}` : ""}{verified.has(s.normalized) ? " · verified" : ""}
+                      <Badge tone="purple">
+                        {s.name}{s.level ? ` · ${s.level}` : ""}
                       </Badge>
                     </li>
                   ))}

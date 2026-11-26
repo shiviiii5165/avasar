@@ -19,7 +19,7 @@ export interface SkillView {
   stale: boolean;
   nextAction: string;
   assessments: string | null;
-  /** "Essential for Data Analyst" when the skill is part of the student's first career goal. */
+  /** "Important for Data Analyst" when the skill is part of the student's first career goal. */
   goal: string | null;
 }
 /** Two skills used in the same project or job. `shared` = how many projects or jobs they share. */
@@ -53,7 +53,7 @@ export function skillViews(skills: SkillProfileEntry[], goal?: { title: string; 
       stale: s.stale,
       nextAction: s.nextAction,
       assessments: t.change !== "not_comparable" ? `Your last two assessment results ${CHANGE[t.change]}: ${t.previous}% → ${t.latest}%` : t.latest !== null ? `Latest assessment result: ${t.latest}%` : null,
-      goal: imp && goal ? `${imp === "essential" ? "Essential" : "Useful"} for ${goal.title}` : null,
+      goal: imp && goal ? `${imp === "essential" ? "Important" : "Useful"} for ${goal.title}` : null,
     };
   });
 }

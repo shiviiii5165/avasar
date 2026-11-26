@@ -41,8 +41,9 @@ test("Home is the career dashboard: summary, skills, goal skills, openings, appl
   await expect(page.getByRole("heading", { name: "Openings that fit you" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your applications" })).toBeVisible();
   await expect(page.getByRole("link", { name: "See all opportunities" })).toHaveAttribute("href", "/app/discover");
-  // No uncalibrated percentages anywhere on Home.
-  expect(await page.locator("main").innerText()).not.toMatch(/\d+% match/);
+  // No uncalibrated percentages, verification labels, legends or machine-style counts on Home.
+  expect(await page.locator("main").innerText()).not.toMatch(/\d+% match|Verified|Unverified|Source checked|Bigger = more evidence|Line = used together|open listings fit your profile|essential skills for this goal/);
+  await expect(page.getByTestId("career-summary")).toContainText("Explore opportunities that match your interests and experience.");
   expect(errors).toEqual([]);
 });
 

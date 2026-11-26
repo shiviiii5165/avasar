@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { distinctListings, type Comparable } from "@/server/ingestion/dedupe";
 import { careerMatch, rankCareerMatches, roleReadiness } from "@/server/intelligence/career-match";
-import { buildSkillProfile, STATUS, statusLabel, type EvidenceItem } from "@/server/intelligence/evidence";
+import { buildSkillProfile, EVIDENCE_LABEL, STATUS, statusLabel, type EvidenceItem } from "@/server/intelligence/evidence";
 import { curatedRegistry } from "@/server/intelligence/registry";
 import type { CandidateFacts } from "@/server/domain/types";
 
@@ -58,8 +58,8 @@ describe("career page view model, for eight synthetic students", () => {
           expect(v.evidenceCount).toBe(profile.find((p) => p.key === v.key)!.evidence.length);
         }
         expect(views.find((v) => v.name === a)!.label).toBe("Shown in project");
-        if (c) expect(views.find((v) => v.name === c)!.label).toBe("Added to profile");
-        expect(views.find((v) => v.name === a)!.goal).toBe(`Essential for ${g.expected}`);
+        if (c) expect(views.find((v) => v.name === c)!.label).toBe("On your profile");
+        expect(views.find((v) => v.name === a)!.goal).toBe(`Important for ${g.expected}`);
       });
       it("links only skills that share a project", () => {
         const links = skillLinks(profile);
@@ -82,10 +82,14 @@ describe("career page view model, for eight synthetic students", () => {
 });
 
 describe("status words", () => {
+  it("never says Verified or Unverified to students (no formal verification exists yet)", () => {
+    for (const s of Object.values(STATUS)) expect(`${s.label} ${s.explain}`).not.toMatch(/verif/i);
+    for (const l of Object.values(EVIDENCE_LABEL)) expect(l).not.toMatch(/verif/i);
+  });
   it("never calls a job or an assessment a project", () => {
     expect(statusLabel(buildSkillProfile([ev("SQL", "work_experience", { label: "Analyst at Acme" })], reg, { now: NOW })[0])).toBe("Used in a job");
     expect(statusLabel(buildSkillProfile([ev("SQL", "assessment", { result: { score: 8, maxScore: 10, passed: true } })], reg, { now: NOW })[0])).toBe("Passed an assessment");
-    expect(statusLabel(buildSkillProfile([ev("SQL", "ait_verified_skill", { verification: "verified" })], reg, { now: NOW })[0])).toBe("Verified");
+    expect(statusLabel(buildSkillProfile([ev("SQL", "ait_verified_skill", { verification: "verified" })], reg, { now: NOW })[0])).toBe("Shown in your work");
     expect(statusLabel(buildSkillProfile([ev("SQL", "ait_practice")], reg, { now: NOW })[0])).toBe("Practising");
   });
 });

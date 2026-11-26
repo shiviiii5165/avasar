@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BadgeCheck, Briefcase, CalendarClock, Check, CircleDashed, ExternalLink, Hourglass, IndianRupee, MapPin } from "lucide-react";
+import { Briefcase, CalendarClock, Check, CircleDashed, ExternalLink, Hourglass, IndianRupee, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui";
@@ -12,11 +12,6 @@ import { cardHighlight } from "@/server/domain/categories";
 import { FieldChip, fieldStyle } from "./field";
 import { CATEGORY_LABEL, deadlineLabel, EMPLOYMENT_LABEL, formatComp, placeLabel } from "./format";
 
-export function VerificationBadge({ level }: { level: string }) {
-  if (level === "org_verified") return <Badge tone="success"><BadgeCheck aria-hidden className="size-3.5" /> Verified organization</Badge>;
-  if (level === "source_verified") return <Badge tone="purple"><BadgeCheck aria-hidden className="size-3.5" /> Source checked</Badge>;
-  return <Badge>Unverified</Badge>;
-}
 
 export function SampleBadge() {
   return <Badge tone="orange" className="uppercase tracking-wide">Sample listing</Badge>;
@@ -126,8 +121,7 @@ export function OpportunityCard({ o, match, saved, actions }: { o: OpportunityFu
           o.summary && <p className="mt-3 line-clamp-2 text-sm text-ink/80">{o.summary}</p>
         )}
 
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4 text-xs text-muted">
-          <VerificationBadge level={o.verification} />
+        <div className="mt-auto flex flex-wrap items-center justify-end gap-2 pt-4 text-xs text-muted">
           <span className="inline-flex items-center gap-1">
             {o.applicationMethod === "external" ? <ExternalLink aria-hidden className="size-3.5" /> : <Briefcase aria-hidden className="size-3.5" />}
             {o.applicationMethod === "external" ? "Apply on their site" : "Apply on Avsar"}
