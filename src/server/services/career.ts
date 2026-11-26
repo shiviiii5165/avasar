@@ -46,6 +46,8 @@ export async function loadEvidence(db: Db, p: LoadedProfile) {
 }
 
 export interface CareerIntelligence {
+  /** The profile row this was computed from (already loaded here; pages reuse it instead of loading it again). */
+  profile: LoadedProfile["profile"];
   skills: SkillProfileEntry[];
   targetRoles: string[];
   targetSource: "stated" | "inferred" | "none";
@@ -141,7 +143,7 @@ export async function careerIntelligence(db: Db, profileId: string, now = new Da
     }
   }
 
-  return { skills, targetRoles, targetSource: input.targetSource ?? "none", readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: aitLearnUrl() };
+  return { profile: p.profile, skills, targetRoles, targetSource: input.targetSource ?? "none", readiness, recommendations, roadmap, learning, openListings: open.length, aitLearnUrl: aitLearnUrl() };
 }
 
 // ─── Student controls (always scoped to the caller's own profile) ─────────

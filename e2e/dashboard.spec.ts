@@ -273,7 +273,7 @@ test.describe("opportunities", () => {
     await page.goto("/app/discover");
     await page.getByRole("navigation", { name: "Categories" }).getByRole("link", { name: "Internships" }).click();
     await page.waitForURL(/category=internship/);
-    await expect(page.getByRole("navigation", { name: "Categories" }).locator('[aria-current="page"]')).toHaveText("Internships");
+    await expect(page.getByRole("navigation", { name: "Categories" }).locator('[aria-current="page"]')).toHaveText(/^Internships\d+$/); // label + its open-listing count
     await expect(count(page)).toContainText("in internships");
 
     await page.getByLabel("Sort").selectOption("deadline");

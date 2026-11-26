@@ -1,98 +1,61 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { CalendarClock, Sparkles } from "lucide-react";
+import { Bell, CalendarClock, FileText } from "lucide-react";
 
-import { cardMatch, OpportunityCard } from "@/components/opportunity/opportunity-card";
-import { Badge, Card, StateMessage } from "@/components/ui";
+import { CareerDashboard } from "@/components/career/career-dashboard";
 import { SyncStatusCard } from "@/components/profile/sync-status";
+import { Badge, Card, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { upcomingDeadlines } from "@/server/domain/dashboard";
 import { APPLICATION_STATUS_LABEL } from "@/server/domain/workflows";
 import { listApplicationsForProfile } from "@/server/services/applications";
-import { matchAll } from "@/server/services/candidate-context";
-import { DismissButton } from "@/components/forms/buttons";
-import { dismissedIds, listSaved } from "@/server/services/engagement";
+import { careerIntelligence } from "@/server/services/career";
+import { dismissedIds, listSaved, savedIds } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
-import { listOpenOpportunities, toFacts, canonicalIdSet } from "@/server/services/opportunities";
-import { recommend } from "@/server/domain/recommend";
-import { matcherForProfile } from "@/server/services/career";
-import { loadProfile } from "@/server/services/profiles";
 
 export const metadata = { title: "Home" };
 
-/** The dashboard answers one question: what is my next useful action? No profile-completion checklist. */
+/**
+ * Home: the student's career dashboard. Career intelligence (skills map, goal skills and next steps, openings that
+ * fit) from the one shared implementation, then applications, deadlines and notifications. Browsing every
+ * opportunity is on Opportunities (/app/discover).
+ */
 export default async function CandidateHome() {
   const session = await requireCandidate("/app");
   const db = await getDb();
-  const [profile, apps, saved, notes, open, dismissed] = await Promise.all([
-    loadProfile(db, session.profileId),
+  const [apps, saved, savedList, notes, dismissed] = await Promise.all([
     listApplicationsForProfile(db, session.profileId),
+    savedIds(db, session.identity.id),
     listSaved(db, session.identity.id),
     listNotifications(db, session.identity.id, 5),
-    listOpenOpportunities(db),
     dismissedIds(db, session.identity.id),
   ]);
-  if (!profile) notFound();
-  // Derived from the profile already loaded above (it used to be loaded a second time, after everything else).
-  const facts = await matcherForProfile(db, profile);
-  const matches = matchAll(facts, open);
   const applied = new Set(apps.map((a) => a.opportunity.id));
-  const rec = facts ? recommend(facts, open.map((o) => ({ id: o.id, item: o, facts: toFacts(o) })), { exclude: canonicalIdSet(new Set([...applied, ...dismissed]), open) }) : { picks: [], limited: true };
-  const recommended = rec.picks.map((r) => r.item);
-  // Thin profile: recommendations rest on little data, so say so instead of implying precision.
-  const limited = rec.limited;
-
-  const deadlines = upcomingDeadlines(saved, applied, new Date());
-
-  // Skill suggestions: required skills that recur across the listings that fit you best.
-  const gapCounts = new Map<string, number>();
-  for (const o of recommended.concat(open.slice(0, 12))) for (const s of matches.get(o.id)?.missingRequiredSkills ?? []) gapCounts.set(s, (gapCounts.get(s) ?? 0) + 1);
-  const gaps = [...gapCounts].sort((a, b) => b[1] - a[1]).slice(0, 4);
-
+  // Applied listings aren't recommended again; dismissed ones ("Not for me") never are.
+  const data = await careerIntelligence(db, session.profileId, new Date(), { exclude: new Set([...dismissed, ...applied]) });
+  if (!data) return <StateMessage kind="error" title="Profile not found" />;
+  const p = data.profile;
+  const deadlines = upcomingDeadlines(savedList, applied, new Date());
   const active = apps.filter((a) => !["rejected", "withdrawn", "closed", "selected"].includes(a.application.status));
-  const firstName = profile.profile.fullName?.split(" ")[0] ?? "there";
-  const sync = profile.profile;
+  const firstName = p.fullName?.split(" ")[0] ?? "there";
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-serif text-3xl text-navy sm:text-4xl">Hello, {firstName}.</h1>
-        <p className="mt-1 text-sm text-muted">Opportunities picked from the profile you already have on AI Tathastu.</p>
+        <p className="mt-1 text-sm text-muted">Your skills, your career goal and the openings that fit, from the profile you share from AI Tathastu.</p>
       </div>
 
-      <SyncStatusCard status={sync.aitSyncStatus} syncedAt={sync.aitSyncedAt} error={sync.aitSyncError} provider={session.identity.provider} />
-      <section aria-labelledby="rec-title">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 id="rec-title" className="text-lg font-semibold text-navy">Recommended for You</h2>
-          <Link href="/app/discover" className="text-sm font-semibold text-purple hover:underline">See all</Link>
-        </div>
-        {limited && (
-          <p className="mb-3 text-sm text-muted">
-            Your profile has few details to match on, so these are general picks.{" "}
-            <Link href="/app/profile" className="font-semibold text-purple hover:underline">Add skills or education</Link> to make them personal.
-          </p>
-        )}
-        {recommended.length ? (
-          <ul className="grid gap-4 md:grid-cols-3">
-            {recommended.map((o) => {
-              const m = matches.get(o.id)!;
-              return (
-                <li key={o.id} className="flex flex-col gap-2">
-                  <OpportunityCard o={o} match={cardMatch(m)} />
-                  <div><DismissButton opportunityId={o.id} title={o.title} /></div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <StateMessage kind="empty" title="No open opportunities right now" body="New listings are reviewed and published regularly. Check back soon." />
-        )}
-      </section>
+      <SyncStatusCard status={p.aitSyncStatus} syncedAt={p.aitSyncedAt} error={p.aitSyncError} provider={session.identity.provider} />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <div className="flex items-center justify-between"><h2 className="font-semibold text-navy">Your applications</h2><Link href="/app/applications" className="text-sm font-semibold text-purple hover:underline">All</Link></div>
+      <CareerDashboard data={data} saved={saved} path="/app" />
+
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <Card className="rounded-2xl">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-semibold text-navy"><FileText aria-hidden className="size-4 text-purple" /> Your applications</h2>
+            <Link href="/app/applications" className="text-sm font-semibold text-purple hover:underline">All</Link>
+          </div>
           {apps.length ? (
             <ul className="mt-3 divide-y divide-line">
               {apps.slice(0, 4).map(({ application: a, opportunity: o }) => (
@@ -108,7 +71,7 @@ export default async function CandidateHome() {
           {active.length > 0 && <p className="mt-2 text-xs text-muted">{active.length} in progress</p>}
         </Card>
 
-        <Card>
+        <Card className="rounded-2xl">
           <h2 className="flex items-center gap-2 font-semibold text-navy"><CalendarClock aria-hidden className="size-4 text-orange" /> Upcoming deadlines</h2>
           {deadlines.length ? (
             <ul className="mt-3 divide-y divide-line">
@@ -124,20 +87,11 @@ export default async function CandidateHome() {
           )}
         </Card>
 
-        <Card>
-          <h2 className="flex items-center gap-2 font-semibold text-navy"><Sparkles aria-hidden className="size-4 text-purple" /> Skills to build</h2>
-          {gaps.length ? (
-            <>
-              <ul className="mt-3 flex flex-wrap gap-2">{gaps.map(([s, n]) => <li key={s}><Badge tone="purple">{s} · in {n} listing{n > 1 ? "s" : ""}</Badge></li>)}</ul>
-              <Link href="/app/insights" className="mt-3 inline-block text-sm font-semibold text-purple hover:underline">See career insights</Link>
-            </>
-          ) : (
-            <p className="mt-3 text-sm text-muted">{profile.skills.length ? "Your skills cover the open listings that fit you." : "Add your skills to see which ones would help most."}</p>
-          )}
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between"><h2 className="font-semibold text-navy">Notifications</h2><Link href="/app/notifications" className="text-sm font-semibold text-purple hover:underline">All</Link></div>
+        <Card className="rounded-2xl md:col-span-2 xl:col-span-1">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-semibold text-navy"><Bell aria-hidden className="size-4 text-purple" /> Notifications</h2>
+            <Link href="/app/notifications" className="text-sm font-semibold text-purple hover:underline">All</Link>
+          </div>
           {notes.length ? (
             <ul className="mt-3 space-y-2">
               {notes.map((n) => (

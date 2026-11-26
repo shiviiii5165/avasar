@@ -8,7 +8,7 @@ import { domainDef } from "@/server/intelligence/domains";
 import { discoveryRules, fieldOptions } from "@/server/services/discovery";
 import type { MatchResult } from "@/server/domain/matching";
 import { SyncStatusCard } from "@/components/profile/sync-status";
-import { buttonClass, inputClass, PageHeader, StateMessage } from "@/components/ui";
+import { buttonClass, inputClass, StateMessage } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { headers } from "next/headers";
 
@@ -97,6 +97,11 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   // Core tabs always show; other categories only when they have live listings.
   const tabCats = [...new Set(["job", "internship", "gig", ...live])];
   const TABS: [string, string][] = [["", "All"], ...tabCats.map((c) => [c, categoryDef(c)?.plural ?? c] as [string, string])];
+  // Unique open listings per category (canonical: the same opening from two feeds counts once).
+  const perCategory = new Map<string, number>();
+  for (const o of open) perCategory.set(o.category, (perCategory.get(o.category) ?? 0) + 1);
+  const tabCount = (v: string) => (v ? perCategory.get(v) ?? 0 : open.length);
+  const liveTypes = tabCats.filter((c) => (perCategory.get(c) ?? 0) > 0);
   const matches = matchAll(facts, [...open, ...result.items]);
   // Saves and dismissals made on any record of an opening apply to its canonical card.
   const saved = canonicalIdSet(savedRecords, [...open, ...result.items]);
@@ -175,7 +180,14 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Opportunities for you" description="Matched to the profile you share from AI Tathastu. Open any listing to see exactly why it fits." />
+      <section aria-labelledby="opp-title" className="overflow-hidden rounded-2xl border border-purple/15 bg-gradient-to-br from-purple-soft via-surface to-peach-soft p-5 shadow-card motion-safe:animate-[dialog-in_240ms_ease-out] sm:p-6">
+        <h1 id="opp-title" className="font-serif text-3xl text-navy sm:text-4xl">Opportunities for you</h1>
+        <p className="mt-1 max-w-2xl text-sm text-navy-soft">Every open listing, matched to the profile you share from AI Tathastu. Open any listing to see exactly why it fits.</p>
+        <p className="mt-3 text-sm text-navy" data-testid="opportunity-totals">
+          <span className="font-semibold">{open.length}</span> open {open.length === 1 ? "opportunity" : "opportunities"}
+          {liveTypes.length > 0 && <> across {liveTypes.map((c, i) => <span key={c}>{i ? (i === liveTypes.length - 1 ? " and " : ", ") : " "}<span className="font-semibold">{(categoryDef(c)?.plural ?? c).toLowerCase()}</span> ({perCategory.get(c)})</span>)}</>}
+        </p>
+      </section>
       {p && <SyncStatusCard status={p.aitSyncStatus} syncedAt={p.aitSyncedAt} error={p.aitSyncError} provider={session.identity.provider} compact />}
       {target && target.targetSource !== "stated" && (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-purple/20 bg-purple-soft/40 px-4 py-3 text-sm text-navy" data-testid="goal-checkpoint">
@@ -249,7 +261,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
                 const active = (query.category ?? "") === v;
                 return (
                   <Link key={l} href={href({ category: v || undefined, page: undefined })} aria-current={active ? "page" : undefined}
-                    className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold ${active ? "bg-navy text-white" : "border border-line bg-surface text-navy hover:bg-surface-muted"}`}>{l}</Link>
+                    className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-semibold transition-colors duration-150 ${active ? "bg-navy text-white" : "border border-line bg-surface text-navy hover:bg-surface-muted"}`}>{l}<span className={`tabular-nums text-xs ${active ? "text-white/75" : "text-muted"}`}>{tabCount(v)}</span></Link>
                 );
               })}
             </nav>

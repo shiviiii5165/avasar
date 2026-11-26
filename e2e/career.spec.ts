@@ -6,7 +6,7 @@ import { OUT } from "../playwright.config";
 import { dialogValue, saveInDialog } from "./profile-helpers";
 
 /**
- * Career intelligence, end to end, as the development student. The test builds a small synthetic profile through
+ * Career intelligence on Home, end to end, as the development student. The test builds a small synthetic profile through
  * the real profile forms (career goal, listed skills, one project), checks the page, and restores the profile.
  */
 test.describe.configure({ mode: "serial" });
@@ -33,8 +33,8 @@ test("empty profile: friendly empty states instead of a blank graph", async ({ p
   await page.goto("/app/profile");
   originalSkills = await dialogValue(page, "Edit my skills", "Skills you add in Avsar", "skills");
   await setSkills(page, "");
-  await page.goto("/app/career");
-  await expect(page.getByRole("heading", { level: 1, name: "Career intelligence" })).toBeVisible();
+  await page.goto("/app");
+  await expect(page.getByRole("heading", { level: 1, name: /^Hello,/ })).toBeVisible();
   await expect(page.getByTestId("skill-explorer-empty")).toBeVisible();
   await expect(page.getByText("You haven't set a career goal yet")).toBeVisible();
 });
@@ -51,7 +51,7 @@ test.describe("with a profile", () => {
   test("shows the career goal, readable labels and no technical jargon", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto("/app/career");
+    await page.goto("/app");
     await expect(page.getByTestId("career-goal")).toHaveText("Machine learning engineer");
     await expect(page.getByTestId("skill-network").locator("svg")).toBeVisible();
     for (const name of ["Python", "Machine learning", "Statistics"]) await expect(bubble(page, name)).toBeVisible();
@@ -65,7 +65,7 @@ test.describe("with a profile", () => {
   });
 
   test("a bubble opens its details by click and by keyboard; Escape closes and returns focus", async ({ page }) => {
-    await page.goto("/app/career");
+    await page.goto("/app");
     await bubble(page, "Python").click();
     const detail = page.getByTestId("skill-detail");
     await expect(detail).toBeVisible();
@@ -90,7 +90,7 @@ test.describe("with a profile", () => {
   });
 
   test("filters and the list view show the same skills as text", async ({ page }) => {
-    await page.goto("/app/career");
+    await page.goto("/app");
     await page.getByRole("group", { name: "Filter skills by evidence" }).getByRole("button", { name: /Added to profile/ }).click();
     await expect(bubble(page, "Statistics")).toBeVisible();
     await expect(bubble(page, "Python")).toHaveCount(0);
@@ -103,7 +103,7 @@ test.describe("with a profile", () => {
   });
 
   test("recommendations: no duplicates, Save and Not for me work", async ({ page }) => {
-    await page.goto("/app/career");
+    await page.goto("/app");
     const cards = page.getByTestId("recommendation");
     const n = await cards.count();
     test.skip(n === 0, "no open sample listings to recommend");
@@ -133,7 +133,7 @@ test.describe("with a profile", () => {
   for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["tablet", { width: 834, height: 1112 }], ["mobile", { width: 390, height: 844 }]] as const) {
     test(`${label}: fits without sideways scrolling; bubbles stay tappable`, async ({ page }) => {
       await page.setViewportSize(viewport);
-      await page.goto("/app/career");
+      await page.goto("/app");
       await expect(page.getByTestId("skill-network").locator("svg")).toBeVisible();
       expect(await overflow(page), (await tooWide(page)).join("\n")).toBeLessThanOrEqual(0);
       const box = (await bubble(page, "Python").boundingBox())!;

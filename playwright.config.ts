@@ -41,6 +41,8 @@ export default defineConfig({
     { name: "profile", testMatch: /(^|[\\/])profile\.spec\.ts$/, dependencies: ["setup", "desktop", "responsive", "career"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     // Read-only journey checks (public Explore, redirects, unique counts); runs after the specs that change the student.
     { name: "discovery", testMatch: /discovery\.spec\.ts/, dependencies: ["setup", "desktop", "responsive", "career", "profile"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
+    // Home (career dashboard) and Opportunities: routing, content and responsive layout; read-only, runs last.
+    { name: "home", testMatch: /home\.spec\.ts/, dependencies: ["setup", "desktop", "responsive", "career", "profile", "discovery"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     { name: "profile-import-mock", testMatch: /profile-import\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } },
   ],
   webServer: [

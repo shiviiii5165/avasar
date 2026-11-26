@@ -22,7 +22,8 @@ import { SKILL_PALETTE, skillColours, STATUS_ORDER, STATUS_STYLE, type SkillColo
  *    few; every link of the selected skill is drawn, and all are listed in its details.
  *  - Tap, click, Enter or Space on a skill opens its details below the picture; Escape closes them.
  */
-const MAX_DRAWN = 24;
+/** Bubbles drawn at once, by available width: readable on a phone, fuller on a desktop. The rest are one tap away in the list. */
+const maxDrawn = (width: number) => (width > 0 && width < 480 ? 12 : width > 0 && width < 900 ? 18 : 24);
 const LINKS_PER_SKILL = 3;
 const STATES = STATUS_ORDER.filter((s): s is SkillState => s !== "related" && s !== "not_shown");
 
@@ -40,7 +41,9 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
   }, [skills]);
   const ordered = useMemo(() => [...skills].sort((a, b) => STATES.indexOf(a.state) - STATES.indexOf(b.state) || b.evidenceCount - a.evidenceCount || a.name.localeCompare(b.name)), [skills]);
   const shown = useMemo(() => ordered.filter((s) => filter === "all" || s.state === filter), [ordered, filter]);
-  const drawn = useMemo(() => shown.slice(0, MAX_DRAWN), [shown]);
+  // Laid out at the real pixel width, so labels stay at their true size on every screen.
+  const [width, setWidth] = useState(0);
+  const drawn = useMemo(() => shown.slice(0, maxDrawn(width)), [shown, width]);
   const drawnKeys = useMemo(() => new Set(drawn.map((s) => s.key)), [drawn]);
   const drawnLinks = useMemo(() => links.filter((l) => drawnKeys.has(l.source) && drawnKeys.has(l.target)), [links, drawnKeys]);
   // Readable at any size: each skill keeps its strongest few links (most shared projects/jobs first).
@@ -78,8 +81,6 @@ export function SkillExplorer({ skills, links, aitLearnUrl }: { skills: SkillVie
     return n;
   }, [focusKey, drawnLinks]);
 
-  // Laid out at the real pixel width, so labels stay at their true size on every screen.
-  const [width, setWidth] = useState(0);
   const frame = useCallback((el: HTMLDivElement | null) => {
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
