@@ -43,6 +43,8 @@ export default defineConfig({
     { name: "discovery", testMatch: /discovery\.spec\.ts/, dependencies: ["setup", "desktop", "responsive", "career", "profile"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
     // Home (career dashboard) and Opportunities: routing, content and responsive layout; read-only, runs last.
     { name: "home", testMatch: /home\.spec\.ts/, dependencies: ["setup", "desktop", "responsive", "career", "profile", "discovery"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState: AUTH_STATE } },
+    // Whole-product smoke check: every page per role loads without server or page errors. Read-only; runs last.
+    { name: "smoke", testMatch: /smoke\.spec\.ts/, dependencies: ["home"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
     { name: "profile-import-mock", testMatch: /profile-import\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } },
   ],
   webServer: [
