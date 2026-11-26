@@ -14,6 +14,7 @@ import { normalizeListing, normalizeTitle, type NormalizedListing } from "../ing
 import type { Resolver, Transport } from "../ingestion/safe-fetch";
 import { registry } from "../intelligence/registry";
 import { log } from "../log";
+import { invalidateOpenListings } from "./listing-snapshot";
 import { setOpportunityVerification } from "./verification";
 
 /**
@@ -131,6 +132,7 @@ export async function runIngestion(db: Db, sourceId: string, opts: { trigger: "s
   // Only a run that saw the whole list may mark records missing; a run cut short by time continues next pass.
   if (result.complete && !cutShort) counts.markedStale = await markMissing(db, sourceId, seenRefIds, now);
   await expireStale(db, now);
+  invalidateOpenListings(); // new and updated listings from this run reach students now, not after the snapshot TTL
 
   await db.update(opportunitySources).set({ lastRunAt: now, lastSuccessAt: now, lastImportAt: now, lastError: null, consecutiveFailures: 0, nextRunAt: cutShort ? now : new Date(now.getTime() + adapter!.defaultFrequencyMinutes * 60_000) }).where(eq(opportunitySources.id, sourceId));
   await audit(db, { actorId: opts.actorId ?? null, actorRole: opts.actorId ? "admin" : "system", action: "source.ingest", targetType: "source", targetId: sourceId, metadata: { ...counts, trigger: opts.trigger } });
@@ -288,6 +290,7 @@ export async function expireStale(db: Db, now = new Date()) {
     await db.update(opportunities).set({ status: "expired", updatedAt: now }).where(eq(opportunities.id, r.id));
     if (r.state !== "expired" && r.state !== "rejected") await setOpportunityVerification(db, r.id, "expired", { actor: { kind: "system" }, evidenceKind: "system_expiry", reason: "Deadline passed or no longer listed by any source" }).catch(() => undefined);
   }
+  if (rows.length) invalidateOpenListings();
   return rows.length;
 }
 

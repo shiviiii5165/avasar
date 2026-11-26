@@ -14,6 +14,7 @@ import type { EducationLevel, OpportunityFacts } from "../domain/types";
 import { canTransitionOpportunity, publishProblems, type OpportunityStatus } from "../domain/workflows";
 import { canonicalize } from "../ingestion/dedupe";
 import { injectionFlags } from "../ingestion/sanitize";
+import { invalidateOpenListings, listingCacheOn, openListings } from "./listing-snapshot";
 
 export type OpportunityRow = typeof opportunities.$inferSelect;
 export type EligibilityRow = typeof opportunityEligibility.$inferSelect;
@@ -92,6 +93,11 @@ function searchFilter(db: Db, input: SearchInput, now: Date) {
   return and(...where)!;
 }
 
+/** True when searchFilter adds anything beyond "publicly visible" (the open catalogue). */
+function hasDbFilter(i: SearchInput): boolean {
+  return Boolean(i.q || i.category || i.workMode || i.location || i.employmentType || i.minComp !== undefined || i.maxExperience !== undefined || i.verified || i.paid || i.closingWithinDays);
+}
+
 /** Deadline order: earliest first, rolling (no deadline) last, id as tie-break. */
 export const byDeadline = (list: OpportunityFull[]) => [...list].sort((a, b) => (a.deadline?.getTime() ?? Infinity) - (b.deadline?.getTime() ?? Infinity) || (a.id < b.id ? -1 : 1));
 
@@ -121,13 +127,23 @@ export async function searchOpportunitiesRanked(
   /** Optional keep-filter over the loaded listings (career field, search intent), applied before ranking and counting. */
   keep?: (o: OpportunityFull) => boolean,
 ) {
-  const filter = searchFilter(db, input, now);
-  const [rows, [{ total: dbTotal }]] = await Promise.all([
-    db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
-    db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
-  ]);
-  // Canonical first: the count and the pages are of unique openings, never of source records.
-  const loaded = canonicalOpen(rows.map(fromDetailRow));
+  let loaded: OpportunityFull[];
+  let dbTotal: number;
+  if (!hasDbFilter(input)) {
+    // No database filter: the filtered set IS the open catalogue, so it comes from the shared snapshot (same rows,
+    // same order) instead of two more full-catalogue queries per page view.
+    loaded = await listOpenOpportunities(db, RANK_LIMIT, now);
+    dbTotal = loaded.length;
+  } else {
+    const filter = searchFilter(db, input, now);
+    const [rows, [{ total }]] = await Promise.all([
+      db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(filter).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(RANK_LIMIT),
+      db.select({ total: sql<number>`count(*)::int` }).from(opportunities).where(filter),
+    ]);
+    // Canonical first: the count and the pages are of unique openings, never of source records.
+    loaded = canonicalOpen(rows.map(fromDetailRow));
+    dbTotal = total;
+  }
   const kept = keep ? loaded.filter(keep) : loaded;
   const total = kept.length;
   // `rank` may await data loaded in parallel (e.g. the candidate's profile), so the search never waits for it to start.
@@ -154,10 +170,20 @@ export async function liveCategories(db: Db, now = new Date()): Promise<Category
   return CATEGORY_KEYS.filter((k) => have.has(k));
 }
 
+export { invalidateOpenListings };
+
+/** All open listings (canonical), newest first. Served from the shared snapshot in production (listing-snapshot.ts). */
 export async function listOpenOpportunities(db: Db, limit = RANK_LIMIT, now = new Date()) {
   // Same order as the search (newest first, id as tie-break), so a ranked list built from these rows is identical.
-  const rows = await db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(limit);
-  return canonicalOpen(rows.map(fromDetailRow));
+  const load = async () => {
+    const rows = await db.select({ o: opportunities, ...detailColumns }).from(opportunities).where(publicVisibility(now)).orderBy(desc(opportunities.publishedAt), asc(opportunities.id)).limit(limit);
+    return canonicalOpen(rows.map(fromDetailRow));
+  };
+  if (!listingCacheOn()) return load();
+  const list = await openListings.get(db, String(limit), load);
+  // The snapshot is shared and read-only; a listing whose deadline passed since it was loaded is dropped here.
+  const t = now.getTime();
+  return list.filter((o) => !o.deadline || o.deadline.getTime() > t);
 }
 
 /**
@@ -217,7 +243,17 @@ export async function similarOpportunities(db: Db, o: OpportunityFull, limit = 3
     .map((x) => x.r);
 }
 
+/**
+ * A listing's matching facts. Memoized per listing object: the same listing object always yields the same facts object,
+ * so a per-request match cache (canonical-match matcherFor) recognises it across the passes a page makes.
+ */
+const factsMemo = new WeakMap<OpportunityFull, OpportunityFacts>();
 export function toFacts(o: OpportunityFull): OpportunityFacts {
+  let f = factsMemo.get(o);
+  if (!f) factsMemo.set(o, (f = buildFacts(o)));
+  return f;
+}
+function buildFacts(o: OpportunityFull): OpportunityFacts {
   const e = o.eligibility;
   return {
     title: o.title,
@@ -373,7 +409,7 @@ export async function updateOpportunity(db: Db, id: string, input: OpportunityIn
     await snapshot(tx, row, actorId);
     await audit(tx, { actorId, actorRole: by.role ?? "admin", action: "opportunity.update", targetType: "opportunity", targetId: id, metadata: { version: row.version, returnedToReview: backToReview } });
     return row;
-  });
+  }).finally(invalidateOpenListings);
 }
 
 export class TransitionError extends Error {
@@ -398,7 +434,7 @@ export async function transitionOpportunity(db: Db, id: string, to: OpportunityS
       .returning();
     await audit(tx, { actorId, actorRole: by.role ?? "admin", action: `opportunity.${to}`, targetType: "opportunity", targetId: id, metadata: { from: cur.status, reason: reason ?? null } });
     return row;
-  });
+  }).finally(invalidateOpenListings);
 }
 
 // ─── Import pipeline: discovered → imported → normalized → deduplicated → validated → review ─────

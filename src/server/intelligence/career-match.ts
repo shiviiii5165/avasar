@@ -145,8 +145,11 @@ export function inferTargetRole(reg: SkillRegistry, profile: SkillProfileEntry[]
   return best && { id: best.id, title: best.title, covered: best.covered };
 }
 
-function bestSupport(reg: SkillRegistry, profile: SkillProfileEntry[], want: string) {
-  let best: { e: SkillProfileEntry; rel: Exclude<Relation, "none">; credit: number } | null = null;
+type Support = { e: SkillProfileEntry; rel: Exclude<Relation, "none">; credit: number };
+
+/** Reference implementation (linear scan of the profile). Kept for the equivalence test of the indexed version. */
+export function bestSupportScan(reg: SkillRegistry, profile: SkillProfileEntry[], want: string): Support | null {
+  let best: Support | null = null;
   for (const e of profile) {
     const rel = e.conceptId && !want.startsWith("text:") ? reg.relation(e.conceptId, want) : e.key === want ? "exact" : "none";
     if (rel === "none") continue;
@@ -154,6 +157,66 @@ function bestSupport(reg: SkillRegistry, profile: SkillProfileEntry[], want: str
     if (!best || credit > best.credit) best = { e, rel, credit };
   }
   return best;
+}
+
+/**
+ * The student's skills indexed once per profile (and reused for every listing on the page): by key (exact), by every
+ * ancestor concept (a child skill specializes its ancestors) and by concept for the registry's "related" links.
+ * Finding what supports a requirement is then a few hash lookups instead of a scan of the whole profile per listing
+ * skill: O(1) per requirement instead of O(profile). Same answer as bestSupportScan, ties included (the earliest
+ * profile entry wins), so scores never change.
+ */
+interface ProfileIndex {
+  byKey: Map<string, number[]>;
+  byAncestor: Map<string, number[]>;
+  byConcept: Map<string, number[]>;
+}
+const indexes = new WeakMap<SkillProfileEntry[], ProfileIndex>();
+function indexOf(reg: SkillRegistry, profile: SkillProfileEntry[]): ProfileIndex {
+  let ix = indexes.get(profile);
+  if (ix) return ix;
+  ix = { byKey: new Map(), byAncestor: new Map(), byConcept: new Map() };
+  const push = (m: Map<string, number[]>, k: string, i: number) => {
+    const list = m.get(k);
+    if (list) list.push(i);
+    else m.set(k, [i]);
+  };
+  profile.forEach((e, i) => {
+    push(ix!.byKey, e.key, i);
+    if (!e.conceptId) return;
+    push(ix!.byConcept, e.conceptId, i);
+    for (const a of reg.ancestors(e.conceptId)) push(ix!.byAncestor, a, i);
+  });
+  indexes.set(profile, ix);
+  return ix;
+}
+
+export function bestSupport(reg: SkillRegistry, profile: SkillProfileEntry[], want: string): Support | null {
+  const ix = indexOf(reg, profile);
+  let best: { s: Support; i: number } | null = null;
+  const consider = (i: number, rel: Exclude<Relation, "none">) => {
+    const e = profile[i];
+    const credit = SCORING.relationCredit[rel] * SCORING.stateStrength[e.state];
+    if (!best || credit > best.s.credit || (credit === best.s.credit && i < best.i)) best = { s: { e, rel, credit }, i };
+  };
+  const seen = new Set<number>();
+  for (const i of ix.byKey.get(want) ?? []) {
+    // A free-text requirement only matches the same free text; a concept requirement only the same concept.
+    if (want.startsWith("text:") ? !profile[i].conceptId : profile[i].conceptId) {
+      seen.add(i);
+      consider(i, "exact");
+    }
+  }
+  if (!want.startsWith("text:")) {
+    const visit = (i: number, rel: "specialization" | "related") => {
+      if (seen.has(i)) return;
+      seen.add(i);
+      consider(i, rel);
+    };
+    for (const i of ix.byAncestor.get(want) ?? []) visit(i, "specialization");
+    for (const id of reg.relatedSet(want)) for (const i of ix.byConcept.get(id) ?? []) visit(i, "related");
+  }
+  return (best as { s: Support } | null)?.s ?? null;
 }
 
 export function careerMatch(

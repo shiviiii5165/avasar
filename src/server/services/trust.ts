@@ -7,6 +7,7 @@ import { audit } from "../audit";
 import type { Db } from "../db/client";
 import { moderationCases, opportunities, opportunityReports, supportTickets } from "../db/schema";
 import { canTransitionOpportunity } from "../domain/workflows";
+import { invalidateOpenListings } from "./listing-snapshot";
 
 export const REPORT_REASONS = {
   fake_opportunity: "Fake opportunity",
@@ -72,7 +73,7 @@ export async function resolveCase(db: Db, caseId: string, action: ModerationActi
     const [updated] = await tx.update(moderationCases).set({ status, action, resolutionNote: note.slice(0, 2000), assignedTo: actorId, resolvedAt: action === "escalate" ? null : new Date() }).where(eq(moderationCases.id, caseId)).returning();
     await audit(tx, { actorId, actorRole: "admin", action: "moderation.resolve", targetType: "moderation_case", targetId: caseId, metadata: { action } });
     return updated;
-  });
+  }).finally(invalidateOpenListings); // a hidden or suspended listing leaves every student's list at once
 }
 
 export async function listCases(db: Db, status?: string) {

@@ -50,14 +50,51 @@ export class SkillRegistry {
     m.get(k)!.add(v);
   }
 
+  /**
+   * Lookup caches (memoization). Matching resolves the same skill names and role titles thousands of times per request
+   * (every listing skill, for every student); each answer depends only on the input string, so it's computed once.
+   * Bounded: a cache that reaches MEMO_LIMIT entries is cleared, so memory can't grow without limit.
+   */
+  private readonly resolveMemo = new Map<string, string | null>();
+  private readonly roleMemo = new Map<string, Role | null>();
+  private readonly ancestorMemo = new Map<string, string[]>();
+  private static readonly MEMO_LIMIT = 50_000;
+  private static readonly NO_RELATED: ReadonlySet<string> = new Set();
+  private memo<V>(m: Map<string, V>, k: string, compute: () => V): V {
+    const hit = m.get(k);
+    if (hit !== undefined || m.has(k)) return hit as V;
+    const v = compute();
+    if (m.size >= SkillRegistry.MEMO_LIMIT) m.clear();
+    m.set(k, v);
+    return v;
+  }
+
   /** Canonical concept id for a skill name, or null when the registry doesn't know it (kept as free text). */
   resolve(name: string): string | null {
-    return this.alias.get(normalizeSkill(name)) ?? null;
+    return this.memo(this.resolveMemo, name, () => this.alias.get(normalizeSkill(name)) ?? null);
   }
 
   /** Stable comparison key: the concept id when known, else the normalized text. */
   key(name: string): string {
     return this.resolve(name) ?? `text:${normalizeSkill(name)}`;
+  }
+
+  /** The concept's ancestors, nearest first, up to the same depth relation() follows (5). */
+  ancestors(id: string): string[] {
+    return this.memo(this.ancestorMemo, id, () => {
+      const out: string[] = [];
+      let p = this.byId.get(id)?.parentId ?? null;
+      for (let depth = 0; p && depth < 5; depth++) {
+        out.push(p);
+        p = this.byId.get(p)?.parentId ?? null;
+      }
+      return out;
+    });
+  }
+
+  /** Concepts with an explicit "related" link to this one (symmetric), without copying. */
+  relatedSet(id: string): ReadonlySet<string> {
+    return this.related.get(id) ?? SkillRegistry.NO_RELATED;
   }
 
   concept(id: string): Concept | undefined {
@@ -110,6 +147,10 @@ export class SkillRegistry {
 
   /** Target role for a free-text role or job title: exact alias first, then an alias contained in the title. */
   roleFor(title: string): Role | null {
+    return this.memo(this.roleMemo, title, () => this.computeRoleFor(title));
+  }
+
+  private computeRoleFor(title: string): Role | null {
     const t = title.toLowerCase().replace(/[^a-z0-9/+&' -]+/g, " ").replace(/[–—-]/g, " ").replace(/\s+/g, " ").trim();
     if (!t) return null;
     // As written first (so "trade apprentice fitter" keeps its word), then without seniority/position words.

@@ -79,6 +79,16 @@ export function canonicalMatch(reg: SkillRegistry, input: MatchInput, opp: Oppor
   return toMatchResult(cm);
 }
 
+/**
+ * The student's matcher. Results are remembered per listing for this matcher's lifetime (one request): a page that
+ * ranks, recommends and explains the same listings scores each listing once, not once per pass. A matcher lives for
+ * one request, so the `now` of its first call stands for the request (passes are milliseconds apart).
+ */
 export function matcherFor(reg: SkillRegistry, input: MatchInput): Matcher {
-  return (opp, now) => canonicalMatch(reg, input, opp, now);
+  const memo = new WeakMap<OpportunityFacts, MatchResult>();
+  return (opp, now) => {
+    let r = memo.get(opp);
+    if (!r) memo.set(opp, (r = canonicalMatch(reg, input, opp, now)));
+    return r;
+  };
 }
