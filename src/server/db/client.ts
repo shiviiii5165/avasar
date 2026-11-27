@@ -38,6 +38,38 @@ export function embeddedDbDir() {
 }
 const forceEmbedded = () => process.env.AVSAR_EMBEDDED_DB === "1" && process.env.NODE_ENV !== "production";
 
+/** A pooled connection the network, NAT or the hosted pooler dropped while it sat idle. */
+export function isDroppedConnection(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  if (!e) return false;
+  if (e.code && ["ECONNRESET", "EPIPE", "ETIMEDOUT", "ECONNREFUSED", "57P01", "57P02", "57P03", "08006", "08003", "08001"].includes(e.code)) return true;
+  return /Connection terminated|terminated unexpectedly|Client has encountered a connection error|timeout exceeded when trying to connect|socket hang up/i.test(e.message ?? "");
+}
+
+/** Read-only statements, safe to run again: a retry can never save anything twice. */
+export function isReadOnly(text: string): boolean {
+  return /^\s*(select|with\s[\s\S]*?\)\s*select)\b/i.test(text) && !/\b(insert|update|delete|for\s+update)\b/i.test(text);
+}
+
+/**
+ * A query on a connection that died while idle fails once even though the database is fine. Re-run READ-ONLY
+ * statements once on a fresh connection; writes are never retried (they might already have been applied).
+ */
+function retryDroppedReads(pool: pg.Pool) {
+  const query = pool.query.bind(pool) as (...a: unknown[]) => Promise<unknown>;
+  (pool as unknown as { query: (...a: unknown[]) => Promise<unknown> }).query = async (...args: unknown[]) => {
+    try {
+      return await query(...args);
+    } catch (err) {
+      const first = args[0] as string | { text?: string };
+      const text = typeof first === "string" ? first : first?.text ?? "";
+      if (typeof args.at(-1) === "function" || !isDroppedConnection(err) || !isReadOnly(text)) throw err;
+      log("warn", "db.retry_dropped_read", { message: (err as Error).message });
+      return query(...args);
+    }
+  };
+}
+
 async function create(): Promise<Db> {
   const url = forceEmbedded() ? undefined : process.env.DATABASE_URL;
   if (url) {
@@ -45,6 +77,7 @@ async function create(): Promise<Db> {
     // An idle pooled connection closed by the server or pooler emits "error" on the pool. Without a listener
     // Node treats that as an uncaught exception and the process exits; the pool already drops the dead client.
     pool.on("error", (err) => log("warn", "db.idle_client_error", { message: err.message }));
+    retryDroppedReads(pool);
     return drizzlePg(pool, { schema }) as unknown as Db;
   }
   if (process.env.NODE_ENV === "production" && process.env.AVSAR_ALLOW_EMBEDDED_DB !== "1") {

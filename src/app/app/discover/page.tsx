@@ -3,7 +3,7 @@ import { Search, SlidersHorizontal } from "lucide-react";
 
 import { FieldSelect, FilterFields, ShowOnlyFields } from "@/components/opportunity/filters";
 import { FieldChip } from "@/components/opportunity/field";
-import { cardMatch, OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { cardMatch, OpportunityTile } from "@/components/opportunity/opportunity-card";
 import { domainDef } from "@/server/intelligence/domains";
 import { discoveryRules, fieldOptions } from "@/server/services/discovery";
 import type { MatchResult } from "@/server/domain/matching";
@@ -17,7 +17,7 @@ import { searchAllowed } from "@/server/rate-limit";
 import { rankForBrowse, recommend } from "@/server/domain/recommend";
 import type { Matcher } from "@/server/intelligence/canonical-match";
 import { matchAll } from "@/server/services/candidate-context";
-import { DismissButton, SaveButton } from "@/components/forms/buttons";
+import { DismissButton } from "@/components/forms/buttons";
 import { dismissedIds, savedIds } from "@/server/services/engagement";
 import { categoryDef } from "@/server/domain/categories";
 import { byDeadline, canonicalIdSet, recordIdIn, listOpenOpportunities, liveCategories, RANK_LIMIT, rankedPage, searchOpportunities, searchOpportunitiesRanked, searchSchema, toFacts, type OpportunityFull } from "@/server/services/opportunities";
@@ -146,20 +146,17 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
   const p = profile?.profile;
 
   /** One card, with working actions: open, save, and (on recommendations) "Not for me". Apply is on the details page, after eligibility. */
-  const card = (o: OpportunityFull, dismissable: boolean) => {
+  const card = (o: OpportunityFull, dismissable: boolean, index = 0) => {
     const m = matches.get(o.id);
     return (
-      <OpportunityCard
+      <OpportunityTile
         o={o}
+        fit={m && m.score !== null ? cardMatch(m) : null}
         saved={saved.has(o.id)}
-        match={m ? cardMatch(m) : null}
-        actions={
-          <>
-            <Link href={`/opportunities/${o.slug}`} className={buttonClass("primary", "sm")}>View details</Link>
-            <SaveButton opportunityId={recordIdIn(savedRecords, o)} saved={saved.has(o.id)} path="/app/discover" />
-            {dismissable && <DismissButton opportunityId={o.id} title={o.title} />}
-          </>
-        }
+        savedRecordId={recordIdIn(savedRecords, o)}
+        path="/app/discover"
+        dismissable={dismissable}
+        index={index}
       />
     );
   };
@@ -213,8 +210,8 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
               </p>
             )}
             {recommended.length ? (
-              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
-                {recommended.map((o) => <li key={o.id}>{card(o, true)}</li>)}
+              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(19rem,100%),1fr))] gap-5">
+                {recommended.map((o, n) => <li key={o.id}>{card(o, true, n)}</li>)}
               </ul>
             ) : (
               <p className="mt-2 text-sm text-muted">None of the open listings fit your profile closely yet. Browse them all below.</p>
@@ -238,8 +235,8 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             <section aria-labelledby="field-title">
               <h2 id="field-title" className="text-xl font-semibold text-navy">More in your field</h2>
               <p className="mt-1 text-sm text-muted">Listings in the field of your target role, ranked by fit.</p>
-              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
-                {inField.map((o) => <li key={o.id}>{card(o, true)}</li>)}
+              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(19rem,100%),1fr))] gap-5">
+                {inField.map((o, n) => <li key={o.id}>{card(o, true, n)}</li>)}
               </ul>
             </section>
           )}
@@ -248,8 +245,8 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
             <section aria-labelledby="nearby-title">
               <h2 id="nearby-title" className="text-xl font-semibold text-navy">Explore nearby fields</h2>
               <p className="mt-1 text-sm text-muted">Close to your direction and worth a look if you want to widen your options.</p>
-              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">
-                {nearby.map((o) => <li key={o.id}>{card(o, true)}</li>)}
+              <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(19rem,100%),1fr))] gap-5">
+                {nearby.map((o, n) => <li key={o.id}>{card(o, true, n)}</li>)}
               </ul>
             </section>
           )}
@@ -313,8 +310,8 @@ export default async function DiscoverPage({ searchParams }: { searchParams: SP 
               {activeFilters.length ? <> · {activeFilters.length} filter{activeFilters.length > 1 ? "s" : ""}</> : null}
             </p>
             {items.length === 0 ? emptyState() : (
-              <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4" data-testid="browse-results">
-                {items.map((o) => <li key={o.id}>{card(o, false)}</li>)}
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(19rem,100%),1fr))] gap-5" data-testid="browse-results">
+                {items.map((o, n) => <li key={o.id}>{card(o, false, n)}</li>)}
               </ul>
             )}
             {result.pageCount > 1 && (

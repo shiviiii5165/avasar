@@ -285,6 +285,18 @@ function buildFacts(o: OpportunityFull): OpportunityFacts {
 
 // ─── Admin authoring ───────────────────────────────────────────────────────
 const optInt = z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v), z.coerce.number().int().min(0).optional());
+/** True only for an absolute http(s) URL: never javascript:, data:, file: or a relative path. */
+export function isWebUrl(v: string | null | undefined): v is string {
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    return (u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password && u.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+const webUrl = z.string().trim().max(500).optional().refine((v) => !v || isWebUrl(v), "Use a full https:// address");
+
 export const opportunityInput = z.object({
   title: z.string().trim().min(4).max(140),
   category: z.enum(CATEGORY_KEYS),
@@ -303,14 +315,14 @@ export const opportunityInput = z.object({
   experienceMinYears: optInt,
   deadline: z.preprocess((v) => (v ? new Date(String(v)) : undefined), z.date().optional()),
   applicationMethod: z.enum(["internal", "external"]),
-  externalUrl: z.string().trim().max(500).optional(),
+  externalUrl: webUrl,
   requiredSkills: z.string().max(600).default(""),
   preferredSkills: z.string().max(600).default(""),
   educationLevels: z.array(z.enum(["secondary", "higher_secondary", "diploma", "bachelors", "masters", "doctorate"])).default([]),
   graduationYearMin: optInt,
   graduationYearMax: optInt,
   requiresWorkAuthorizationIndia: z.boolean().default(false),
-  sourceUrl: z.string().trim().max(500).optional(),
+  sourceUrl: webUrl,
   stipendNote: z.string().trim().max(200).optional(),
   conversionPossible: z.boolean().default(false),
   deliverables: z.string().trim().max(1_000).optional(),
@@ -445,8 +457,9 @@ export const importItemSchema = z.object({
   description: z.string().optional(),
   location: z.string().optional(),
   workMode: z.string().optional(),
-  applyUrl: z.string().optional(),
-  sourceUrl: z.string().optional(),
+  // A feed item with an unsafe link keeps the item but drops the link.
+  applyUrl: z.string().optional().transform((v) => (isWebUrl(v?.trim()) ? v!.trim() : undefined)),
+  sourceUrl: z.string().optional().transform((v) => (isWebUrl(v?.trim()) ? v!.trim() : undefined)),
   deadline: z.string().optional(),
   skills: z.array(z.string()).optional(),
 });

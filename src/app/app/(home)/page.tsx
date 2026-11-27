@@ -12,6 +12,9 @@ import { listApplicationsForProfile } from "@/server/services/applications";
 import { careerIntelligence } from "@/server/services/career";
 import { dismissedIds, listSaved, savedIds } from "@/server/services/engagement";
 import { listNotifications } from "@/server/services/notifications";
+import { OpportunityTile } from "@/components/opportunity/opportunity-card";
+import { HomeHero } from "@/components/home/home-hero";
+import { hasAnyId, listOpenOpportunities, recordIdIn } from "@/server/services/opportunities";
 
 export const metadata = { title: "Home" };
 
@@ -38,15 +41,27 @@ export default async function CandidateHome() {
   const deadlines = upcomingDeadlines(savedList, applied, new Date());
   const active = apps.filter((a) => !["rejected", "withdrawn", "closed", "selected"].includes(a.application.status));
   const firstName = p.fullName?.split(" ")[0] ?? "there";
+  // Newest listings from the last 7 days that aren't already shown above, applied to, or dismissed.
+  const shown = new Set(data.recommendations.map(({ o }) => o.id));
+  const weekAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
+  const fresh = (await listOpenOpportunities(db, 40))
+    .filter((o) => !shown.has(o.id) && !hasAnyId(applied, o) && !hasAnyId(dismissed, o) && (o.publishedAt?.getTime() ?? 0) >= weekAgo)
+    .slice(0, 6);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-serif text-3xl text-navy sm:text-4xl">Hello, {firstName}.</h1>
-        <p className="mt-1 text-sm text-muted">Your career goal, your skills and openings that fit you.</p>
-      </div>
+      <HomeHero
+        firstName={firstName}
+        fits={data.recommendations.length}
+        fresh={fresh.length}
+        inProgress={active.length}
+        deadlines={deadlines.length}
+        goal={data.readiness[0]?.role.title ?? null}
+        goalInferred={data.targetSource === "inferred"}
+      />
 
-      <SyncStatusCard status={p.aitSyncStatus} syncedAt={p.aitSyncedAt} error={p.aitSyncError} provider={session.identity.provider} />
+      {/* Only when something needs the student's attention; the full sync card lives on Profile. */}
+      {p.aitSyncStatus === "failed" && <SyncStatusCard status={p.aitSyncStatus} syncedAt={p.aitSyncedAt} error={p.aitSyncError} provider={session.identity.provider} compact />}
 
       <CareerDashboard data={data} saved={saved} path="/app" />
 
@@ -106,6 +121,23 @@ export default async function CandidateHome() {
           )}
         </Card>
       </div>
+
+      {fresh.length > 0 && (
+        <section aria-labelledby="new-title">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 id="new-title" className="text-xl font-semibold text-navy">New this week</h2>
+              <p className="mt-0.5 text-sm text-muted">The latest listings posted on Avsar.</p>
+            </div>
+            <Link href="/app/discover?sort=newest" className="text-sm font-semibold text-purple underline-offset-4 hover:underline">See newest</Link>
+          </div>
+          <ul className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(min(19rem,100%),1fr))] gap-5">
+            {fresh.map((o, n) => (
+              <li key={o.id} className="min-w-0"><OpportunityTile o={o} saved={hasAnyId(saved, o)} savedRecordId={recordIdIn(saved, o)} path="/app" index={n} /></li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

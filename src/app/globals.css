@@ -236,3 +236,203 @@ body {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
+
+/* Opportunity tiles rise in, staggered by inline animation-delay. Story slides slide in. Both respect reduced motion. */
+@keyframes tile-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes story-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes story-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tile-in { animation: tile-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .story-in { animation: story-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .story-fill { transform-origin: left; animation: story-fill 360ms ease-out both; }
+}
+
+/* ── AI-era tile motion ──────────────────────────────────────────────────────────────────────────────────────
+ * .tile-ring  : a thin rotating gradient ring around the tile, faded in on hover/focus (inside a .group tile).
+ * .tile-shine : a soft diagonal light sweep across the coloured panel on hover.
+ * .ai-pulse   : the fit dot breathes, like a live signal.
+ * All decoration only, pointer-events none, and off for people who ask for reduced motion. */
+@property --ring-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.tile-ring {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 1.7rem;
+  padding: 1.5px;
+  background: conic-gradient(from var(--ring-angle), #7c5cff, #ff7eb6, #ffb347, #4fd1c5, #5b8cff, #7c5cff);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+.group:hover > .tile-ring,
+.group:focus-within > .tile-ring { opacity: 1; }
+.tile-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.65) 48%, transparent 66%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+@keyframes ring-spin { to { --ring-angle: 360deg; } }
+@keyframes shine-sweep { to { transform: translateX(120%); } }
+@keyframes ai-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 0 4px transparent; opacity: 0.55; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .group:hover > .tile-ring,
+  .group:focus-within > .tile-ring { animation: ring-spin 3s linear infinite; }
+  .group:hover .tile-shine::after { animation: shine-sweep 900ms cubic-bezier(0.3, 0.7, 0.2, 1) both; }
+  .ai-pulse { animation: ai-pulse 2.2s ease-in-out infinite; }
+}
+
+/* ── Home hero ───────────────────────────────────────────────────────────────────────────────────────────────
+ * Aurora clouds drift, the name's gradient flows, the live line slides up, skills orbit the avatar (each label
+ * counter-rotates to stay upright), the avatar floats inside a spinning light ring, sparkles twinkle.
+ * Static (still pretty) when reduced motion is requested. */
+.aurora { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: 0.45; }
+.aurora-1 { width: 26rem; height: 26rem; left: -6rem; top: -8rem; background: #a78bfa; }
+.aurora-2 { width: 22rem; height: 22rem; right: -4rem; top: -6rem; background: #f9a8d4; }
+.aurora-3 { width: 24rem; height: 24rem; right: 18%; bottom: -12rem; background: #fdba74; }
+.aurora-4 { width: 18rem; height: 18rem; left: 30%; bottom: -10rem; background: #67e8f9; }
+.hero-name {
+  background: linear-gradient(90deg, #6d28d9, #db2777, #ea580c, #db2777, #6d28d9);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.avatar-ring {
+  background: conic-gradient(from var(--ring-angle), #7c5cff, #ff7eb6, #ffb347, #4fd1c5, #5b8cff, #7c5cff);
+  filter: blur(2px);
+  opacity: 0.9;
+}
+.cta-glow { box-shadow: 0 12px 30px -10px rgba(109, 40, 217, 0.6); }
+@keyframes aurora-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(3rem, 2rem) scale(1.1); }
+  66% { transform: translate(-2rem, 1rem) scale(0.95); }
+}
+@keyframes name-flow { to { background-position: 300% 0; } }
+@keyframes line-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes orbit-spin { to { transform: rotate(360deg); } }
+@keyframes orbit-counter { to { transform: rotate(-360deg); } }
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.7) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(20deg); }
+}
+@keyframes live-ping {
+  75%, 100% { transform: scale(2.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .aurora-1 { animation: aurora-drift 16s ease-in-out infinite; }
+  .aurora-2 { animation: aurora-drift 19s ease-in-out infinite reverse; }
+  .aurora-3 { animation: aurora-drift 22s ease-in-out infinite; }
+  .aurora-4 { animation: aurora-drift 18s ease-in-out infinite reverse; }
+  .hero-name { animation: name-flow 8s linear infinite; }
+  .hero-line { animation: line-up 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .orbit { animation: orbit-spin 48s linear infinite; }
+  .orbit-counter { animation: orbit-counter 48s linear infinite; }
+  .float { animation: float-y 5s ease-in-out infinite; }
+  .avatar-ring { animation: ring-spin 4s linear infinite; }
+  .twinkle { animation: twinkle 2.6s ease-in-out infinite; }
+  .live-ping { animation: live-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
+}
+
+/* ── Career walk (components/home/career-walk.tsx): an 11 s loop ─────────────────────────────────────────────
+ * Limb pivots are each part's own origin (hip, knee, shoulder, elbow); gait keyframes are generated in the
+ * component. Still frame by default (reduced motion): standing at the doors with the bag. */
+.cw .cw-thigh, .cw .cw-shin, .cw .cw-arm, .cw .cw-forearm { transform-box: view-box; transform-origin: 0 0; }
+.cw .cw-torso { transform-box: view-box; transform-origin: 0 -58px; }
+.cw .cw-walker { transform: translateX(352px); }
+.cw .cw-bag-ground, .cw .cw-badge, .cw .cw-bit { opacity: 0; }
+.cw .cw-badge { transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes cw-walk {
+  0% { transform: translateX(-40px); opacity: 0; }
+  2.5% { opacity: 1; }
+  28%, 44% { transform: translateX(170px); }
+  80% { transform: translateX(388px); opacity: 1; }
+  85%, 100% { transform: translateX(394px); opacity: 0; }
+}
+@keyframes cw-bag-ground { 0%, 35% { opacity: 1; } 35.5%, 97% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes cw-bag-hand { 0%, 35% { opacity: 0; } 35.5%, 84% { opacity: 1; } 85%, 100% { opacity: 0; } }
+@keyframes cw-door-l { 0%, 70% { transform: translateX(0); } 76%, 90% { transform: translateX(-19px); } 96%, 100% { transform: translateX(0); } }
+@keyframes cw-door-r { 0%, 70% { transform: translateX(0); } 76%, 90% { transform: translateX(19px); } 96%, 100% { transform: translateX(0); } }
+@keyframes cw-glow { 0%, 68% { opacity: 0; } 78%, 90% { opacity: 0.55; } 98%, 100% { opacity: 0; } }
+@keyframes cw-badge {
+  0%, 84% { opacity: 0; transform: scale(0.4) translateY(10px); }
+  87% { opacity: 1; transform: scale(1.12); }
+  89%, 97% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+@keyframes cw-bit {
+  0%, 84% { opacity: 0; transform: translate(0, 0) rotate(0deg); }
+  86% { opacity: 1; }
+  97%, 100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(220deg); }
+}
+@keyframes cw-win { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.2; } }
+@keyframes cw-drift { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(22px); } }
+@keyframes cw-sun { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+@keyframes cw-reflect { 0% { transform: translateX(-40px); } 100% { transform: translateX(200px); } }
+@media (prefers-reduced-motion: no-preference) {
+  .cw .cw-walker { animation: cw-walk 11s linear infinite; }
+  .cw .cw-bob { animation: cw-bob 11s linear infinite; }
+  .cw .cw-thigh-f { animation: cw-thigh-f 11s linear infinite; }
+  .cw .cw-thigh-b { animation: cw-thigh-b 11s linear infinite; }
+  .cw .cw-shin-f { animation: cw-shin-f 11s linear infinite; }
+  .cw .cw-shin-b { animation: cw-shin-b 11s linear infinite; }
+  .cw .cw-arm-f { animation: cw-arm-f 11s linear infinite; }
+  .cw .cw-arm-b { animation: cw-arm-b 11s linear infinite; }
+  .cw .cw-forearm { animation: cw-elbow 11s linear infinite; }
+  .cw .cw-torso { animation: cw-bend 11s linear infinite; }
+  .cw .cw-bag-ground { animation: cw-bag-ground 11s step-end infinite; }
+  .cw .cw-bag-hand { animation: cw-bag-hand 11s step-end infinite; }
+  .cw .cw-door-l { animation: cw-door-l 11s ease-in-out infinite; }
+  .cw .cw-door-r { animation: cw-door-r 11s ease-in-out infinite; }
+  .cw .cw-glow { animation: cw-glow 11s ease-in-out infinite; }
+  .cw .cw-badge { animation: cw-badge 11s ease-out infinite; }
+  .cw .cw-bit { animation: cw-bit 11s ease-out infinite; }
+  .cw .cw-win { animation: cw-win 3.4s ease-in-out infinite; }
+  .cw .cw-cloud { animation: cw-drift 10s ease-in-out infinite; }
+  .cw .cw-cloud-2 { animation-duration: 13s; animation-direction: reverse; }
+  .cw .cw-sun { animation: cw-sun 5s ease-in-out infinite; }
+  .cw .cw-reflect { animation: cw-reflect 7s ease-in-out infinite alternate; }
+}
+/* Career walk extras: the quote bubble (shown 9–62 % of each loop) and birds crossing the sky. */
+.cw .cw-say { opacity: 1; }
+.cw .cw-wing { transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes cw-say {
+  0%, 9% { opacity: 0; transform: translateY(6px); }
+  12%, 60% { opacity: 1; transform: none; }
+  63%, 100% { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes cw-bird { from { transform: translateX(0); } to { transform: translateX(540px); } }
+@keyframes cw-flap { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(-0.6); } }
+@media (prefers-reduced-motion: no-preference) {
+  .cw .cw-say { animation: cw-say 11s ease-out infinite; }
+  .cw .cw-bird-path { animation: cw-bird 16s linear infinite; }
+  .cw .cw-wing { animation: cw-flap 0.5s ease-in-out infinite; }
+}

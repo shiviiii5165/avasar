@@ -14,7 +14,9 @@ import { Badge, buttonClass, PageHeader } from "@/components/ui";
 import { requireCandidate } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import { CATEGORIES } from "@/server/domain/categories";
-import { aitLearnUrl, matchInputFor } from "@/server/services/career";
+import { aitLearnUrl, careerIntelligence, matchInputFor } from "@/server/services/career";
+import { GoalSkills } from "@/components/career/goal-skills";
+import { registry } from "@/server/intelligence/registry";
 import { signedDocumentUrl } from "@/server/services/documents";
 import { experienceSkillLinks, loadProfile } from "@/server/services/profiles";
 
@@ -24,7 +26,7 @@ const SYNC_MESSAGE: Record<string, string> = {
   login_required: "AI Tathastu needs you to sign in again before Avsar can refresh your profile.",
   consent_required: "Avsar isn't connected to your AI Tathastu account any more. Reconnect to import your profile again.",
 };
-const SECTIONS = [["skills", "Skills"], ["education", "Education"], ["experience", "Experience"], ["projects", "Projects"], ["preferences", "Preferences"], ["links", "Links"], ["resumes", "Resume"]] as const;
+const SECTIONS = [["skills", "Skills"], ["goal", "Career goal"],["education", "Education"], ["experience", "Experience"], ["projects", "Projects"], ["preferences", "Preferences"], ["links", "Links"], ["resumes", "Resume"]] as const;
 const MODES: Record<string, string> = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" };
 const CATEGORY_PLURAL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.plural])) as Record<string, string>;
 
@@ -38,7 +40,9 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const ownSkills = p.skills.filter((s) => s.source === "avsar");
   const importedSkills = p.skills.filter((s) => s.source === "ai_tathastu");
   // The same canonical, evidence-based skill profile Career intelligence uses (one source of truth).
-  const [{ input }, links] = await Promise.all([matchInputFor(db, p), experienceSkillLinks(db, pr.id)]);
+  const [{ input }, links, career] = await Promise.all([matchInputFor(db, p), experienceSkillLinks(db, pr.id), careerIntelligence(db, pr.id)]);
+  const reg = registry();
+  const goalDomains = Object.fromEntries((career?.readiness ?? []).map((r) => [r.role.id, reg.roles.find((x) => x.id === r.role.id)?.domain ?? null]));
   const skillProfile = input.profile;
   const skillsByExperience = new Map<string, string[]>();
   for (const l of links) skillsByExperience.set(l.experienceId, [...(skillsByExperience.get(l.experienceId) ?? []), l.skillName]);
@@ -143,6 +147,12 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           </div>
         </details>
       </div>
+
+      {career && (
+        <div id="goal" className="scroll-mt-24">
+          <GoalSkills readiness={career.readiness} roadmap={career.roadmap} domains={goalDomains} aitLearnUrl={career.aitLearnUrl} inferred={career.targetSource === "inferred"} />
+        </div>
+      )}
 
       <EducationSection items={p.education} />
       <ExperienceSection items={p.experiences} skillsByExperience={skillsByExperience} />

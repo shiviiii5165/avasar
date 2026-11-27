@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { CheckCircle2, CircleHelp, Lightbulb, XCircle } from "lucide-react";
+import { CheckCircle2, CircleHelp, XCircle } from "lucide-react";
 
 import { Badge, buttonClass } from "@/components/ui";
 import { ELIGIBILITY_LABEL, type EligibilityResult } from "@/server/domain/eligibility";
 import type { MatchResult } from "@/server/domain/matching";
 import { StatusPill } from "@/components/career/status-pill";
-import { tierLabel } from "@/components/opportunity/opportunity-card";
+import { cardMatch, tierLabel } from "@/components/opportunity/opportunity-card";
+import { orgTone } from "@/components/opportunity/brand";
 import type { SkillState } from "@/server/intelligence/evidence";
 
 const IMPORTANCE_LABEL = { required: "Required by the employer", preferred: "Nice to have (employer)", mentioned: "Mentioned in the description (worked out by Avsar)" } as const;
@@ -118,13 +119,39 @@ export function MatchPanel({ match }: { match: MatchResult }) {
           ))}
         </ul>
       </details>
-      {match.nextActions.length > 0 && (
-        <div className="mt-4 rounded-lg bg-purple-soft/60 p-3">
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-purple"><Lightbulb aria-hidden className="size-4" /> Next useful steps</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-navy-soft">
-            {match.nextActions.map((a) => <li key={a}>{a}</li>)}
+    </section>
+  );
+}
+
+/** The sidebar summary: up to three plain reasons and the listing's skills already on the student's profile. */
+export function MatchSummary({ match, matchedSkills }: { match: MatchResult; matchedSkills: string[] }) {
+  const fit = match.score !== null && match.tier ? tierLabel(match) : null;
+  const reasons = cardMatch(match).reasons ?? [];
+  return (
+    <section aria-labelledby="why-title" className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="why-title" className="font-serif text-xl text-navy">Why this matches you</h2>
+        {fit && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${fit.tone}`} title={fit.hint}>{fit.text}</span>}
+      </div>
+      {reasons.length > 0 ? (
+        <ul className="mt-3 space-y-2.5 text-sm">
+          {reasons.map((r) => (
+            <li key={r} className="flex gap-2"><CheckCircle2 aria-hidden className="mt-0.5 size-5 shrink-0 fill-success text-white" /><span className="text-navy">{r}</span></li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-muted">Your profile has few details to compare with this listing yet.</p>
+      )}
+      {matchedSkills.length > 0 && (
+        <>
+          <p className="mt-4 border-t border-line pt-3 text-xs font-semibold uppercase tracking-wide text-muted">Your skills it uses</p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {matchedSkills.map((s) => {
+              const t = orgTone(s);
+              return <li key={s} className="rounded-full px-3 py-1 text-sm font-medium" style={{ backgroundColor: t.tile, color: t.ink }}>{s}</li>;
+            })}
           </ul>
-        </div>
+        </>
       )}
     </section>
   );

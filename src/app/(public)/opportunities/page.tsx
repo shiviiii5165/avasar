@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { Sparkles } from "lucide-react";
 
 import { OpportunityFilters } from "@/components/opportunity/filters";
-import { OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { OpportunityTile } from "@/components/opportunity/opportunity-card";
 import { buttonClass, StateMessage } from "@/components/ui";
 import { getSession } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
@@ -75,7 +75,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
         <div>
           <h1 className="font-serif text-4xl text-navy">Explore opportunities</h1>
           <p className="mt-1 text-sm text-muted" aria-live="polite">
@@ -105,9 +105,9 @@ export default async function ExplorePage({ searchParams }: { searchParams: SP }
             )
           ) : (
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="explore-results">
-              {items.map((o) => (
+              {items.map((o, n) => (
                 <li key={o.id} className="min-w-0">
-                  <OpportunityCard o={o} />
+                  <OpportunityTile o={o} index={n} />
                 </li>
               ))}
             </ul>

@@ -49,5 +49,9 @@ export function pgPoolOptions(url: string, max: number, env: Record<string, stri
     idleTimeoutMillis: env.DATABASE_POOL_IDLE_MS?.trim() && Number.isFinite(idle) && idle >= 0 ? idle : DEFAULT_POOL_IDLE_MS,
     // Long-lived idle sockets: let the OS detect dead peers (NAT/pooler drops) instead of failing the next query.
     keepAlive: true,
+    // Probe after 10 s idle, not the OS default (2 hours on Windows), so a dropped socket is noticed while idle.
+    keepAliveInitialDelayMillis: 10_000,
+    // Never hang a page waiting for a connection: fail fast and let the read retry (client.ts) or the error page handle it.
+    connectionTimeoutMillis: 10_000,
   };
 }

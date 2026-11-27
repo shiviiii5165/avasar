@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Trash2 } from "lucide-react";
 
 import { deleteSavedSearchAction, saveSearchAction } from "@/app/actions/candidate";
-import { OpportunityCard } from "@/components/opportunity/opportunity-card";
+import { OpportunityTile } from "@/components/opportunity/opportunity-card";
 import { buttonClass, Card, inputClass, PageHeader, StateMessage } from "@/components/ui";
 import { requireUser } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
@@ -26,7 +26,7 @@ export default async function SavedPage() {
         {open.length === 0 && closed.length === 0 ? (
           <StateMessage kind="empty" title="Nothing saved yet" body="Tap Save on any listing to keep it here and see its deadline on your dashboard." action={<Link href="/app/discover" className={buttonClass("primary")}>Find opportunities</Link>} />
         ) : open.length ? (
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-4">{open.map((o) => <li key={o.id}><OpportunityCard o={o} saved /></li>)}</ul>
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(19rem,100%),1fr))] gap-5">{open.map((o, n) => <li key={o.id}><OpportunityTile o={o} saved path="/app/saved" index={n} /></li>)}</ul>
         ) : (
           <p className="text-sm text-muted">None of your saved opportunities are open any more. <Link href="/app/discover" className="font-semibold text-purple hover:underline">Find new ones</Link>.</p>
         )}
