@@ -71,7 +71,8 @@ function stripLeadIn(s: string): string {
 }
 function bulletsOf(lines: string[], max = 5): string[] {
   const items = lines.some((l) => isListItem(l)) ? lines.filter((l) => isListItem(l)).map((l) => l.replace(/^[-•*·▪●]\s*/, "")) : lines.flatMap(sentences);
-  return [...new Set(items.map((i) => clip(sentences(i.trim())[0] ?? i.trim(), 260)))].filter((i) => i.length > 8).slice(0, max);
+  // Whole first sentences (never cut with "…"); heading lines like "About the role" are not bullets.
+  return [...new Set(items.map((i) => sentences(i.trim())[0] ?? i.trim()))].filter((i) => i.length > 8 && !isHeading(i)).slice(0, max);
 }
 
 export interface ListingSummary { overview: string; role: string[]; need: string[]; company: string | null }

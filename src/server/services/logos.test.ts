@@ -55,3 +55,12 @@ describe("listing text for story slides", async () => {
     expect(splitSections(text, 5)).toHaveLength(5);
   });
 });
+
+describe("story bullets", async () => {
+  const { summarizeListing } = await import("@/components/opportunity/listing-text");
+  it("never turns a heading into a bullet and never cuts a sentence", () => {
+    const long = "You will own features end to end from database schema through backend services and distributed systems to the user interface and bring practical experience building AI agents and tool-calling workflows.";
+    const s = summarizeListing("Intro text here.", { responsibilities: `About the role\n${long}`, organization: "Acme" });
+    expect(s.role).toEqual([long]);
+  });
+});

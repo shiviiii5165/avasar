@@ -51,7 +51,7 @@ export function OpportunityStory({ slides, tile, deep }: { slides: StorySlide[];
         ))}
       </div>
 
-      <div className="relative mt-4 h-[26rem] overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl bg-white/90 p-5 shadow-sm backdrop-blur-sm [scrollbar-width:thin] sm:h-[28rem] sm:p-7">
+      <div className="relative mt-4 min-h-[18rem] overflow-x-clip rounded-2xl bg-white/90 p-5 shadow-sm backdrop-blur-sm sm:p-7">
         {slides.map((s, n) => (
           <div key={s.id} id={`story-${s.id}`} role="tabpanel" aria-label={`${s.label} (${n + 1} of ${slides.length})`} hidden={n !== i} className={n === i ? "story-in" : undefined}>
             {s.content}
